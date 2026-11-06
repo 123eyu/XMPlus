@@ -1,0 +1,1645 @@
+{
+  "schemaVersion": 1,
+  "component": "FFmpeg Gyan essentials Windows x64",
+  "version": "9.0.2",
+  "generatedOn": "2026-11-05",
+  "releaseCompliance": {
+    "status": "blocked",
+    "completeCorrespondingSource": false,
+    "redistributionReady": false,
+    "reason": "Pinned upstream sources, licenses and build options acquired; exact publisher patches/recipes, unversioned static libraries and full transitive static-source closure are not established."
+  },
+  "package": {
+    "url": "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip",
+    "publisherReleaseApi": "https://api.github.com/repos/GyanD/codexffmpeg/releases/tags/9.0.2",
+    "publisherMirrorUrl": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip",
+    "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-9.0.2-essentials_build.zip",
+    "sha256": "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
+    "publisherDigest": "sha256:60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
+    "license": "GPL-3.0-or-later configured FFmpeg build; publisher labels GPL v3",
+    "licensePath": "licenses/ffmpeg/LICENSE-GPL-3.0.txt",
+    "toolsDirectory": "C:/Users/Nahida/Documents/XMLY Flutter\\dist\\XMPlus-1.0.0-windows-x64\\tools\\ffmpeg",
+    "tools": [
+      {
+        "name": "ffmpeg.exe",
+        "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\dist\\XMPlus-1.0.0-windows-x64\\tools\\ffmpeg\\ffmpeg.exe",
+        "sha256": "3256173f3f8bffd7df12227c68adf68025edb1832273a9530688a7bb1ed8edec",
+        "bytes": 105423872
+      },
+      {
+        "name": "ffprobe.exe",
+        "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\dist\\XMPlus-1.0.0-windows-x64\\tools\\ffmpeg\\ffprobe.exe",
+        "sha256": "f0d36ecbbdd3bcfac3efa078c96c7271c2e68b3810595552ac3b7f17e9a65c52",
+        "bytes": 105221120
+      }
+    ]
+  },
+  "materialsDirectory": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2",
+  "sourceArchives": [
+    {
+      "component": "ffmpeg",
+      "repository": "https://github.com/FFmpeg/FFmpeg",
+      "ref": "946fcce07b6dcd0331c8cc609192aeff5e1924f8",
+      "license": "GPL-3.0-or-later configured build; source also contains LGPL files",
+      "url": "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/946fcce07b6dcd0331c8cc609192aeff5e1924f8",
+      "archiveName": "ffmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/946fcce07b6dcd0331c8cc609192aeff5e1924f8",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\ffmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8.tar.gz",
+      "sha256": "0aa2b1de2a5698b20a23e93d539a9a8e82ca0117496c5bdf05d198805f42bb3b",
+      "bytes": 17333895,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8",
+      "licenseMembers": [
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.GPLv2",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.GPLv3",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.LGPLv2.1",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.LGPLv3",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/LICENSE.md",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/tests/checkasm/ext/LICENSE"
+      ],
+      "buildScriptMembers": [
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/configure",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/doc/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/doc/examples/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/fftools/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/fftools/resources/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/aac/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/aarch64/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/arm/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/bsf/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/hevc/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/loongarch/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/mips/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/neon/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/opus/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/ppc/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/riscv/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/vulkan/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/vvc/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavcodec/x86/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavdevice/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavdevice/riscv/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavfilter/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavfilter/aarch64/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavfilter/dnn/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavfilter/riscv/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavfilter/vulkan/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavfilter/x86/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavformat/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavformat/riscv/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavutil/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavutil/aarch64/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavutil/arm/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavutil/loongarch/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavutil/mips/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavutil/ppc/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavutil/riscv/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavutil/wasm/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libavutil/x86/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libswresample/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libswresample/aarch64/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libswresample/arm/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libswresample/x86/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libswscale/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libswscale/aarch64/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libswscale/arm/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libswscale/loongarch/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libswscale/ppc/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libswscale/riscv/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libswscale/vulkan/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/libswscale/x86/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/tests/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/tests/api/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/tests/checkasm/Makefile",
+        "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/tools/Makefile"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "AMF",
+      "repository": "https://github.com/GPUOpen-LibrariesAndSDKs/AMF",
+      "ref": "c35f613",
+      "license": "MIT",
+      "url": "https://codeload.github.com/GPUOpen-LibrariesAndSDKs/AMF/tar.gz/c35f613",
+      "archiveName": "AMF-c35f613.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/GPUOpen-LibrariesAndSDKs/AMF/tar.gz/c35f613",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\AMF-c35f613.tar.gz",
+      "sha256": "ce70fd8bd51d1418c5c1b8df38fce83407e158787475f4246e27b216b27197e1",
+      "bytes": 398540018,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "AMF-c35f613",
+      "licenseMembers": [
+        "AMF-c35f613/LICENSE.txt",
+        "AMF-c35f613/Thirdparty/amd/AmdDxExt/LICENSE.txt"
+      ],
+      "buildScriptMembers": [],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "AviSynthPlus",
+      "repository": "https://github.com/AviSynth/AviSynthPlus",
+      "ref": "5c82777b",
+      "license": "GPL-2.0-or-later; headers have separate terms",
+      "url": "https://codeload.github.com/AviSynth/AviSynthPlus/tar.gz/5c82777b",
+      "archiveName": "AviSynthPlus-5c82777b.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/AviSynth/AviSynthPlus/tar.gz/5c82777b",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\AviSynthPlus-5c82777b.tar.gz",
+      "sha256": "892e03bd10fe22ce8c5195f5ee6de77dc148f4f760b776b2c4ad6dc56979f5ff",
+      "bytes": 10818489,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "AviSynthPlus-5c82777b",
+      "licenseMembers": [
+        "AviSynthPlus-5c82777b/distrib/docs/english/source/avisynthdoc/FilterSDK/SDKLicense.rst",
+        "AviSynthPlus-5c82777b/distrib/docs/english/source/avisynthdoc/license.rst"
+      ],
+      "buildScriptMembers": [
+        "AviSynthPlus-5c82777b/CMakeLists.txt",
+        "AviSynthPlus-5c82777b/avs_core/CMakeLists.txt",
+        "AviSynthPlus-5c82777b/plugins/CMakeLists.txt",
+        "AviSynthPlus-5c82777b/plugins/ConvertStacked/CMakeLists.txt",
+        "AviSynthPlus-5c82777b/plugins/DirectShowSource/CMakeLists.txt",
+        "AviSynthPlus-5c82777b/plugins/ImageSeq/CMakeLists.txt",
+        "AviSynthPlus-5c82777b/plugins/Shibatch/CMakeLists.txt",
+        "AviSynthPlus-5c82777b/plugins/TimeStretch/CMakeLists.txt",
+        "AviSynthPlus-5c82777b/plugins/VDubFilter/CMakeLists.txt",
+        "AviSynthPlus-5c82777b/plugins/VFAPIFilter/CMakeLists.txt"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "ffnvcodec",
+      "repository": "https://github.com/FFmpeg/nv-codec-headers",
+      "ref": "eddcea9",
+      "license": "MIT",
+      "url": "https://codeload.github.com/FFmpeg/nv-codec-headers/tar.gz/eddcea9",
+      "archiveName": "ffnvcodec-eddcea9.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/FFmpeg/nv-codec-headers/tar.gz/eddcea9",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\ffnvcodec-eddcea9.tar.gz",
+      "sha256": "069b81f333268de28c91d85276d0b9ded7bcaa9ba1fd3a03574ec98c875c2597",
+      "bytes": 86239,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "nv-codec-headers-eddcea9",
+      "licenseMembers": [],
+      "buildScriptMembers": [
+        "nv-codec-headers-eddcea9/Makefile"
+      ],
+      "licenseNoticeLocation": "First comment in each include/ffnvcodec/*.h; copied verbatim into THIRD-PARTY-LICENSES.txt",
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "freetype",
+      "repository": "https://github.com/freetype/freetype",
+      "ref": "VER-2-14-3",
+      "license": "FTL OR GPL-2.0-only",
+      "url": "https://codeload.github.com/freetype/freetype/tar.gz/VER-2-14-3",
+      "archiveName": "freetype-VER-2-14-3.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/freetype/freetype/tar.gz/VER-2-14-3",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\freetype-VER-2-14-3.tar.gz",
+      "sha256": "dc49de6b01a266eef4876a4dd34d9842c475d3e28ff2eff63bd2fb760ab56261",
+      "bytes": 2515533,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "freetype-VER-2-14-3",
+      "licenseMembers": [
+        "freetype-VER-2-14-3/LICENSE.TXT",
+        "freetype-VER-2-14-3/docs/FTL.TXT"
+      ],
+      "buildScriptMembers": [
+        "freetype-VER-2-14-3/CMakeLists.txt",
+        "freetype-VER-2-14-3/Makefile",
+        "freetype-VER-2-14-3/autogen.sh",
+        "freetype-VER-2-14-3/configure",
+        "freetype-VER-2-14-3/meson.build",
+        "freetype-VER-2-14-3/tests/meson.build"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "fribidi",
+      "repository": "https://github.com/fribidi/fribidi",
+      "ref": "c928e4c",
+      "license": "LGPL-2.1-or-later",
+      "url": "https://codeload.github.com/fribidi/fribidi/tar.gz/c928e4c",
+      "archiveName": "fribidi-c928e4c.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/fribidi/fribidi/tar.gz/c928e4c",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\fribidi-c928e4c.tar.gz",
+      "sha256": "1558b708dee122ae3c88926d4d2ba4eb91fa3612af62cd6fe0ab07d623d09d8b",
+      "bytes": 2143702,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "fribidi-c928e4c",
+      "licenseMembers": [
+        "fribidi-c928e4c/COPYING"
+      ],
+      "buildScriptMembers": [
+        "fribidi-c928e4c/Makefile.am",
+        "fribidi-c928e4c/autogen.sh",
+        "fribidi-c928e4c/bin/Makefile.am",
+        "fribidi-c928e4c/bin/meson.build",
+        "fribidi-c928e4c/configure.ac",
+        "fribidi-c928e4c/doc/Makefile.am",
+        "fribidi-c928e4c/doc/meson.build",
+        "fribidi-c928e4c/gen.tab/Makefile.am",
+        "fribidi-c928e4c/gen.tab/meson.build",
+        "fribidi-c928e4c/lib/Makefile.am",
+        "fribidi-c928e4c/lib/meson.build",
+        "fribidi-c928e4c/meson.build",
+        "fribidi-c928e4c/test/Makefile.am",
+        "fribidi-c928e4c/test/meson.build",
+        "fribidi-c928e4c/test/unicode-conformance/Makefile.am",
+        "fribidi-c928e4c/test/unicode-conformance/meson.build"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "harfbuzz",
+      "repository": "https://github.com/harfbuzz/harfbuzz",
+      "ref": "64e2b532",
+      "license": "MIT and bundled notices",
+      "url": "https://codeload.github.com/harfbuzz/harfbuzz/tar.gz/64e2b532",
+      "archiveName": "harfbuzz-64e2b532.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/harfbuzz/harfbuzz/tar.gz/64e2b532",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\harfbuzz-64e2b532.tar.gz",
+      "sha256": "e20f69214884680a07e7ff91cb938ea161be9b93c381cea5cdbc2cbd8f08135f",
+      "bytes": 38770151,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "harfbuzz-64e2b532",
+      "licenseMembers": [
+        "harfbuzz-64e2b532/COPYING",
+        "harfbuzz-64e2b532/perf/texts/COPYING",
+        "harfbuzz-64e2b532/src/ms-use/COPYING",
+        "harfbuzz-64e2b532/test/COPYING"
+      ],
+      "buildScriptMembers": [
+        "harfbuzz-64e2b532/CMakeLists.txt",
+        "harfbuzz-64e2b532/docs/meson.build",
+        "harfbuzz-64e2b532/meson.build",
+        "harfbuzz-64e2b532/perf/meson.build",
+        "harfbuzz-64e2b532/src/meson.build",
+        "harfbuzz-64e2b532/src/rust/meson.build",
+        "harfbuzz-64e2b532/test/api/meson.build",
+        "harfbuzz-64e2b532/test/fuzzing/meson.build",
+        "harfbuzz-64e2b532/test/meson.build",
+        "harfbuzz-64e2b532/test/shape/meson.build",
+        "harfbuzz-64e2b532/test/subset/meson.build",
+        "harfbuzz-64e2b532/test/threads/meson.build",
+        "harfbuzz-64e2b532/test/vector/meson.build",
+        "harfbuzz-64e2b532/util/gpu/meson.build",
+        "harfbuzz-64e2b532/util/meson.build"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "libass",
+      "repository": "https://github.com/libass/libass",
+      "ref": "b2fe9d8",
+      "license": "ISC",
+      "url": "https://codeload.github.com/libass/libass/tar.gz/b2fe9d8",
+      "archiveName": "libass-b2fe9d8.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/libass/libass/tar.gz/b2fe9d8",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\libass-b2fe9d8.tar.gz",
+      "sha256": "6192ca22c747f23412cdebb6ed3abcc208e964fb87c0e25057b72af3deef14d5",
+      "bytes": 352283,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "libass-b2fe9d8",
+      "licenseMembers": [
+        "libass-b2fe9d8/COPYING"
+      ],
+      "buildScriptMembers": [
+        "libass-b2fe9d8/Makefile.am",
+        "libass-b2fe9d8/autogen.sh",
+        "libass-b2fe9d8/checkasm/meson.build",
+        "libass-b2fe9d8/compare/meson.build",
+        "libass-b2fe9d8/configure.ac",
+        "libass-b2fe9d8/fuzz/meson.build",
+        "libass-b2fe9d8/libass/ass/meson.build",
+        "libass-b2fe9d8/libass/meson.build",
+        "libass-b2fe9d8/meson.build",
+        "libass-b2fe9d8/profile/meson.build",
+        "libass-b2fe9d8/test/meson.build"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "libgme",
+      "repository": "https://github.com/libgme/game-music-emu",
+      "ref": "0.6.6",
+      "license": "LGPL-2.1-or-later",
+      "url": "https://codeload.github.com/libgme/game-music-emu/tar.gz/0.6.6",
+      "archiveName": "libgme-0.6.6.tar.gz",
+      "status": "missing",
+      "error": "HTTP Error 404: Not Found",
+      "missing": [
+        "Publisher version has no matching release tag at investigated primary endpoint; exact development commit not supplied. No different version substituted."
+      ]
+    },
+    {
+      "component": "libssh",
+      "repository": "https://github.com/libssh/libssh-mirror",
+      "ref": "libssh-0.12.2",
+      "license": "LGPL-2.1-or-later; upstream-maintained mirror",
+      "url": "https://codeload.github.com/libssh/libssh-mirror/tar.gz/libssh-0.12.2",
+      "archiveName": "libssh-libssh-0.12.2.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/libssh/libssh-mirror/tar.gz/libssh-0.12.2",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\libssh-libssh-0.12.2.tar.gz",
+      "sha256": "92fef8a348070a6786667ed724d5e808d2530464bac37559a8d59c70ab1f1a83",
+      "bytes": 1115332,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "libssh-mirror-libssh-0.12.2",
+      "licenseMembers": [
+        "libssh-mirror-libssh-0.12.2/COPYING",
+        "libssh-mirror-libssh-0.12.2/cmake/Modules/COPYING-CMAKE-SCRIPTS"
+      ],
+      "buildScriptMembers": [
+        "libssh-mirror-libssh-0.12.2/CMakeLists.txt",
+        "libssh-mirror-libssh-0.12.2/doc/CMakeLists.txt",
+        "libssh-mirror-libssh-0.12.2/examples/CMakeLists.txt",
+        "libssh-mirror-libssh-0.12.2/include/CMakeLists.txt",
+        "libssh-mirror-libssh-0.12.2/include/libssh/CMakeLists.txt",
+        "libssh-mirror-libssh-0.12.2/src/CMakeLists.txt",
+        "libssh-mirror-libssh-0.12.2/tests/CMakeLists.txt",
+        "libssh-mirror-libssh-0.12.2/tests/benchmarks/CMakeLists.txt",
+        "libssh-mirror-libssh-0.12.2/tests/client/CMakeLists.txt",
+        "libssh-mirror-libssh-0.12.2/tests/external_override/CMakeLists.txt",
+        "libssh-mirror-libssh-0.12.2/tests/fuzz/CMakeLists.txt",
+        "libssh-mirror-libssh-0.12.2/tests/pkd/CMakeLists.txt",
+        "libssh-mirror-libssh-0.12.2/tests/server/CMakeLists.txt",
+        "libssh-mirror-libssh-0.12.2/tests/unittests/CMakeLists.txt"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "libtheora",
+      "repository": "https://github.com/xiph/theora",
+      "ref": "v1.2.0",
+      "license": "BSD-3-Clause",
+      "url": "https://codeload.github.com/xiph/theora/tar.gz/v1.2.0",
+      "archiveName": "libtheora-v1.2.0.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/xiph/theora/tar.gz/v1.2.0",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\libtheora-v1.2.0.tar.gz",
+      "sha256": "e0c35771b425c32a052ffb358a2aed14219340ab850b48dc85b01939c0513a31",
+      "bytes": 1220808,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "theora-1.2.0",
+      "licenseMembers": [
+        "theora-1.2.0/COPYING",
+        "theora-1.2.0/LICENSE"
+      ],
+      "buildScriptMembers": [
+        "theora-1.2.0/Makefile.am",
+        "theora-1.2.0/autogen.sh",
+        "theora-1.2.0/configure.ac",
+        "theora-1.2.0/doc/Makefile.am",
+        "theora-1.2.0/doc/spec/Makefile.am",
+        "theora-1.2.0/examples/Makefile.am",
+        "theora-1.2.0/include/Makefile.am",
+        "theora-1.2.0/include/theora/Makefile.am",
+        "theora-1.2.0/lib/Makefile.am",
+        "theora-1.2.0/m4/Makefile.am",
+        "theora-1.2.0/tests/Makefile.am",
+        "theora-1.2.0/win32/xmingw32/Makefile"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "libwebp",
+      "repository": "https://github.com/webmproject/libwebp",
+      "ref": "1f34635",
+      "license": "BSD-3-Clause",
+      "url": "https://codeload.github.com/webmproject/libwebp/tar.gz/1f34635",
+      "archiveName": "libwebp-1f34635.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/webmproject/libwebp/tar.gz/1f34635",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\libwebp-1f34635.tar.gz",
+      "sha256": "ab9b403b5929097b2f2f3d53da9b0138ae69eb4d86ccf8b4a01dc24cd31f246e",
+      "bytes": 3865173,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "libwebp-1f34635",
+      "licenseMembers": [
+        "libwebp-1f34635/COPYING",
+        "libwebp-1f34635/PATENTS"
+      ],
+      "buildScriptMembers": [
+        "libwebp-1f34635/CMakeLists.txt",
+        "libwebp-1f34635/Makefile.am",
+        "libwebp-1f34635/autogen.sh",
+        "libwebp-1f34635/configure.ac",
+        "libwebp-1f34635/examples/Makefile.am",
+        "libwebp-1f34635/extras/Makefile.am",
+        "libwebp-1f34635/imageio/Makefile.am",
+        "libwebp-1f34635/man/Makefile.am",
+        "libwebp-1f34635/sharpyuv/Makefile.am",
+        "libwebp-1f34635/src/Makefile.am",
+        "libwebp-1f34635/src/dec/Makefile.am",
+        "libwebp-1f34635/src/demux/Makefile.am",
+        "libwebp-1f34635/src/dsp/Makefile.am",
+        "libwebp-1f34635/src/enc/Makefile.am",
+        "libwebp-1f34635/src/mux/Makefile.am",
+        "libwebp-1f34635/src/utils/Makefile.am",
+        "libwebp-1f34635/tests/fuzzer/CMakeLists.txt"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "openal-soft",
+      "repository": "https://github.com/kcat/openal-soft",
+      "ref": "7532541",
+      "license": "LGPL-2.0-or-later",
+      "url": "https://codeload.github.com/kcat/openal-soft/tar.gz/7532541",
+      "archiveName": "openal-soft-7532541.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/kcat/openal-soft/tar.gz/7532541",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\openal-soft-7532541.tar.gz",
+      "sha256": "ecc41c1bb7a9b5a1da7d834b3af39bedbdd018747d2f2804245bbf04bbe7cd29",
+      "bytes": 1608736,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "openal-soft-7532541",
+      "licenseMembers": [
+        "openal-soft-7532541/COPYING",
+        "openal-soft-7532541/LICENSE-pffft",
+        "openal-soft-7532541/LICENSE.Apache-2.0.txt",
+        "openal-soft-7532541/LICENSE.BSD-3-Clause.txt",
+        "openal-soft-7532541/fmt-11.2.0/LICENSE",
+        "openal-soft-7532541/gsl/LICENSE"
+      ],
+      "buildScriptMembers": [
+        "openal-soft-7532541/CMakeLists.txt",
+        "openal-soft-7532541/fmt-11.2.0/CMakeLists.txt",
+        "openal-soft-7532541/gsl/CMakeLists.txt",
+        "openal-soft-7532541/gsl/include/CMakeLists.txt",
+        "openal-soft-7532541/tests/CMakeLists.txt",
+        "openal-soft-7532541/utils/alsoft-config/CMakeLists.txt"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "openjpeg2",
+      "repository": "https://github.com/uclouvain/openjpeg",
+      "ref": "v2.5.4",
+      "license": "BSD-2-Clause",
+      "url": "https://codeload.github.com/uclouvain/openjpeg/tar.gz/v2.5.4",
+      "archiveName": "openjpeg2-v2.5.4.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/uclouvain/openjpeg/tar.gz/v2.5.4",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\openjpeg2-v2.5.4.tar.gz",
+      "sha256": "a695fbe19c0165f295a8531b1e4e855cd94d0875d2f88ec4b61080677e27188a",
+      "bytes": 2157028,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "openjpeg-2.5.4",
+      "licenseMembers": [
+        "openjpeg-2.5.4/LICENSE",
+        "openjpeg-2.5.4/thirdparty/astyle/LICENSE.md",
+        "openjpeg-2.5.4/thirdparty/liblcms2/COPYING",
+        "openjpeg-2.5.4/thirdparty/libpng/LICENSE"
+      ],
+      "buildScriptMembers": [
+        "openjpeg-2.5.4/CMakeLists.txt",
+        "openjpeg-2.5.4/doc/CMakeLists.txt",
+        "openjpeg-2.5.4/src/CMakeLists.txt",
+        "openjpeg-2.5.4/src/bin/CMakeLists.txt",
+        "openjpeg-2.5.4/src/lib/CMakeLists.txt",
+        "openjpeg-2.5.4/tests/CMakeLists.txt",
+        "openjpeg-2.5.4/tests/conformance/CMakeLists.txt",
+        "openjpeg-2.5.4/tests/nonregression/CMakeLists.txt",
+        "openjpeg-2.5.4/tests/unit/CMakeLists.txt",
+        "openjpeg-2.5.4/thirdparty/CMakeLists.txt",
+        "openjpeg-2.5.4/thirdparty/astyle/CMakeLists.txt",
+        "openjpeg-2.5.4/thirdparty/liblcms2/CMakeLists.txt",
+        "openjpeg-2.5.4/thirdparty/libpng/CMakeLists.txt",
+        "openjpeg-2.5.4/thirdparty/libtiff/CMakeLists.txt",
+        "openjpeg-2.5.4/thirdparty/libz/CMakeLists.txt",
+        "openjpeg-2.5.4/wrapping/CMakeLists.txt",
+        "openjpeg-2.5.4/wrapping/java/CMakeLists.txt"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "openmpt",
+      "repository": "https://github.com/OpenMPT/openmpt",
+      "ref": "6c0a06bc",
+      "license": "BSD-3-Clause and bundled notices",
+      "url": "https://codeload.github.com/OpenMPT/openmpt/tar.gz/6c0a06bc",
+      "archiveName": "openmpt-6c0a06bc.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/OpenMPT/openmpt/tar.gz/6c0a06bc",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\openmpt-6c0a06bc.tar.gz",
+      "sha256": "cdeb24cfb90b3841b49c8bf017012b905a82a48b06fac58e1544fbf8e64fb357",
+      "bytes": 17408670,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "openmpt-6c0a06bc",
+      "licenseMembers": [
+        "openmpt-6c0a06bc/LICENSE",
+        "openmpt-6c0a06bc/contrib/libmodplug-0.8.8.5/LICENSE",
+        "openmpt-6c0a06bc/contrib/libmodplug-0.8.9.0/LICENSE",
+        "openmpt-6c0a06bc/include/ancient/LICENSE",
+        "openmpt-6c0a06bc/include/flac/COPYING.Xiph",
+        "openmpt-6c0a06bc/include/genie/LICENSE",
+        "openmpt-6c0a06bc/include/lame/COPYING",
+        "openmpt-6c0a06bc/include/lhasa/COPYING",
+        "openmpt-6c0a06bc/include/minimp3/LICENSE",
+        "openmpt-6c0a06bc/include/miniz/LICENSE",
+        "openmpt-6c0a06bc/include/mpg123/COPYING",
+        "openmpt-6c0a06bc/include/nlohmann-json/LICENSE.MIT",
+        "openmpt-6c0a06bc/include/ogg/COPYING",
+        "openmpt-6c0a06bc/include/opus/COPYING",
+        "openmpt-6c0a06bc/include/opusenc/COPYING",
+        "openmpt-6c0a06bc/include/opusfile/COPYING",
+        "openmpt-6c0a06bc/include/portaudio/LICENSE.txt",
+        "openmpt-6c0a06bc/include/premake/LICENSE.txt",
+        "openmpt-6c0a06bc/include/pugixml/LICENSE.md",
+        "openmpt-6c0a06bc/include/r8brain/LICENSE",
+        "openmpt-6c0a06bc/include/rtmidi/License.txt",
+        "openmpt-6c0a06bc/include/soundtouch/COPYING.TXT",
+        "openmpt-6c0a06bc/include/unrar/license.txt",
+        "openmpt-6c0a06bc/include/vorbis/COPYING",
+        "openmpt-6c0a06bc/include/zlib/LICENSE",
+        "openmpt-6c0a06bc/src/mpt/LICENSE.BSD-3-Clause.txt",
+        "openmpt-6c0a06bc/src/mpt/LICENSE.BSL-1.0.txt"
+      ],
+      "buildScriptMembers": [
+        "openmpt-6c0a06bc/Makefile",
+        "openmpt-6c0a06bc/build/autotools/Makefile.am",
+        "openmpt-6c0a06bc/build/autotools/configure.ac",
+        "openmpt-6c0a06bc/contrib/libmodplug-0.8.8.5/Makefile.am",
+        "openmpt-6c0a06bc/contrib/libmodplug-0.8.8.5/autogen.sh",
+        "openmpt-6c0a06bc/contrib/libmodplug-0.8.8.5/configure.ac",
+        "openmpt-6c0a06bc/contrib/libmodplug-0.8.9.0/Makefile.am",
+        "openmpt-6c0a06bc/contrib/libmodplug-0.8.9.0/autogen.sh",
+        "openmpt-6c0a06bc/contrib/libmodplug-0.8.9.0/configure.ac",
+        "openmpt-6c0a06bc/include/lhasa/Makefile.am",
+        "openmpt-6c0a06bc/include/lhasa/autogen.sh",
+        "openmpt-6c0a06bc/include/lhasa/configure.ac"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "opus",
+      "repository": "https://github.com/xiph/opus",
+      "ref": "503d81b1",
+      "license": "BSD-3-Clause and patent grant",
+      "url": "https://codeload.github.com/xiph/opus/tar.gz/503d81b1",
+      "archiveName": "opus-503d81b1.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/xiph/opus/tar.gz/503d81b1",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\opus-503d81b1.tar.gz",
+      "sha256": "05929de55643094d4a024459f22629d4af45aa74ba5371919dd75de63661bb7a",
+      "bytes": 4956173,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "opus-503d81b1",
+      "licenseMembers": [
+        "opus-503d81b1/COPYING",
+        "opus-503d81b1/LICENSE_PLEASE_READ.txt"
+      ],
+      "buildScriptMembers": [
+        "opus-503d81b1/CMakeLists.txt",
+        "opus-503d81b1/Makefile.am",
+        "opus-503d81b1/autogen.sh",
+        "opus-503d81b1/celt/arm/meson.build",
+        "opus-503d81b1/celt/dump_modes/Makefile",
+        "opus-503d81b1/celt/meson.build",
+        "opus-503d81b1/celt/tests/meson.build",
+        "opus-503d81b1/configure.ac",
+        "opus-503d81b1/dnn/meson.build",
+        "opus-503d81b1/doc/Makefile.am",
+        "opus-503d81b1/doc/meson.build",
+        "opus-503d81b1/include/meson.build",
+        "opus-503d81b1/meson.build",
+        "opus-503d81b1/silk/meson.build",
+        "opus-503d81b1/silk/tests/meson.build",
+        "opus-503d81b1/src/meson.build",
+        "opus-503d81b1/tests/meson.build"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "rubberband",
+      "repository": "https://github.com/breakfastquay/rubberband",
+      "ref": "v4.0.0",
+      "license": "GPL-2.0-or-later",
+      "url": "https://codeload.github.com/breakfastquay/rubberband/tar.gz/v4.0.0",
+      "archiveName": "rubberband-v4.0.0.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/breakfastquay/rubberband/tar.gz/v4.0.0",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\rubberband-v4.0.0.tar.gz",
+      "sha256": "24300f48a8014b7c863b573a9647e61b1b19b37875e2cdd92005e64c6424d266",
+      "bytes": 290305,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "rubberband-4.0.0",
+      "licenseMembers": [
+        "rubberband-4.0.0/COPYING",
+        "rubberband-4.0.0/src/ext/kissfft/COPYING",
+        "rubberband-4.0.0/src/ext/speex/COPYING"
+      ],
+      "buildScriptMembers": [
+        "rubberband-4.0.0/meson.build"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "SDL",
+      "repository": "https://github.com/libsdl-org/SDL",
+      "ref": "b90ac9502",
+      "license": "Zlib",
+      "url": "https://codeload.github.com/libsdl-org/SDL/tar.gz/b90ac9502",
+      "archiveName": "SDL-b90ac9502.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/libsdl-org/SDL/tar.gz/b90ac9502",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\SDL-b90ac9502.tar.gz",
+      "sha256": "8cc45c62189eec3a3edd74150f25e0d3629b6f0d2f59275a082ef72f8ec42dfe",
+      "bytes": 7903996,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "SDL-b90ac9502",
+      "licenseMembers": [
+        "SDL-b90ac9502/LICENSE.txt",
+        "SDL-b90ac9502/src/hidapi/LICENSE-bsd.txt",
+        "SDL-b90ac9502/src/hidapi/LICENSE-gpl3.txt",
+        "SDL-b90ac9502/src/hidapi/LICENSE-orig.txt",
+        "SDL-b90ac9502/src/hidapi/LICENSE.txt",
+        "SDL-b90ac9502/src/video/yuv2rgb/LICENSE",
+        "SDL-b90ac9502/test/COPYING",
+        "SDL-b90ac9502/visualtest/COPYING.txt"
+      ],
+      "buildScriptMembers": [
+        "SDL-b90ac9502/.github/cmake/CMakeLists.txt",
+        "SDL-b90ac9502/CMakeLists.txt",
+        "SDL-b90ac9502/autogen.sh",
+        "SDL-b90ac9502/cmake/test/CMakeLists.txt",
+        "SDL-b90ac9502/configure",
+        "SDL-b90ac9502/configure.ac",
+        "SDL-b90ac9502/mingw/pkg-support/Makefile",
+        "SDL-b90ac9502/src/hidapi/Makefile.am",
+        "SDL-b90ac9502/src/hidapi/bootstrap",
+        "SDL-b90ac9502/src/hidapi/configure.ac",
+        "SDL-b90ac9502/test/CMakeLists.txt",
+        "SDL-b90ac9502/test/autogen.sh",
+        "SDL-b90ac9502/test/configure",
+        "SDL-b90ac9502/test/configure.ac",
+        "SDL-b90ac9502/test/nacl/Makefile",
+        "SDL-b90ac9502/visualtest/autogen.sh",
+        "SDL-b90ac9502/visualtest/configure",
+        "SDL-b90ac9502/visualtest/configure.ac"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "speex",
+      "repository": "https://github.com/xiph/speex",
+      "ref": "0589522",
+      "license": "BSD-3-Clause",
+      "url": "https://codeload.github.com/xiph/speex/tar.gz/0589522",
+      "archiveName": "speex-0589522.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/xiph/speex/tar.gz/0589522",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\speex-0589522.tar.gz",
+      "sha256": "1f811553a368b00a65da4b5555daaecdae3ece4b9ec5ee120733509ad29a09a4",
+      "bytes": 1050563,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "speex-0589522",
+      "licenseMembers": [
+        "speex-0589522/COPYING",
+        "speex-0589522/html/patents.html"
+      ],
+      "buildScriptMembers": [
+        "speex-0589522/Makefile.am",
+        "speex-0589522/autogen.sh",
+        "speex-0589522/configure.ac",
+        "speex-0589522/doc/Makefile.am",
+        "speex-0589522/doc/meson.build",
+        "speex-0589522/include/Makefile.am",
+        "speex-0589522/include/speex/Makefile.am",
+        "speex-0589522/include/speex/meson.build",
+        "speex-0589522/libspeex/Makefile.am",
+        "speex-0589522/libspeex/meson.build",
+        "speex-0589522/meson.build",
+        "speex-0589522/src/Makefile.am",
+        "speex-0589522/src/meson.build",
+        "speex-0589522/symbian/Makefile.am",
+        "speex-0589522/ti/Makefile.am",
+        "speex-0589522/ti/speex_C54_test/Makefile.am",
+        "speex-0589522/ti/speex_C55_test/Makefile.am",
+        "speex-0589522/ti/speex_C64_test/Makefile.am",
+        "speex-0589522/win32/Makefile.am",
+        "speex-0589522/win32/VS2003/Makefile.am",
+        "speex-0589522/win32/VS2005/Makefile.am",
+        "speex-0589522/win32/VS2008/Makefile.am",
+        "speex-0589522/win32/libspeex/Makefile.am",
+        "speex-0589522/win32/speexdec/Makefile.am",
+        "speex-0589522/win32/speexenc/Makefile.am"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "srt",
+      "repository": "https://github.com/Haivision/srt",
+      "ref": "cae8f62",
+      "license": "MPL-2.0",
+      "url": "https://codeload.github.com/Haivision/srt/tar.gz/cae8f62",
+      "archiveName": "srt-cae8f62.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/Haivision/srt/tar.gz/cae8f62",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\srt-cae8f62.tar.gz",
+      "sha256": "ff2588e17a407db7ca5ebd691eac41d4219708905605422ccb735e9221b561e8",
+      "bytes": 1801645,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "srt-cae8f62",
+      "licenseMembers": [
+        "srt-cae8f62/LICENSE"
+      ],
+      "buildScriptMembers": [
+        "srt-cae8f62/CMakeLists.txt",
+        "srt-cae8f62/configure",
+        "srt-cae8f62/examples/fork-test/Makefile"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "VAAPI",
+      "repository": "https://github.com/intel/libva",
+      "ref": "2.25.0",
+      "license": "MIT",
+      "url": "https://codeload.github.com/intel/libva/tar.gz/2.25.0",
+      "archiveName": "VAAPI-2.25.0.tar.gz",
+      "status": "missing",
+      "error": "HTTP Error 404: Not Found",
+      "missing": [
+        "Publisher version has no matching release tag at investigated primary endpoint; exact development commit not supplied. No different version substituted."
+      ]
+    },
+    {
+      "component": "vidstab",
+      "repository": "https://github.com/georgmartius/vid.stab",
+      "ref": "e2445c4",
+      "license": "LGPL-2.1-or-later at pinned e2445c4; relicensed after GPL v1.1.2 (see archive LICENSE and RELICENSE.md)",
+      "url": "https://codeload.github.com/georgmartius/vid.stab/tar.gz/e2445c4",
+      "archiveName": "vidstab-e2445c4.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/georgmartius/vid.stab/tar.gz/e2445c4",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\vidstab-e2445c4.tar.gz",
+      "sha256": "2da8a4b945746647a6d9df0c2745475cf527832e75bbbb4a1ade25e7b8c23619",
+      "bytes": 316688,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "vid.stab-e2445c4",
+      "licenseMembers": [
+        "vid.stab-e2445c4/COPYING.LESSER",
+        "vid.stab-e2445c4/LICENSE",
+        "vid.stab-e2445c4/RELICENSE.md"
+      ],
+      "buildScriptMembers": [
+        "vid.stab-e2445c4/CMakeLists.txt",
+        "vid.stab-e2445c4/tests/CMakeLists.txt"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "vmaf",
+      "repository": "https://github.com/Netflix/vmaf",
+      "ref": "f85a8536",
+      "license": "BSD-2-Clause-Patent and bundled notices",
+      "url": "https://codeload.github.com/Netflix/vmaf/tar.gz/f85a8536",
+      "archiveName": "vmaf-f85a8536.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/Netflix/vmaf/tar.gz/f85a8536",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\vmaf-f85a8536.tar.gz",
+      "sha256": "58378e2ae166a8f192bd9ac033be1eb6f18c016afd67e6268d4d85580f42cd4c",
+      "bytes": 18589050,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "vmaf-f85a8536",
+      "licenseMembers": [
+        "vmaf-f85a8536/LICENSE"
+      ],
+      "buildScriptMembers": [
+        "vmaf-f85a8536/Makefile",
+        "vmaf-f85a8536/libvmaf/doc/meson.build",
+        "vmaf-f85a8536/libvmaf/include/meson.build",
+        "vmaf-f85a8536/libvmaf/meson.build",
+        "vmaf-f85a8536/libvmaf/src/meson.build",
+        "vmaf-f85a8536/libvmaf/test/meson.build",
+        "vmaf-f85a8536/libvmaf/tools/meson.build"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "vorbis",
+      "repository": "https://github.com/xiph/vorbis",
+      "ref": "1b75110b",
+      "license": "BSD-3-Clause",
+      "url": "https://codeload.github.com/xiph/vorbis/tar.gz/1b75110b",
+      "archiveName": "vorbis-1b75110b.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/xiph/vorbis/tar.gz/1b75110b",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\vorbis-1b75110b.tar.gz",
+      "sha256": "95d38f6743258dcf9f223c6838cb831a89ca14dcf5724dc5e4fb525371fdd7c0",
+      "bytes": 1244585,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "vorbis-1b75110b",
+      "licenseMembers": [
+        "vorbis-1b75110b/COPYING",
+        "vorbis-1b75110b/debian/copyright"
+      ],
+      "buildScriptMembers": [
+        "vorbis-1b75110b/CMakeLists.txt",
+        "vorbis-1b75110b/Makefile.am",
+        "vorbis-1b75110b/autogen.sh",
+        "vorbis-1b75110b/configure.ac",
+        "vorbis-1b75110b/doc/Makefile.am",
+        "vorbis-1b75110b/doc/libvorbis/Makefile.am",
+        "vorbis-1b75110b/doc/vorbisenc/Makefile.am",
+        "vorbis-1b75110b/doc/vorbisfile/Makefile.am",
+        "vorbis-1b75110b/examples/Makefile.am",
+        "vorbis-1b75110b/include/Makefile.am",
+        "vorbis-1b75110b/include/vorbis/Makefile.am",
+        "vorbis-1b75110b/lib/CMakeLists.txt",
+        "vorbis-1b75110b/lib/Makefile.am",
+        "vorbis-1b75110b/lib/books/Makefile.am",
+        "vorbis-1b75110b/lib/modes/Makefile.am",
+        "vorbis-1b75110b/m4/Makefile.am",
+        "vorbis-1b75110b/test/CMakeLists.txt",
+        "vorbis-1b75110b/test/Makefile.am",
+        "vorbis-1b75110b/vq/Makefile.am"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "VPL",
+      "repository": "https://github.com/intel/libvpl",
+      "ref": "v2.17.0",
+      "license": "MIT",
+      "url": "https://codeload.github.com/intel/libvpl/tar.gz/v2.17.0",
+      "archiveName": "VPL-v2.17.0.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/intel/libvpl/tar.gz/v2.17.0",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\VPL-v2.17.0.tar.gz",
+      "sha256": "4de3e2faf1e8307fb282e4a43f443191810f6a6b0a484fffa7995ba1c814c6ec",
+      "bytes": 12974961,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "libvpl-2.17.0",
+      "licenseMembers": [
+        "libvpl-2.17.0/LICENSE",
+        "libvpl-2.17.0/examples/api1x_core/legacy-decode/License.txt",
+        "libvpl-2.17.0/examples/api1x_core/legacy-encode/License.txt",
+        "libvpl-2.17.0/examples/api1x_core/legacy-vpp/License.txt",
+        "libvpl-2.17.0/examples/api2x/hello-decode/License.txt",
+        "libvpl-2.17.0/examples/api2x/hello-decvpp/License.txt",
+        "libvpl-2.17.0/examples/api2x/hello-encode-jpeg/License.txt",
+        "libvpl-2.17.0/examples/api2x/hello-encode/License.txt",
+        "libvpl-2.17.0/examples/api2x/hello-sharing-dx11/License.txt",
+        "libvpl-2.17.0/examples/api2x/hello-sharing-ocl/License.txt",
+        "libvpl-2.17.0/examples/api2x/hello-sharing-vaapi/License.txt",
+        "libvpl-2.17.0/examples/api2x/hello-transcode/License.txt",
+        "libvpl-2.17.0/examples/api2x/hello-vpp/License.txt",
+        "libvpl-2.17.0/examples/interop/vpl-infer/License.txt",
+        "libvpl-2.17.0/examples/tutorials/01_transition/License.txt"
+      ],
+      "buildScriptMembers": [
+        "libvpl-2.17.0/CMakeLists.txt",
+        "libvpl-2.17.0/api/CMakeLists.txt",
+        "libvpl-2.17.0/env/CMakeLists.txt",
+        "libvpl-2.17.0/examples/CMakeLists.txt",
+        "libvpl-2.17.0/libvpl/CMakeLists.txt",
+        "libvpl-2.17.0/libvpl/test/CMakeLists.txt",
+        "libvpl-2.17.0/script/bootstrap"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "vpx",
+      "repository": "https://github.com/webmproject/libvpx",
+      "ref": "d2413e2ca",
+      "license": "BSD-3-Clause and patent grant",
+      "url": "https://codeload.github.com/webmproject/libvpx/tar.gz/d2413e2ca",
+      "archiveName": "vpx-d2413e2ca.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/webmproject/libvpx/tar.gz/d2413e2ca",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\vpx-d2413e2ca.tar.gz",
+      "sha256": "80436e84c1ab80984916e6ec86aa8b812a03b251067c733fc2494ff3979c048e",
+      "bytes": 5675767,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "libvpx-d2413e2ca",
+      "licenseMembers": [
+        "libvpx-d2413e2ca/LICENSE",
+        "libvpx-d2413e2ca/PATENTS",
+        "libvpx-d2413e2ca/third_party/googletest/src/LICENSE",
+        "libvpx-d2413e2ca/third_party/libwebm/LICENSE.TXT",
+        "libvpx-d2413e2ca/third_party/libwebm/PATENTS.TXT",
+        "libvpx-d2413e2ca/third_party/libyuv/LICENSE",
+        "libvpx-d2413e2ca/third_party/nalloc/LICENSE",
+        "libvpx-d2413e2ca/third_party/x86inc/LICENSE"
+      ],
+      "buildScriptMembers": [
+        "libvpx-d2413e2ca/build/make/Makefile",
+        "libvpx-d2413e2ca/configure"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "zeromq",
+      "repository": "https://github.com/zeromq/libzmq",
+      "ref": "v4.3.5",
+      "license": "MPL-2.0",
+      "url": "https://codeload.github.com/zeromq/libzmq/tar.gz/v4.3.5",
+      "archiveName": "zeromq-v4.3.5.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/zeromq/libzmq/tar.gz/v4.3.5",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\zeromq-v4.3.5.tar.gz",
+      "sha256": "6c972d1e6a91a0ecd79c3236f04cf0126f2f4dfbbad407d72b4606a7ba93f9c6",
+      "bytes": 875547,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "libzmq-4.3.5",
+      "licenseMembers": [
+        "libzmq-4.3.5/LICENSE",
+        "libzmq-4.3.5/external/sha1/license.txt",
+        "libzmq-4.3.5/external/unity/license.txt",
+        "libzmq-4.3.5/external/wepoll/license.txt",
+        "libzmq-4.3.5/packaging/debian/copyright"
+      ],
+      "buildScriptMembers": [
+        "libzmq-4.3.5/CMakeLists.txt",
+        "libzmq-4.3.5/Makefile.am",
+        "libzmq-4.3.5/autogen.sh",
+        "libzmq-4.3.5/build_qnx/Makefile",
+        "libzmq-4.3.5/build_qnx/nto/Makefile",
+        "libzmq-4.3.5/builds/Makefile.am",
+        "libzmq-4.3.5/builds/deprecated-msvc/Makefile.am",
+        "libzmq-4.3.5/builds/openwrt/Makefile",
+        "libzmq-4.3.5/configure.ac",
+        "libzmq-4.3.5/doc/Makefile.am",
+        "libzmq-4.3.5/tests/CMakeLists.txt",
+        "libzmq-4.3.5/unittests/CMakeLists.txt"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "zimg",
+      "repository": "https://github.com/sekrit-twc/zimg",
+      "ref": "67e0603",
+      "license": "WTFPL",
+      "url": "https://codeload.github.com/sekrit-twc/zimg/tar.gz/67e0603",
+      "archiveName": "zimg-67e0603.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/sekrit-twc/zimg/tar.gz/67e0603",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\zimg-67e0603.tar.gz",
+      "sha256": "2db508300c38cdf2ccf5134ae0d165ad8a6f59667959163e73237f49283f421a",
+      "bytes": 294194,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "zimg-67e0603",
+      "licenseMembers": [
+        "zimg-67e0603/COPYING",
+        "zimg-67e0603/test/extra/musl-libm/COPYRIGHT"
+      ],
+      "buildScriptMembers": [
+        "zimg-67e0603/Makefile.am",
+        "zimg-67e0603/autogen.sh",
+        "zimg-67e0603/configure.ac",
+        "zimg-67e0603/doc/example/Makefile"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "aom",
+      "repository": "https://aomedia.googlesource.com/aom",
+      "ref": "023743a7d7",
+      "license": "BSD-3-Clause and patent grant",
+      "url": "https://aomedia.googlesource.com/aom/+archive/023743a7d7.tar.gz",
+      "archiveName": "aom-023743a7d7.tar.gz",
+      "resolvedUrl": "https://aomedia.googlesource.com/aom/+archive/023743a7d7.tar.gz",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\aom-023743a7d7.tar.gz",
+      "sha256": "27589fb9b6199c6a0fe2d721b6e86a1721427cec032c2f17c00ca4e5571fbb19",
+      "bytes": 6698122,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "",
+      "licenseMembers": [
+        "LICENSE",
+        "PATENTS",
+        "third_party/fastfeat/LICENSE",
+        "third_party/googletest/src/LICENSE",
+        "third_party/highway/LICENSE-BSD3",
+        "third_party/libwebm/LICENSE.TXT",
+        "third_party/libwebm/PATENTS.TXT",
+        "third_party/libyuv/LICENSE",
+        "third_party/vector/LICENSE",
+        "third_party/x86inc/LICENSE"
+      ],
+      "buildScriptMembers": [
+        "CMakeLists.txt",
+        "third_party/googletest/src/CMakeLists.txt"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "cairo",
+      "repository": "https://cairographics.org/releases/",
+      "ref": "1.18.5",
+      "license": "LGPL-2.1-only OR MPL-1.1",
+      "url": "https://cairographics.org/releases/cairo-1.18.5.tar.xz",
+      "archiveName": "cairo-1.18.5.tar.xz",
+      "status": "missing",
+      "error": "HTTP Error 404: Not Found",
+      "missing": [
+        "Publisher version has no matching release tag at investigated primary endpoint; exact development commit not supplied. No different version substituted."
+      ]
+    },
+    {
+      "component": "gsm",
+      "repository": "https://www.quut.com/gsm/",
+      "ref": "1.0.24",
+      "license": "TU-Berlin permissive",
+      "url": "https://www.quut.com/gsm/gsm-1.0.24.tar.gz",
+      "archiveName": "gsm-1.0.24.tar.gz",
+      "resolvedUrl": "https://www.quut.com/gsm/gsm-1.0.24.tar.gz",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\gsm-1.0.24.tar.gz",
+      "sha256": "a3c40c6471928383f4abfcb2e8f24012a1f562be2f17b8d672145d5986681a92",
+      "bytes": 66597,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "gsm-1.0-pl24",
+      "licenseMembers": [
+        "gsm-1.0-pl24/COPYRIGHT"
+      ],
+      "buildScriptMembers": [
+        "gsm-1.0-pl24/Makefile"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "lame",
+      "repository": "https://sourceforge.net/projects/lame/",
+      "ref": "3.100",
+      "license": "LGPL-2.0-or-later",
+      "url": "https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz",
+      "archiveName": "lame-3.100.tar.gz",
+      "resolvedUrl": "https://twds.dl.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz?viasf=1&fid=eb3e28106643eb5c&e=1793900323&st=_fUavScrACL21TylfZCPug",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\lame-3.100.tar.gz",
+      "sha256": "ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e",
+      "bytes": 1524133,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "lame-3.100",
+      "licenseMembers": [
+        "lame-3.100/COPYING",
+        "lame-3.100/LICENSE",
+        "lame-3.100/debian/copyright"
+      ],
+      "buildScriptMembers": [
+        "lame-3.100/configure",
+        "lame-3.100/Makefile.am",
+        "lame-3.100/mac/Makefile.am",
+        "lame-3.100/Dll/Makefile.am",
+        "lame-3.100/doc/Makefile.am",
+        "lame-3.100/doc/html/Makefile.am",
+        "lame-3.100/doc/man/Makefile.am",
+        "lame-3.100/dshow/Makefile.am",
+        "lame-3.100/mpglib/Makefile.am",
+        "lame-3.100/misc/Makefile.am",
+        "lame-3.100/macosx/Makefile.am",
+        "lame-3.100/macosx/English.lproj/Makefile.am",
+        "lame-3.100/macosx/LAME.xcodeproj/Makefile.am",
+        "lame-3.100/frontend/Makefile.am",
+        "lame-3.100/libmp3lame/Makefile.am",
+        "lame-3.100/libmp3lame/vector/Makefile.am",
+        "lame-3.100/libmp3lame/i386/Makefile.am",
+        "lame-3.100/include/Makefile.am",
+        "lame-3.100/ACM/Makefile.am",
+        "lame-3.100/ACM/ddk/Makefile.am",
+        "lame-3.100/ACM/ADbg/Makefile.am",
+        "lame-3.100/ACM/tinyxml/Makefile.am",
+        "lame-3.100/debian/Makefile.am",
+        "lame-3.100/vc_solution/Makefile.am"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "opencore-amr",
+      "repository": "https://sourceforge.net/projects/opencore-amr/",
+      "ref": "0.1.6",
+      "license": "Apache-2.0",
+      "url": "https://downloads.sourceforge.net/project/opencore-amr/opencore-amr/opencore-amr-0.1.6.tar.gz",
+      "archiveName": "opencore-amr-0.1.6.tar.gz",
+      "resolvedUrl": "https://twds.dl.sourceforge.net/project/opencore-amr/opencore-amr/opencore-amr-0.1.6.tar.gz?viasf=1&fid=ccecc839500a96d8&e=1793900323&st=rvjmLJIQmznSZ0I5KRIBhg",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\opencore-amr-0.1.6.tar.gz",
+      "sha256": "483eb4061088e2b34b358e47540b5d495a96cd468e361050fae615b1809dc4a1",
+      "bytes": 939179,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "opencore-amr-0.1.6",
+      "licenseMembers": [
+        "opencore-amr-0.1.6/LICENSE",
+        "opencore-amr-0.1.6/opencore/NOTICE"
+      ],
+      "buildScriptMembers": [
+        "opencore-amr-0.1.6/test/Makefile.am",
+        "opencore-amr-0.1.6/configure.ac",
+        "opencore-amr-0.1.6/amrnb/Makefile.am",
+        "opencore-amr-0.1.6/amrwb/Makefile.am",
+        "opencore-amr-0.1.6/configure",
+        "opencore-amr-0.1.6/Makefile.am"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "vo-amrwbenc",
+      "repository": "https://sourceforge.net/projects/opencore-amr/",
+      "ref": "0.1.3",
+      "license": "Apache-2.0",
+      "url": "https://downloads.sourceforge.net/project/opencore-amr/vo-amrwbenc/vo-amrwbenc-0.1.3.tar.gz",
+      "archiveName": "vo-amrwbenc-0.1.3.tar.gz",
+      "resolvedUrl": "https://twds.dl.sourceforge.net/project/opencore-amr/vo-amrwbenc/vo-amrwbenc-0.1.3.tar.gz?viasf=1&fid=c715508792dd8e1c&e=1793900324&st=rZEDzhu_IdFZDhc7_F4KVQ",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\vo-amrwbenc-0.1.3.tar.gz",
+      "sha256": "5652b391e0f0e296417b841b02987d3fd33e6c0af342c69542cbb016a71d9d4e",
+      "bytes": 608936,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "vo-amrwbenc-0.1.3",
+      "licenseMembers": [
+        "vo-amrwbenc-0.1.3/common/NOTICE",
+        "vo-amrwbenc-0.1.3/amrwbenc/SampleCode/NOTICE",
+        "vo-amrwbenc-0.1.3/amrwbenc/NOTICE",
+        "vo-amrwbenc-0.1.3/NOTICE",
+        "vo-amrwbenc-0.1.3/COPYING"
+      ],
+      "buildScriptMembers": [
+        "vo-amrwbenc-0.1.3/configure.ac",
+        "vo-amrwbenc-0.1.3/configure",
+        "vo-amrwbenc-0.1.3/Makefile.am"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "xvid",
+      "repository": "https://downloads.xvid.com/downloads/",
+      "ref": "1.3.7",
+      "license": "GPL-2.0-or-later",
+      "url": "https://downloads.xvid.com/downloads/xvidcore-1.3.7.tar.gz",
+      "archiveName": "xvidcore-1.3.7.tar.gz",
+      "resolvedUrl": "https://downloads.xvid.com/downloads/xvidcore-1.3.7.tar.gz",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\xvidcore-1.3.7.tar.gz",
+      "sha256": "abbdcbd39555691dd1c9b4d08f0a031376a3b211652c0d8b3b8aa9be1303ce2d",
+      "bytes": 820854,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "xvidcore",
+      "licenseMembers": [
+        "xvidcore/LICENSE",
+        "xvidcore/vfw/LICENSE"
+      ],
+      "buildScriptMembers": [
+        "xvidcore/examples/Makefile",
+        "xvidcore/dshow/Makefile",
+        "xvidcore/vfw/bin/Makefile",
+        "xvidcore/build/generic/configure",
+        "xvidcore/build/generic/Makefile"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "x265",
+      "repository": "https://github.com/Multicorewareinc/x265",
+      "ref": "116b87573ed0cec20b75ccacd5641bf06f6e57bd",
+      "license": "GPL-2.0-or-later",
+      "url": "https://codeload.github.com/Multicorewareinc/x265/tar.gz/116b87573ed0cec20b75ccacd5641bf06f6e57bd",
+      "archiveName": "x265-116b87573ed0cec20b75ccacd5641bf06f6e57bd.tar.gz",
+      "resolvedUrl": "https://codeload.github.com/Multicorewareinc/x265/tar.gz/116b87573ed0cec20b75ccacd5641bf06f6e57bd",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\x265-116b87573ed0cec20b75ccacd5641bf06f6e57bd.tar.gz",
+      "sha256": "2d53caffd91f6a1409f56ca2268e86484c405feb482cedf02f56dd57d2929bef",
+      "bytes": 2077215,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "previousAttempts": [
+        {
+          "url": "https://bitbucket.org/multicoreware/x265_git/get/116b875.tar.gz",
+          "error": "HTTP Error 404: Not Found"
+        }
+      ],
+      "archiveRoot": "x265-116b87573ed0cec20b75ccacd5641bf06f6e57bd",
+      "licenseMembers": [
+        "x265-116b87573ed0cec20b75ccacd5641bf06f6e57bd/COPYING",
+        "x265-116b87573ed0cec20b75ccacd5641bf06f6e57bd/source/dynamicHDR10/LICENSE.txt",
+        "x265-116b87573ed0cec20b75ccacd5641bf06f6e57bd/source/dynamicHDR10/json11/LICENSE.txt"
+      ],
+      "buildScriptMembers": [
+        "x265-116b87573ed0cec20b75ccacd5641bf06f6e57bd/doc/reST/Makefile",
+        "x265-116b87573ed0cec20b75ccacd5641bf06f6e57bd/source/CMakeLists.txt",
+        "x265-116b87573ed0cec20b75ccacd5641bf06f6e57bd/source/common/CMakeLists.txt",
+        "x265-116b87573ed0cec20b75ccacd5641bf06f6e57bd/source/dynamicHDR10/CMakeLists.txt",
+        "x265-116b87573ed0cec20b75ccacd5641bf06f6e57bd/source/encoder/CMakeLists.txt",
+        "x265-116b87573ed0cec20b75ccacd5641bf06f6e57bd/source/profile/CMakeLists.txt",
+        "x265-116b87573ed0cec20b75ccacd5641bf06f6e57bd/source/test/CMakeLists.txt"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "x264",
+      "repository": "https://code.videolan.org/videolan/x264",
+      "ref": "0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee",
+      "license": "GPL-2.0-or-later",
+      "url": "https://code.videolan.org/videolan/x264/-/archive/0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee/x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee.tar.gz",
+      "archiveName": "x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee.tar.gz",
+      "resolvedUrl": "https://code.videolan.org/videolan/x264/-/archive/0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee/x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee.tar.gz",
+      "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee.tar.gz",
+      "sha256": "d0967a1348c85dfde363bb52610403be898171493100561efa0dd05d5fd1ae50",
+      "bytes": 1040667,
+      "status": "acquired-upstream-source-not-proven-complete-for-publisher-binary",
+      "archiveRoot": "x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee",
+      "licenseMembers": [
+        "x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee/COPYING"
+      ],
+      "buildScriptMembers": [
+        "x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee/Makefile",
+        "x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee/configure"
+      ],
+      "publisherPatchProvenance": "Not supplied by publisher release/ZIP; upstream archive and standard build files alone do not establish full corresponding source.",
+      "missing": [
+        "Publisher-specific patches, per-dependency build options and static transitive dependency closure remain unverified."
+      ]
+    },
+    {
+      "component": "bzlib",
+      "repository": "https://sourceware.org/bzip2/",
+      "ref": null,
+      "license": "BSD-style bzip2 license",
+      "status": "missing",
+      "missing": [
+        "Enabled by exact FFmpeg configuration but publisher ZIP omits version/revision. Exact matching source and applicable notices cannot be selected truthfully."
+      ],
+      "buildScriptMembers": [],
+      "licenseMembers": []
+    },
+    {
+      "component": "fontconfig",
+      "repository": "https://gitlab.freedesktop.org/fontconfig/fontconfig",
+      "ref": null,
+      "license": "MIT-style fontconfig notices",
+      "status": "missing",
+      "missing": [
+        "Enabled by exact FFmpeg configuration but publisher ZIP omits version/revision. Exact matching source and applicable notices cannot be selected truthfully."
+      ],
+      "buildScriptMembers": [],
+      "licenseMembers": []
+    },
+    {
+      "component": "gmp",
+      "repository": "https://gmplib.org/download/gmp/",
+      "ref": null,
+      "license": "LGPL-3.0-or-later OR GPL-2.0-or-later",
+      "status": "missing",
+      "missing": [
+        "Enabled by exact FFmpeg configuration but publisher ZIP omits version/revision. Exact matching source and applicable notices cannot be selected truthfully."
+      ],
+      "buildScriptMembers": [],
+      "licenseMembers": []
+    },
+    {
+      "component": "gnutls",
+      "repository": "https://gitlab.com/gnutls/gnutls",
+      "ref": null,
+      "license": "LGPL-2.1-or-later library; package has additional licenses",
+      "status": "missing",
+      "missing": [
+        "Enabled by exact FFmpeg configuration but publisher ZIP omits version/revision. Exact matching source and applicable notices cannot be selected truthfully."
+      ],
+      "buildScriptMembers": [],
+      "licenseMembers": []
+    },
+    {
+      "component": "iconv",
+      "repository": "https://ftp.gnu.org/pub/gnu/libiconv/",
+      "ref": null,
+      "license": "LGPL-2.1-or-later library; GPL tools",
+      "status": "missing",
+      "missing": [
+        "Enabled by exact FFmpeg configuration but publisher ZIP omits version/revision. Exact matching source and applicable notices cannot be selected truthfully."
+      ],
+      "buildScriptMembers": [],
+      "licenseMembers": []
+    },
+    {
+      "component": "libxml2",
+      "repository": "https://gitlab.gnome.org/GNOME/libxml2",
+      "ref": null,
+      "license": "MIT",
+      "status": "missing",
+      "missing": [
+        "Enabled by exact FFmpeg configuration but publisher ZIP omits version/revision. Exact matching source and applicable notices cannot be selected truthfully."
+      ],
+      "buildScriptMembers": [],
+      "licenseMembers": []
+    },
+    {
+      "component": "lzma",
+      "repository": "https://github.com/tukaani-project/xz",
+      "ref": null,
+      "license": "Mixed public-domain/LGPL/GPL source components",
+      "status": "missing",
+      "missing": [
+        "Enabled by exact FFmpeg configuration but publisher ZIP omits version/revision. Exact matching source and applicable notices cannot be selected truthfully."
+      ],
+      "buildScriptMembers": [],
+      "licenseMembers": []
+    },
+    {
+      "component": "zlib",
+      "repository": "https://zlib.net/",
+      "ref": null,
+      "license": "Zlib",
+      "status": "missing",
+      "missing": [
+        "Enabled by exact FFmpeg configuration but publisher ZIP omits version/revision. Exact matching source and applicable notices cannot be selected truthfully."
+      ],
+      "buildScriptMembers": [],
+      "licenseMembers": []
+    }
+  ],
+  "referenceBuildRecipes": {
+    "component": "msys2-reference-recipes",
+    "repository": "https://github.com/msys2/MINGW-packages",
+    "ref": "efc96badda99c076509ef01986c673d1cd30f725",
+    "license": "Repository package-specific licenses; reference-only recipes",
+    "url": "https://codeload.github.com/msys2/MINGW-packages/tar.gz/efc96badda99c076509ef01986c673d1cd30f725",
+    "archiveName": "MINGW-packages-efc96badda99c076509ef01986c673d1cd30f725.tar.gz",
+    "resolvedUrl": "https://codeload.github.com/msys2/MINGW-packages/tar.gz/efc96badda99c076509ef01986c673d1cd30f725",
+    "localPath": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2\\MINGW-packages-efc96badda99c076509ef01986c673d1cd30f725.tar.gz",
+    "sha256": "dd93af8419f9f5fca5974465aec10c91d649a2411014369febaf05f6c3679ff2",
+    "bytes": 4407713,
+    "status": "reference-only-not-identified-as-Gyan-build-recipe",
+    "missing": [
+      "Current pinned MSYS2 recipes are useful reference material but are not the publisher recipe or proof of its patch set."
+    ]
+  },
+  "recipeFiles": [
+    {
+      "component": "ffmpeg",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-ffmpeg/PKGBUILD",
+      "localName": "msys2-ffmpeg-PKGBUILD.txt",
+      "sha256": "fe8e4f34ba9b6d638d6feba79b1d1c24a7a7539ab7406f66e3b45be8c7568065",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe"
+    },
+    {
+      "component": "x264",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-x264/PKGBUILD",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe",
+      "sha256": "6b62ca0fdb77e937527efb9f68d0a6704a8f023b0b6a1c7980b5cc7b0efc1ee5",
+      "apiUrl": "https://api.github.com/repos/msys2/MINGW-packages/contents/mingw-w64-x264/PKGBUILD?ref=efc96badda99c076509ef01986c673d1cd30f725",
+      "localName": "msys2-x264-PKGBUILD.txt"
+    },
+    {
+      "component": "x265",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-x265/PKGBUILD",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe",
+      "sha256": "440ec07f857cc7490c91e95b27d1cc47adfbfd45305b95990ac95f46fd2fae6f",
+      "apiUrl": "https://api.github.com/repos/msys2/MINGW-packages/contents/mingw-w64-x265/PKGBUILD?ref=efc96badda99c076509ef01986c673d1cd30f725",
+      "localName": "msys2-x265-PKGBUILD.txt"
+    },
+    {
+      "component": "xvidcore",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-xvidcore/PKGBUILD",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe",
+      "sha256": "ce7ff7d0d42bf7573465bd42c9875fc5d47026dc1ec4959057c25759e0ccde3a",
+      "apiUrl": "https://api.github.com/repos/msys2/MINGW-packages/contents/mingw-w64-xvidcore/PKGBUILD?ref=efc96badda99c076509ef01986c673d1cd30f725",
+      "localName": "msys2-xvidcore-PKGBUILD.txt"
+    },
+    {
+      "component": "rubberband",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-rubberband/PKGBUILD",
+      "localName": "msys2-rubberband-PKGBUILD.txt",
+      "sha256": "20c88cec1c8d2817f914d710f4a7729f08c8458905bb9be2dbf13395851ede96",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe"
+    },
+    {
+      "component": "vid.stab",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-vid.stab/PKGBUILD",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe",
+      "sha256": "884b49d4daa9420c37950b2113f22936812e1ca9d16f14f4a4a315abf4a38b9f",
+      "apiUrl": "https://api.github.com/repos/msys2/MINGW-packages/contents/mingw-w64-vid.stab/PKGBUILD?ref=efc96badda99c076509ef01986c673d1cd30f725",
+      "localName": "msys2-vid.stab-PKGBUILD.txt"
+    },
+    {
+      "component": "gmp",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-gmp/PKGBUILD",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe",
+      "sha256": "f2df0131077241974efc2680d9afe672dc217c91a3fa645b63b0cc162a2a7ae9",
+      "apiUrl": "https://api.github.com/repos/msys2/MINGW-packages/contents/mingw-w64-gmp/PKGBUILD?ref=efc96badda99c076509ef01986c673d1cd30f725",
+      "localName": "msys2-gmp-PKGBUILD.txt"
+    },
+    {
+      "component": "gnutls",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-gnutls/PKGBUILD",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe",
+      "sha256": "0626ac4c78bd79c915b3ea1213b66fa384e3a6eaa392b407eb230a87c9ef83db",
+      "apiUrl": "https://api.github.com/repos/msys2/MINGW-packages/contents/mingw-w64-gnutls/PKGBUILD?ref=efc96badda99c076509ef01986c673d1cd30f725",
+      "localName": "msys2-gnutls-PKGBUILD.txt"
+    },
+    {
+      "component": "fontconfig",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-fontconfig/PKGBUILD",
+      "localName": "msys2-fontconfig-PKGBUILD.txt",
+      "sha256": "d4e67fa58f28fdf5fe6600f8fc474a8024e7410258fbd6f607f298ce449159fc",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe"
+    },
+    {
+      "component": "cairo",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-cairo/PKGBUILD",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe",
+      "sha256": "75f761a6bf7c503cd70e473df133d7708146f6a44c77b5d8e76e87f96e2d4cd4",
+      "apiUrl": "https://api.github.com/repos/msys2/MINGW-packages/contents/mingw-w64-cairo/PKGBUILD?ref=efc96badda99c076509ef01986c673d1cd30f725",
+      "localName": "msys2-cairo-PKGBUILD.txt"
+    },
+    {
+      "component": "bzip2",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-bzip2/PKGBUILD",
+      "localName": "msys2-bzip2-PKGBUILD.txt",
+      "sha256": "a82348d211ec09835b8d77de2e98d3153831a9389cdaf6cb8cfadf711096aa24",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe"
+    },
+    {
+      "component": "libiconv",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-libiconv/PKGBUILD",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe",
+      "sha256": "9b3212d06910560fb59e017e0b73a29d392a5082d3a47a613e61509bd7dcd475",
+      "apiUrl": "https://api.github.com/repos/msys2/MINGW-packages/contents/mingw-w64-libiconv/PKGBUILD?ref=efc96badda99c076509ef01986c673d1cd30f725",
+      "localName": "msys2-libiconv-PKGBUILD.txt"
+    },
+    {
+      "component": "libxml2",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-libxml2/PKGBUILD",
+      "localName": "msys2-libxml2-PKGBUILD.txt",
+      "sha256": "dfdaa30338e2f63e0029e8025d4138a38c58fc3538ecb14cdabf4212c4781a99",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe"
+    },
+    {
+      "component": "xz",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-xz/PKGBUILD",
+      "localName": "msys2-xz-PKGBUILD.txt",
+      "sha256": "b93950051015573095f0d9cd50428ed6dd80d726c2786a2eeef005257888b3ba",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe"
+    },
+    {
+      "component": "zlib",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-zlib/PKGBUILD",
+      "localName": "msys2-zlib-PKGBUILD.txt",
+      "sha256": "64c6315e3825a295aa82c3218017d5a700381711bfc58a5cbceb9f6bc685b55e",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe"
+    },
+    {
+      "component": "game-music-emu",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-game-music-emu/PKGBUILD",
+      "status": "missing",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "component": "libva",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-libva/PKGBUILD",
+      "localName": "msys2-libva-PKGBUILD.txt",
+      "sha256": "e897c2819337103497b91efc7d3d434dd7eaad1560d7c434e4cc62ffdc4565b0",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe"
+    },
+    {
+      "component": "mingw-w64-crt",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-mingw-w64-crt/PKGBUILD",
+      "status": "missing",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "component": "gcc",
+      "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/efc96badda99c076509ef01986c673d1cd30f725/mingw-w64-gcc/PKGBUILD",
+      "localName": "msys2-gcc-PKGBUILD.txt",
+      "sha256": "1a123ea062e01beb611c4375999492b0f41ef2d92d03e38cb29e7c23e855ad45",
+      "status": "reference-only-not-identified-as-Gyan-build-recipe"
+    }
+  ],
+  "evidence": {
+    "publisherFfmpegRevision": "946fcce07b6dcd0331c8cc609192aeff5e1924f8",
+    "publisherSourceDeclaration": "Release API body and binary archive README.txt read only in memory; no README extracted.",
+    "x264BinaryVersionString": "r3223 0480cb0",
+    "x264PrimaryCommitUrl": "https://code.videolan.org/videolan/x264/-/commit/0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee",
+    "x265BinaryVersionString": "4.3+45-116b875",
+    "x265PrimaryCommitUrl": "https://github.com/Multicorewareinc/x265/commit/116b87573ed0cec20b75ccacd5641bf06f6e57bd",
+    "commandsExecuted": [
+      "ffmpeg.exe -version",
+      "ffprobe.exe -version"
+    ],
+    "metadataExitCodes": [
+      0,
+      0
+    ],
+    "licenseMemberCount": 145
+  },
+  "missing": [
+    {
+      "id": "publisher-build-recipe-and-patches",
+      "details": "GyanD/codexffmpeg release 9.0.2 contains binaries and a FFmpeg upstream commit only; repository root contains .github and README.md, not the custom dependency build orchestration, patches or build dependency lock. Compiler provenance MSYS2 GCC 16.2.0 Rev3 does not establish that ordinary MSYS2 package recipes produced these binaries."
+    },
+    {
+      "id": "unversioned-static-libraries",
+      "components": [
+        "bzlib",
+        "fontconfig",
+        "gmp",
+        "gnutls",
+        "iconv",
+        "libxml2",
+        "lzma",
+        "zlib"
+      ],
+      "details": "Exact configure enables all eight libraries, while publisher external-version list supplies no versions for them."
+    },
+    {
+      "id": "ambiguous-development-versions",
+      "components": [
+        "cairo 1.18.5",
+        "libgme 0.6.6",
+        "VAAPI 2.25.0."
+      ],
+      "details": "Primary release archive/tag attempts did not locate these exact versions. Cairo tag list has 1.18.4 and 1.18.6, so 1.18.5 is not uniquely identified by a release tag; publisher needs to identify development commit. libgme tag API showed 0.6.5 latest; 0.6.6 exact tag absent. Intel libva exact 2.25.0 tag absent at attempted endpoint. No replacement version was used."
+    },
+    {
+      "id": "transitive-static-closure",
+      "details": "No publisher link map, pkg-config --static closure, source/patch lock or per-library configuration provided. Additional static dependencies and their precise revisions/notices are not established (e.g. dependencies selected by Cairo/fontconfig/GnuTLS/FreeType/SDL/SRT/OpenMPT; these examples are not asserted as linked). GCC runtime/MinGW runtime provenance and applicable runtime exceptions also require identification."
+    },
+    {
+      "id": "publisher-options-vs-reference-recipes",
+      "details": "Pinned complete MSYS2 MINGW-packages source archive includes standard PKGBUILDs and patches. These are expressly reference-only, not asserted to match Gyan. For example x264 recipe is r3222.b35605a versus binary r3223.0480cb0, x265 recipe 4.3 versus binary 4.3+45, Cairo recipe 1.18.6 versus publisher 1.18.5."
+    }
+  ],
+  "packagingInstructions": [
+    "Keep acquired archives intact; README members inside source archives may remain but must not be extracted or copied as standalone README files.",
+    "Runtime bundles include license texts, copyright notices and a compact version/source-origin summary only. Keep source archives, reference recipes and build evidence separately in the project materials; do not copy them into the application bundle.",
+    "Do not describe these materials as complete corresponding source, treat the gate as passed, or publish/redistribute the fixed binary until missing publisher materials and complete source/license closure are resolved.",
+    "No audio opened or decoded, no build/test/install/signing/publishing occurred in this material acquisition task."
+  ]
+}

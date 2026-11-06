@@ -1,0 +1,114 @@
+Ximalaya reusable component, exported from XIAOYA Nano
+Copyright (c) 2026 XIAOYA Nano contributors
+
+This component as a whole is distributed under GNU AGPL version 3 or later
+(SPDX: AGPL-3.0-or-later). See LICENSE. No warranty is provided.
+
+Reused SMS login code and algorithms
+-----------------------------------
+Ximalaya-Downloader-Next, by sld272 and its contributors
+https://github.com/sld272/Ximalaya-Downloader-Next
+Revision: 765bae5cc07aaffa41797de2d3a9c963f1deb3e9
+License: AGPL-3.0-or-later
+
+Sources adapted:
+- src/xdl/adapters/apk/client.py: nonce, SMS send/verify and quick login
+- src/xdl/adapters/apk/native_py.py: login SHA-1 signature and RSA encryption
+- src/xdl/config/apk.py: login protocol constants
+- src/xdl/frontends/web_static/app.js: GeeTest/SMS integration
+
+The earlier standalone export was xmly/login.py; its implementation is now
+adapted into lib/api/xmly_login.dart and lib/pages/geetest_dialog.dart.
+The original Nano WebUI is not included. The 2026-11-03/04 export adaptations
+used bounded temporary sessions and caller-owned validation/settlement;
+the Flutter migration retains these protections. Old Python sources were
+removed after cutover. Upstream author notices are retained, and no upstream
+download backend is incorporated.
+
+Network service operators must provide users the Corresponding Source of the
+version they run, including their modifications, under AGPL section 13.
+The host application is responsible for offering that source to its users.
+
+Earlier MIT-licensed project code retains this original notice:
+------------------------------------------------------------
+MIT License
+
+Copyright (c) 2026 XIAOYA Nano contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+PiliPlus Flutter interface and Windows runner
+-------------------------------------------
+PiliPlus contributors
+https://github.com/bggRGjQaUbCoE/PiliPlus
+Revision: d9e9626f1a3f89cd9ca85e18f61aaba02634e12a
+License: GNU General Public License version 3; see windows/LICENSE.PiliPlus.
+
+Sources adapted for XMPlus on 2026-11-04:
+- lib/main.dart: application, localization and theme assembly
+- lib/utils/theme_utils.dart: Material component themes
+- lib/common/widgets/scroll_behavior.dart: desktop scrolling behavior
+- lib/pages/main/view.dart: Material navigation rail and navigation bar
+- lib/pages/setting/view.dart: wide/narrow settings layout
+- lib/utils/config_archive.dart: split-file backup ZIP metadata structure
+- lib/pages/login/geetest/geetest_webview_dialog.dart: Windows WebView interaction pattern
+- windows/CMakeLists.txt and windows/flutter/CMakeLists.txt: Windows build rules
+- windows/runner/: native Flutter host, utilities, resource and manifest files
+- windows/.gitignore: generated Windows build-file exclusions
+- lib/utils/update.dart and lib/pages/about/view.dart: release check, update dialog
+  and platform-specific download selection, adapted to XMPlus GitHub releases
+- .github/workflows/build.yml: Android split-ABI signing and release workflow pattern
+
+The adapted Windows runner uses the XMPlus binary and display name, an original
+white artistic X on a bright red circle, and a 1280 x 800 initial window.
+PiliPlus app-link forwarding and branding are not included. The
+disabled Impeller setting is retained and the first-frame Show callback is
+restored. No PiliPlus icon, installer or packaging files are incorporated.
+The interface is adapted for audio navigation without Bilibili services.
+This notice does not replace the existing component's AGPL license or the
+upstream GPL obligations. Distribution must retain the applicable licenses
+and provide the Corresponding Source, including these modifications.
+
+Native media and build materials:
+- FFmpeg/FFprobe: Gyan essentials 9.0.2, GPL-3.0-or-later configured static build.
+  The package version, executable hashes and upstream source pins are summarized
+  in licenses/SOURCES.json; full development records remain in tool/ffmpeg_sources.json.
+- media_kit wrappers: MIT; this does not license the bundled native DLL as MIT.
+  The selected libmpv-2.dll disables GPL features but statically includes
+  LGPL-3.0-or-later FFmpeg. Version/source references are in licenses/SOURCES.json;
+  applicable license texts and copyright notices are in licenses/native/licenses/.
+- Required Microsoft Visual C++ runtime files retain Microsoft's redistribution
+  terms; readable license and notice texts accompany this runtime bundle.
+
+Source archives, SDK packages, reference recipes and build evidence are development
+materials maintained separately; they are not included in the runtime bundle.
+
+The collected third-party source materials are explicitly incomplete for public
+redistribution. Local candidate bundles retain SOURCE-MATERIALS-INCOMPLETE notices
+and RELEASE-STATUS.json; they must not be described as redistribution-ready.
+
+
+Search endpoint documentation consulted:
+- qilishidai/ximalaya-API, Search_API.md at revision
+  a70cc92862f87cd8c69c580b2e44238105b7248f:
+  https://github.com/qilishidai/ximalaya-API/blob/a70cc92862f87cd8c69c580b2e44238105b7248f/Search_API.md
+- The documentation is licensed CC BY-NC 4.0:
+  https://creativecommons.org/licenses/by-nc/4.0/
+  It is not copied into this application; request/response handling is independently
+  implemented against the live official ximalaya.com endpoint. No endorsement is implied.

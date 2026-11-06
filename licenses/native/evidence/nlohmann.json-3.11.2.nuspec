@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
+  <metadata>
+    <id>nlohmann.json</id>
+    <version>3.11.2</version>
+    <authors>Niels Lohmann</authors>
+    <owners>Niels Lohmann</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <license type="expression">MIT</license>
+    <licenseUrl>https://licenses.nuget.org/MIT</licenseUrl>
+    <projectUrl>https://github.com/nlohmann/json</projectUrl>
+    <description>JSON for Modern C++</description>
+    <releaseNotes>This release fixes some bugs found in the 3.11.1 release. Furthermore, the of the library has been re-structured.
+
+All changes are backward-compatible.
+
+💰 Note you can support this project via [GitHub sponsors](https://github.com/sponsors/nlohmann) or [PayPal](http://paypal.me/nlohmann).</releaseNotes>
+    <copyright>Copyright (c) 2013-2019 Niels Lohmann (http://nlohmann.me).</copyright>
+    <tags>nlohmann JSON modern C++ Cpp native nativepackage</tags>
+  </metadata>
+</package>

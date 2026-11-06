@@ -1,0 +1,155 @@
+FFmpeg fixed binary metadata and source-compliance inventory
+
+Redistribution compliance gate: BLOCKED. These materials are not claimed to be
+complete corresponding source. See SOURCES.json missing[] for concrete gaps.
+
+Fixed package URL: https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip
+Package SHA-256: 60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba
+FFmpeg source revision: 946fcce07b6dcd0331c8cc609192aeff5e1924f8
+
+ffmpeg.exe -version (metadata only):
+ffmpeg version 9.0.2-essentials_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers
+built with gcc 16.2.0 (Rev3, Built by MSYS2 project)
+configuration: --enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-cairo --enable-fontconfig --enable-iconv --enable-gnutls --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-zlib --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-sdl2 --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxvid --enable-libaom --enable-libopenjpeg --enable-libvpx --enable-mediafoundation --enable-libass --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-openal --enable-libgme --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libtheora --enable-libvo-amrwbenc --enable-libgsm --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-librubberband
+libavutil      61.  1.102 / 61.  1.102
+libavcodec     63.  1.102 / 63.  1.102
+libavformat    63.  1.102 / 63.  1.102
+libavdevice    63.  1.102 / 63.  1.102
+libavfilter    12.  1.102 / 12.  1.102
+libswscale     10.  1.102 / 10.  1.102
+libswresample   7.  1.102 /  7.  1.102
+
+Exiting with exit code 0
+
+ffprobe.exe -version (metadata only):
+ffprobe version 9.0.2-essentials_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers
+built with gcc 16.2.0 (Rev3, Built by MSYS2 project)
+configuration: --enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-cairo --enable-fontconfig --enable-iconv --enable-gnutls --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-zlib --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-sdl2 --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxvid --enable-libaom --enable-libopenjpeg --enable-libvpx --enable-mediafoundation --enable-libass --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-openal --enable-libgme --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libtheora --enable-libvo-amrwbenc --enable-libgsm --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-librubberband
+libavutil      61.  1.102 / 61.  1.102
+libavcodec     63.  1.102 / 63.  1.102
+libavformat    63.  1.102 / 63.  1.102
+libavdevice    63.  1.102 / 63.  1.102
+libavfilter    12.  1.102 / 12.  1.102
+libswscale     10.  1.102 / 10.  1.102
+libswresample   7.  1.102 /  7.  1.102
+
+Publisher build characteristics (transcribed from binary package declaration,
+read in memory only; original README member was not extracted):
+ARCH                      x86 (generic)
+big-endian                no
+runtime cpu detection     yes
+standalone assembly       yes
+x86 assembler             nasm
+MMX enabled               yes
+MMXEXT enabled            yes
+SSE enabled               yes
+SSSE3 enabled             yes
+AESNI enabled             yes
+CLMUL enabled             yes
+AVX enabled               yes
+AVX2 enabled              yes
+AVX-512 enabled           yes
+AVX-512ICL enabled        yes
+XOP enabled               yes
+FMA3 enabled              yes
+FMA4 enabled              yes
+i686 features enabled     yes
+CMOV is fast              yes
+EBX available             yes
+EBP available             yes
+debug symbols             yes
+strip symbols             yes
+optimize for size         no
+optimizations             yes
+static                    yes
+shared                    no
+network support           yes
+threading support         pthreads
+safe bitstream reader     yes
+texi2html enabled         no
+perl enabled              yes
+pod2man enabled           yes
+makeinfo enabled          yes
+makeinfo supports HTML    yes
+experimental features     yes
+xmllint enabled           yes
+
+External libraries:
+avisynth                libmp3lame              libvorbis
+bzlib                   libopencore_amrnb       libvpx
+cairo                   libopencore_amrwb       libwebp
+gmp                     libopenjpeg             libx264
+gnutls                  libopenmpt              libx265
+iconv                   libopus                 libxml2
+libaom                  librubberband           libxvid
+libass                  libspeex                libzimg
+libfontconfig           libsrt                  libzmq
+libfreetype             libssh                  lzma
+libfribidi              libtheora               mediafoundation
+libgme                  libvidstab              openal
+libgsm                  libvmaf                 sdl2
+libharfbuzz             libvo_amrwbenc          zlib
+
+External libraries providing hardware acceleration:
+amf                     d3d12va                 nvdec
+cuda                    dxva2                   nvenc
+cuda_llvm               ffnvcodec               vaapi
+cuvid                   libmfx
+d3d11va                 libvpl
+
+Libraries:
+avcodec                 avformat                swscale
+avdevice                avutil
+avfilter                swresample
+
+Programs:
+ffmpeg                  ffplay                  ffprobe
+
+Publisher external library version declarations:
+AMF v1.5.2-2-gc35f613
+aom v3.15.0-25-g023743a7d7
+AviSynthPlus v3.7.5-383-g5c82777b
+cairo 1.18.5
+ffnvcodec n13.1.15.0-1-geddcea9
+freetype VER-2-14-3
+fribidi v1.0.16-19-gc928e4c
+gsm 1.0.24
+harfbuzz 14.4.0-108-g64e2b532
+lame 3.100
+libass 0.17.5-8-gb2fe9d8
+libgme 0.6.6
+libopencore-amrnb 0.1.6
+libopencore-amrwb 0.1.6
+libssh 0.12.2
+libtheora v1.2.0
+libwebp v1.6.0-249-g1f34635
+openal-soft 1.25.2-48-g7532541
+openjpeg2 2.5.4
+openmpt libopenmpt-0.6.30-3-g6c0a06bc
+opus v1.6.1-68-g503d81b1
+rubberband v4.0.0
+SDL release-2.32.0-234-gb90ac9502
+speex Speex-1.2.1-51-g0589522
+srt v1.5.7-7-gcae8f62
+VAAPI 2.25.0.
+vidstab v1.1.2-214-ge2445c4
+vmaf v3.2.0-13-gf85a8536
+vo-amrwbenc 0.1.3
+vorbis v1.3.7-37-g1b75110b
+VPL 2.17
+vpx v1.17.0-57-gd2413e2ca
+x264 v0.165.3223
+x265 4.3-45-g116b875
+xvid v1.3.7
+zeromq 4.3.5
+zimg release-3.0.6-253-g67e0603
+
+Build scripts:
+The FFmpeg configure/Makefiles and dependency standard build scripts remain
+inside each acquired source archive. Source member names are in SOURCES.json.
+The complete MSYS2 recipe archive is pinned at efc96badda99c076509ef01986c673d1cd30f725.
+It is reference material only: it has not been established as the build recipe
+used for these Gyan binaries. Missing custom patches, options, exact source
+versions and static transitive dependency closure keep redistribution blocked.
+
+No reproduction build or media processing was attempted.

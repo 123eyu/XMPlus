@@ -1,0 +1,472 @@
+// Wide/narrow settings layout adapted from PiliPlus
+// lib/pages/setting/view.dart, commit
+// d9e9626f1a3f89cd9ca85e18f61aaba02634e12a (GNU GPL v3).
+// Source: https://github.com/bggRGjQaUbCoE/PiliPlus
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import 'package:path/path.dart' as p;
+
+import '../common/theme.dart';
+import '../services/app_runtime.dart';
+import '../services/update_service.dart';
+import 'account_page.dart';
+import 'backup_page.dart';
+import 'download_settings_page.dart';
+import 'media_settings_page.dart';
+import 'playback_settings_page.dart';
+
+enum _SettingsSection {
+  account,
+  download,
+  media,
+  playback,
+  appearance,
+  backup,
+  about,
+}
+
+class SettingsPage extends StatefulWidget {
+  const SettingsPage({
+    required this.appearance,
+    required this.runtime,
+    required this.updates,
+    super.key,
+  });
+
+  final AppAppearance appearance;
+  final AppRuntime runtime;
+  final UpdateService updates;
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  _SettingsSection _section = _SettingsSection.appearance;
+
+  static const _items = [
+    (
+      title: '账号',
+      icon: Icons.person_outline,
+      section: _SettingsSection.account,
+    ),
+    (
+      title: '下载',
+      icon: Icons.download_outlined,
+      section: _SettingsSection.download,
+    ),
+    (title: '媒体处理', icon: Icons.tune, section: _SettingsSection.media),
+    (
+      title: '播放',
+      icon: Icons.headphones_outlined,
+      section: _SettingsSection.playback,
+    ),
+    (
+      title: '外观',
+      icon: Icons.palette_outlined,
+      section: _SettingsSection.appearance,
+    ),
+    (
+      title: '备份与恢复',
+      icon: Icons.settings_backup_restore,
+      section: _SettingsSection.backup,
+    ),
+    (title: '关于', icon: Icons.info_outline, section: _SettingsSection.about),
+  ];
+
+  Widget _detail(_SettingsSection section) => switch (section) {
+    _SettingsSection.download => DownloadSettingsPage(runtime: widget.runtime),
+    _SettingsSection.media => MediaSettingsPage(runtime: widget.runtime),
+    _SettingsSection.playback => PlaybackSettingsPage(
+      runtime: widget.runtime,
+      embedded: true,
+    ),
+    _SettingsSection.account => AccountPage(
+      storage: widget.runtime.storage,
+      accounts: widget.runtime.accounts,
+      onChanged: widget.runtime.changed,
+    ),
+    _SettingsSection.backup => BackupPage(
+      storage: widget.runtime.storage,
+      accounts: widget.runtime.accounts,
+      secrets: widget.runtime.secrets,
+      onChanged: () async {
+        widget.appearance.reload();
+        await widget.runtime.reloadAfterRestore();
+      },
+    ),
+    _SettingsSection.appearance => _AppearanceSettings(
+      appearance: widget.appearance,
+    ),
+    _SettingsSection.about => _AboutSettings(updates: widget.updates),
+  };
+
+  void _open(_SettingsSection section, String title, bool wide) {
+    if (wide) {
+      setState(() => _section = section);
+    } else {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (context) => Scaffold(
+            appBar: AppBar(title: Text(title)),
+            body: SafeArea(child: _detail(section)),
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _list(bool wide) {
+    final theme = Theme.of(context);
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      children: [
+        for (final item in _items)
+          ListTile(
+            leading: Icon(item.icon),
+            title: Text(item.title),
+            selected: wide && item.section == _section,
+            selectedTileColor: theme.colorScheme.onInverseSurface,
+            trailing: !wide ? const Icon(Icons.chevron_right) : null,
+            onTap: () => _open(item.section, item.title, wide),
+          ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 720) return _list(false);
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(flex: 4, child: _list(true)),
+            VerticalDivider(
+              width: 1,
+              color: Theme.of(context).colorScheme.outline
+                  .withValues(alpha: 0.1),
+            ),
+            Expanded(flex: 6, child: _detail(_section)),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _AppearanceSettings extends StatelessWidget {
+  const _AppearanceSettings({required this.appearance});
+
+  final AppAppearance appearance;
+
+  static const _colors = [
+    (label: '浅红', color: Color(AppAppearance.defaultSeedColor)),
+    (label: '青绿', color: Color(0xFF006A67)),
+    (label: '蓝色', color: Color(0xFF295EA6)),
+    (label: '紫色', color: Color(0xFF7054A2)),
+    (label: '橙色', color: Color(0xFF9C4324)),
+    (label: '粉色', color: Color(0xFF994568)),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: appearance,
+      builder: (context, _) => ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Text('外观', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          if (appearance.error != null)
+            Text(
+              appearance.error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          const SizedBox(height: 24),
+          _SettingsCard(
+            title: '主题',
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final option in const [
+                  (label: '跟随系统', mode: ThemeMode.system),
+                  (label: '浅色', mode: ThemeMode.light),
+                  (label: '深色', mode: ThemeMode.dark),
+                ])
+                  ChoiceChip(
+                    label: Text(option.label),
+                    selected: appearance.themeMode == option.mode,
+                    onSelected: (_) => appearance.themeMode = option.mode,
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingsCard(
+            title: '主题色',
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final option in _colors)
+                  ChoiceChip(
+                    label: Text(option.label),
+                    avatar: CircleAvatar(
+                      backgroundColor: option.color,
+                      radius: 8,
+                    ),
+                    selected: appearance.seedColor == option.color,
+                    onSelected: (_) => appearance.seedColor = option.color,
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingsCard(
+            title: '字号 ${(appearance.textScale * 100).round()}%',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Slider(
+                  label: '${(appearance.textScale * 100).round()}%',
+                  semanticFormatterCallback: (value) =>
+                      '字号 ${(value * 100).round()}%',
+                  min: 0.8,
+                  max: 1.5,
+                  divisions: 14,
+                  value: appearance.textScale,
+                  onChanged: (value) => appearance.textScale = value,
+                ),
+                const Text('文字预览 0123456789'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsCard extends StatelessWidget {
+  const _SettingsCard({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AboutSettings extends StatelessWidget {
+  const _AboutSettings({required this.updates});
+
+  final UpdateService updates;
+
+  Future<void> _openContact(BuildContext context, String url) async {
+    try {
+      if (!await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      )) {
+        throw const FormatException('无法打开链接');
+      }
+    } catch (_) {
+      if (context.mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('无法打开浏览器，请复制链接')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: updates,
+      builder: (context, _) => ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Row(
+            children: [
+              Image.asset('assets/branding/xmplus.png', width: 64, height: 64),
+              const SizedBox(width: 12),
+              Text('XMPlus', style: Theme.of(context).textTheme.titleLarge),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(updates.versionLabel),
+          const SizedBox(height: 16),
+          _SettingsCard(
+            title: '应用更新',
+            child: Column(
+              children: [
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('启动时自动检查更新'),
+                  subtitle: const Text('仅检查 GitHub 稳定版，不会自动下载或安装'),
+                  value: updates.autoCheck,
+                  onChanged: updates.setAutoCheck,
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.system_update_outlined),
+                  title: Text(updates.checking ? '正在检查更新…' : '检查更新'),
+                  subtitle: Text(updates.message ?? '手动检查不受忽略版本限制'),
+                  trailing: updates.checking
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.chevron_right),
+                  onTap: updates.checking
+                      ? null
+                      : () => updates.check(context, manual: true),
+                ),
+                if (updates.ignoredVersion != null)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('已忽略 ${updates.ignoredVersion}'),
+                    trailing: TextButton(
+                      onPressed: updates.clearIgnoredVersion,
+                      child: const Text('恢复提醒'),
+                    ),
+                  ),
+                if (updates.error != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      updates.error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('官方发布页'),
+                  subtitle: const SelectableText(
+                    'https://github.com/teikengstudio/XMPlus/releases/latest',
+                  ),
+                  trailing: IconButton(
+                    tooltip: '打开官方发布页',
+                    icon: const Icon(Icons.open_in_new),
+                    onPressed: () => _openContact(
+                      context,
+                      'https://github.com/teikengstudio/XMPlus/releases/latest',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          _SettingsCard(
+            title: '联系与项目',
+            child: Column(
+              children: [
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.send_outlined),
+                  title: const Text('Telegram'),
+                  subtitle: const SelectableText(
+                    'https://t.me/+csbfHjIyqkoyNDA1',
+                  ),
+                  trailing: IconButton(
+                    tooltip: '打开 Telegram',
+                    icon: const Icon(Icons.open_in_new),
+                    onPressed: () =>
+                        _openContact(context, 'https://t.me/+csbfHjIyqkoyNDA1'),
+                  ),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.code),
+                  title: const Text('GitHub'),
+                  subtitle: const SelectableText(
+                    'https://github.com/teikengstudio/xmplus',
+                  ),
+                  trailing: IconButton(
+                    tooltip: '打开 GitHub',
+                    icon: const Icon(Icons.open_in_new),
+                    onPressed: () => _openContact(
+                      context,
+                      'https://github.com/teikengstudio/xmplus',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const _SettingsCard(
+            title: '开源声明',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('界面与 Windows 窗口改编自 PiliPlus，采用 GNU GPL v3。'),
+                SizedBox(height: 8),
+                SelectableText('https://github.com/bggRGjQaUbCoE/PiliPlus'),
+                SizedBox(height: 8),
+                SelectableText('d9e9626f1a3f89cd9ca85e18f61aaba02634e12a'),
+                SizedBox(height: 16),
+                Text('原喜马拉雅组件来自 XIAOYA Nano，采用 AGPL-3.0-or-later。'),
+                SizedBox(height: 8),
+                Text(
+                  '许可证、版权与版本来源说明见程序目录下的 LICENSE、NOTICE、LICENSE.PiliPlus 和 licenses。',
+                ),
+              ],
+            ),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.description_outlined),
+            label: const Text('查看许可'),
+            onPressed: () => showLicensePage(
+              context: context,
+              applicationName: 'XMPlus',
+              applicationVersion: updates.packageInfo?.version,
+            ),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.folder_open),
+            label: const Text('许可与来源'),
+            onPressed: () async {
+              try {
+                final root = p.dirname(Platform.resolvedExecutable);
+                final opener = Platform.isWindows
+                    ? 'explorer.exe'
+                    : Platform.isMacOS
+                    ? 'open'
+                    : 'xdg-open';
+                await Process.start(opener, [root], runInShell: false);
+              } catch (_) {
+                if (context.mounted)
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('请查看程序目录下的 licenses 文件夹')),
+                  );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}

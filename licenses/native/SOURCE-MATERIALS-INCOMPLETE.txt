@@ -1,0 +1,48 @@
+SOURCE MATERIALS INCOMPLETE — LOCAL CANDIDATE ONLY
+
+This material set does not establish that XMPlus is ready for public redistribution.
+It is suitable for the parent task's private local candidate build and acceptance work.
+No public distribution, installation, terms acceptance or source offer is authorized by this notice.
+
+The pinned media_kit wrappers are MIT licensed. That does not license the downloaded
+libmpv-2.dll as MIT. The actual DLL embeds mpv -Dgpl=false and FFmpeg --disable-gpl,
+--disable-nonfree, --enable-version3. Its libav* license strings state LGPL version 3
+or later. mpv's exact source Copyright explains its LGPL-2.1-or-later mode and the
+fact that linked libraries can change the combined library's licensing requirements.
+
+Collected exact bases:
+- mpv: 652a1dd90711839acdccc08004056d25514ef2d8.
+- FFmpeg: n6.0, ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2.
+- libass: embedded commit 5c15c883a4783641f7e71a6a1f440209965eb64f.
+- Source snapshots for the named OpenAL Soft 1.23.1, FriBidi 1.0.13 and
+  libjpeg-turbo 3.0.1 upstream releases; binary-local patches are not established.
+- Exact Flutter framework and monorepo engine revisions, DEPS and full SDK engine
+  third-party notices; fetched third-party source trees are not in these archives.
+- Published Dart/native package archives whose SHA-256 matches the current lock,
+  including the window_manager 0.5.1 MethodChannel backend and screen_retriever.
+- Exact fixed PiliPlus upstream source and full GPL license. This upstream archive
+  is not a substitute for the adapted XMPlus application source and build scripts.
+
+Still missing for a supported public-redistribution claim:
+1. The exact libmpv release build checkout, workflow custom inputs, patches,
+   generated cross files and toolchain/environment recipe. The version release
+   tag contains only a version file. Retained release-date workflow runs are absent.
+2. Proof of the exact patches applied to FFmpeg n6.0. A later 2024 minimal-audio
+   recipe and its patch files are archived only as candidate evidence, not as the
+   matching 2023-09-24 release recipe.
+3. A complete linked static-dependency inventory and matching source revisions,
+   patches and recipes. Development identifiers include libarchive 3.7.3dev and
+   libpng 1.6.41.git; short XZ/compiler banners do not resolve their exact sources.
+4. Exact custom MinGW/GCC runtime source and configuration where required; a
+   GCC 13.1.1 banner and collected Runtime Exception are not proof of compliance.
+5. If Microsoft CRT binaries are packaged, the distributor must establish its
+   rights under its applicable Visual Studio license and the official redist list.
+   Full runtime terms, Build Tools terms, notices and exact installed candidate
+   hashes are supplied; no license agreement was accepted or installer executed.
+
+A homepage, version approximation, unpatched upstream tarball or build recipe from
+another date is not represented as complete corresponding source. No written offer
+for missing materials is made. Full artifact URLs, SHA-256 values, observed flags,
+source pin evidence, DLL import evidence and concrete missing fields are recorded
+in tool/native_sources.json. Preserve this notice in every local candidate bundle
+until those public-redistribution prerequisites have actually been resolved.

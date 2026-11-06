@@ -1,0 +1,4 @@
+analyzer:
+  exclude:
+    # Preserved third-party build evidence is not application Dart source.
+    - licenses/**

@@ -1,0 +1,1201 @@
+{
+  "schemaVersion": 1,
+  "application": "XMPlus",
+  "scope": "Windows native media, Flutter engine, adapted UI and native plugin redistribution prerequisites only",
+  "distributionReady": false,
+  "localCandidateAllowed": true,
+  "correspondingSourceComplete": false,
+  "requiredCandidateNotice": "licenses/native/SOURCE-MATERIALS-INCOMPLETE.txt",
+  "notPerformed": [
+    "No actual media_kit Player creation/open/play or sound-card access",
+    "No signing, public publishing, OS-service installation or acceptance of license terms",
+    "This material inventory does not assert completion of real SMS, reward debit or native audio acceptance"
+  ],
+  "aboutSourceEntry": {
+    "label": "源代码与第三方许可",
+    "localManifest": "tool/native_sources.json",
+    "localMaterials": "licenses/native/",
+    "notice": "源码材料尚未齐全；此包仅作本地候选验收，不表示可以对外分发。",
+    "upstreamEntries": [
+      {
+        "component": "Flutter framework 3.47.5",
+        "url": "https://github.com/flutter/flutter/tree/6a19cca56475dbfba1478ee68d7bd0c2ef891da1"
+      },
+      {
+        "component": "Flutter engine",
+        "url": "https://github.com/flutter/flutter/tree/af7e796e161ae0bb1ff0758c71a7105418bd9ded/engine/src/flutter"
+      },
+      {
+        "component": "PiliPlus adapted UI",
+        "url": "https://github.com/bggRGjQaUbCoE/PiliPlus/tree/d9e9626f1a3f89cd9ca85e18f61aaba02634e12a"
+      },
+      {
+        "component": "media_kit MIT wrapper; bundled library licensed separately",
+        "url": "https://pub.dev/packages/media_kit/versions/1.2.6"
+      },
+      {
+        "component": "mpv base source",
+        "url": "https://github.com/mpv-player/mpv/tree/652a1dd90711839acdccc08004056d25514ef2d8"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "name": "material_ui",
+      "version": "1.0.0",
+      "url": "https://pub.dev/api/archives/material_ui-1.0.0.tar.gz",
+      "archiveSha256": "d9b4f6c69b80bc83d0a14357c86e4c14c8076e807ae73cf2960c8560f623995f",
+      "lockSha256": "d9b4f6c69b80bc83d0a14357c86e4c14c8076e807ae73cf2960c8560f623995f",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/material_ui-1.0.0.tar.gz"
+    },
+    {
+      "name": "media_kit",
+      "version": "1.2.6",
+      "url": "https://pub.dev/api/archives/media_kit-1.2.6.tar.gz",
+      "archiveSha256": "ae9e79597500c7ad6083a3c7b7b7544ddabfceacce7ae5c9709b0ec16a5d6643",
+      "lockSha256": "ae9e79597500c7ad6083a3c7b7b7544ddabfceacce7ae5c9709b0ec16a5d6643",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/media_kit-1.2.6.tar.gz"
+    },
+    {
+      "name": "media_kit_libs_audio",
+      "version": "1.0.7",
+      "url": "https://pub.dev/api/archives/media_kit_libs_audio-1.0.7.tar.gz",
+      "archiveSha256": "81bf506c234e81e3ec536ba72f8f700a928543c14c345220210cae0411636316",
+      "lockSha256": "81bf506c234e81e3ec536ba72f8f700a928543c14c345220210cae0411636316",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/media_kit_libs_audio-1.0.7.tar.gz"
+    },
+    {
+      "name": "media_kit_libs_windows_audio",
+      "version": "1.0.9",
+      "url": "https://pub.dev/api/archives/media_kit_libs_windows_audio-1.0.9.tar.gz",
+      "archiveSha256": "c2fd558cc87b9d89a801141fcdffe02e338a3b21a41a18fbd63d5b221a1b8e53",
+      "lockSha256": "c2fd558cc87b9d89a801141fcdffe02e338a3b21a41a18fbd63d5b221a1b8e53",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/media_kit_libs_windows_audio-1.0.9.tar.gz"
+    },
+    {
+      "name": "window_manager",
+      "version": "0.5.1",
+      "url": "https://pub.dev/api/archives/window_manager-0.5.1.tar.gz",
+      "archiveSha256": "7eb6d6c4164ec08e1bf978d6e733f3cebe792e2a23fb07cbca25c2872bfdbdcd",
+      "lockSha256": "7eb6d6c4164ec08e1bf978d6e733f3cebe792e2a23fb07cbca25c2872bfdbdcd",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/window_manager-0.5.1.tar.gz"
+    },
+    {
+      "name": "file_picker",
+      "version": "13.3.2",
+      "url": "https://pub.dev/api/archives/file_picker-13.3.2.tar.gz",
+      "archiveSha256": "c64036857780d7125f011d543f89eedcb5df61da473668bace4eee9ab875284d",
+      "lockSha256": "c64036857780d7125f011d543f89eedcb5df61da473668bace4eee9ab875284d",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/file_picker-13.3.2.tar.gz"
+    },
+    {
+      "name": "windows_file_picker",
+      "version": "2.0.1",
+      "url": "https://pub.dev/api/archives/windows_file_picker-2.0.1.tar.gz",
+      "archiveSha256": "18452aa293de3b6961c6d05b0e71b4be7bb90c67635abdd3aa5c4e75dd875072",
+      "lockSha256": "18452aa293de3b6961c6d05b0e71b4be7bb90c67635abdd3aa5c4e75dd875072",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/windows_file_picker-2.0.1.tar.gz"
+    },
+    {
+      "name": "flutter_inappwebview_windows",
+      "version": "0.6.0",
+      "url": "https://pub.dev/api/archives/flutter_inappwebview_windows-0.6.0.tar.gz",
+      "archiveSha256": "8b4d3a46078a2cdc636c4a3d10d10f2a16882f6be607962dbfff8874d1642055",
+      "lockSha256": "8b4d3a46078a2cdc636c4a3d10d10f2a16882f6be607962dbfff8874d1642055",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/flutter_inappwebview_windows-0.6.0.tar.gz"
+    },
+    {
+      "name": "flutter_secure_storage_windows",
+      "version": "4.2.2",
+      "url": "https://pub.dev/api/archives/flutter_secure_storage_windows-4.2.2.tar.gz",
+      "archiveSha256": "471951813a97006d899db4948acc654a4f28c440083ea08178935ce20b173ec1",
+      "lockSha256": "471951813a97006d899db4948acc654a4f28c440083ea08178935ce20b173ec1",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/flutter_secure_storage_windows-4.2.2.tar.gz"
+    },
+    {
+      "name": "jni",
+      "version": "1.1.2",
+      "url": "https://pub.dev/api/archives/jni-1.1.2.tar.gz",
+      "archiveSha256": "2e91e6087291affd10b31b6c872f3e3ac7dc5d93b51b5ba485d930c8f08bde6c",
+      "lockSha256": "2e91e6087291affd10b31b6c872f3e3ac7dc5d93b51b5ba485d930c8f08bde6c",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/jni-1.1.2.tar.gz"
+    },
+    {
+      "name": "screen_retriever",
+      "version": "0.2.2",
+      "url": "https://pub.dev/api/archives/screen_retriever-0.2.2.tar.gz",
+      "archiveSha256": "ace919117a7520c13a50a6259e60c4a0d4cbe98809468792a91b5c5adada2aa6",
+      "lockSha256": "ace919117a7520c13a50a6259e60c4a0d4cbe98809468792a91b5c5adada2aa6",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/screen_retriever-0.2.2.tar.gz"
+    },
+    {
+      "name": "screen_retriever_platform_interface",
+      "version": "0.2.2",
+      "url": "https://pub.dev/api/archives/screen_retriever_platform_interface-0.2.2.tar.gz",
+      "archiveSha256": "94a5535277510a63184ca178ce12a1449bc0b38618879aa1c18bf57369c5064a",
+      "lockSha256": "94a5535277510a63184ca178ce12a1449bc0b38618879aa1c18bf57369c5064a",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/screen_retriever_platform_interface-0.2.2.tar.gz"
+    },
+    {
+      "name": "screen_retriever_windows",
+      "version": "0.2.2",
+      "url": "https://pub.dev/api/archives/screen_retriever_windows-0.2.2.tar.gz",
+      "archiveSha256": "dafc6922b0bfbf1d48cf3ccbf519b4fff47bdcb820da1728ea6db675fecc9324",
+      "lockSha256": "dafc6922b0bfbf1d48cf3ccbf519b4fff47bdcb820da1728ea6db675fecc9324",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/screen_retriever_windows-0.2.2.tar.gz"
+    },
+    {
+      "name": "screen_retriever_linux",
+      "version": "0.2.2",
+      "url": "https://pub.dev/api/archives/screen_retriever_linux-0.2.2.tar.gz",
+      "archiveSha256": "7b52006a5ceae1f3d5af7f77188c3290d6e7d8ded16d99809bea84967c65c257",
+      "lockSha256": "7b52006a5ceae1f3d5af7f77188c3290d6e7d8ded16d99809bea84967c65c257",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/screen_retriever_linux-0.2.2.tar.gz"
+    },
+    {
+      "name": "screen_retriever_macos",
+      "version": "0.2.2",
+      "url": "https://pub.dev/api/archives/screen_retriever_macos-0.2.2.tar.gz",
+      "archiveSha256": "a1489b99cce597c45a54b9aae1cd94c8d4705353b7e0bb2457a6e4de44e0ad8a",
+      "lockSha256": "a1489b99cce597c45a54b9aae1cd94c8d4705353b7e0bb2457a6e4de44e0ad8a",
+      "matchesLock": true,
+      "artifact": "licenses/native/sources/screen_retriever_macos-0.2.2.tar.gz"
+    }
+  ],
+  "components": [
+    {
+      "name": "media_kit and media_kit_libs_audio wrappers",
+      "license": "MIT",
+      "evidence": "Exact locked hosted LICENSE files and archives collected. MIT applies to wrapper/plugin code, not automatically downloaded libmpv.",
+      "versions": {
+        "media_kit": "1.2.6",
+        "media_kit_libs_audio": "1.0.7",
+        "media_kit_libs_windows_audio": "1.0.9"
+      }
+    },
+    {
+      "name": "libmpv-2.dll",
+      "licenseClassification": "mpv LGPL-2.1-or-later configured with -Dgpl=false; embedded static FFmpeg LGPL-3.0-or-later. The combined supplied library must not be described as MIT or default GPL mpv. Full static dependency closure unresolved.",
+      "binary": {
+        "sha256": "0a5a0b476866c91a639a4e511e8153968f8fa23564461b0aa09acdba816164a4",
+        "size": 15525902
+      },
+      "download": {
+        "url": "https://github.com/media-kit/libmpv-win32-audio-build/releases/download/2023-09-24/mpv-dev-x86_64-20230924-git-652a1dd.7z",
+        "md5RequiredByPlugin": "cd738e16e2a19626d7cfa48801524f8c",
+        "observedMd5": "cd738e16e2a19626d7cfa48801524f8c",
+        "sha256": "583af5a291fc99ae2641794ede1955c368eb4c19dc05f4f0a9c7f9456edeb6a8"
+      },
+      "mpvSourceCommit": "652a1dd90711839acdccc08004056d25514ef2d8",
+      "ffmpegBaseCommit": "ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2",
+      "mpvEmbeddedConfiguration": "Configuration: -Dgpl=false -Db_lto=true -Db_ndebug=true -Dlibmpv=true -Dpdf-build=enabled -Dlua=disabled -Djavascript=enabled -Dlibarchive=enabled -Dlcms2=enabled -Dopenal=enabled -Dgl=disabled -Dspirv-cross=disabled -Dlibplacebo=disabled -Degl-angle=disabled -Dprefix=/__w/libmpv-win32-audio-build/libmpv-win32-audio-build/mpv-winbuild-cmake/build64/install/mingw -Dlibdir=/__w/libmpv-win32-audio-build/libmpv-win32-audio-build/mpv-winbuild-cmake/build64/install/mingw/lib -Dbuildtype=release -Ddefault_library=shared -Dprefer_static=True --cross-file=/__w/libmpv-win32-audio-build/libmpv-win32-audio-build/mpv-winbuild-cmake/build64/meson_cross.txt",
+      "ffmpegEmbeddedConfiguration": "--cross-prefix=x86_64-w64-mingw32- --prefix=/__w/libmpv-win32-audio-build/libmpv-win32-audio-build/mpv-winbuild-cmake/build64/install/mingw --arch=x86_64 --target-os=mingw32 --target-exec=wine --pkg-config-flags=--static --enable-cross-compile --disable-gpl --disable-nonfree --enable-version3 --enable-static --disable-shared --disable-vulkan --disable-iconv --enable-stripping --disable-muxers --disable-decoders --disable-encoders --disable-demuxers --disable-parsers --disable-protocols --disable-filters --disable-doc --disable-postproc --disable-programs --disable-gray --disable-swscale-alpha --disable-bsfs --disable-amf --disable-cuda --disable-nvdec --disable-nvenc --disable-cuvid --disable-dxva2 --disable-libmfx --disable-d3d11va --disable-vaapi --disable-vdpau --disable-bzlib --disable-libmfx --disable-libuavs3d --disable-ffnvcodec --disable-linux-perf --disable-videotoolbox --disable-audiotoolbox --enable-small --enable-hwaccels --enable-optimizations --enable-runtime-cpudetect --enable-mbedtls --enable-libjxl --enable-avutil --enable-avcodec --enable-avfilter --enable-avformat --enable-avdevice --enable-swscale --enable-swresample --enable-decoder='aac*' --enable-decoder=ac3 --enable-decoder=alac --enable-decoder=als --enable-decoder=ape --enable-decoder='atrac*' --enable-decoder=eac3 --enable-decoder=flac --enable-decoder='gsm*' --enable-decoder='mp1*' --enable-decoder='mp2*' --enable-decoder='mp3*' --enable-decoder='mpc*' --enable-decoder=opus --enable-decoder='ra*' --enable-decoder=ralf --enable-decoder=shorten --enable-decoder=tak --enable-decoder=tta --enable-decoder=vorbis --enable-decoder=wavpack --enable-decoder='wma*' --enable-decoder='pcm*' --enable-decoder='dsd*' --enable-decoder=dca --enable-decoder=mjpeg --enable-decoder=ljpeg --enable-decoder=jpegls --enable-decoder=jpeg2000 --enable-decoder=png --enable-decoder=gif --enable-decoder=bmp --enable-decoder=tiff --enable-decoder=webp --enable-decoder=jpegls --enable-demuxer=aac --enable-demuxer=ac3 --enable-demuxer=aiff --enable-demuxer=ape --enable-demuxer=asf --enable-demuxer=au --enable-demuxer=avi --enable-demuxer=flac --enable-demuxer=flv --enable-demuxer=matroska --enable-demuxer=mov --enable-demuxer=m4v --enable-demuxer=mp3 --enable-demuxer='mpc*' --enable-demuxer=ogg --enable-demuxer='pcm*' --enable-demuxer=rm --enable-demuxer=shorten --enable-demuxer=tak --enable-demuxer=tta --enable-demuxer=wav --enable-demuxer=wv --enable-demuxer=xwma --enable-demuxer=dsf --enable-demuxer=dts --enable-demuxer=truehd --enable-demuxer=dts --enable-demuxer=dtshd --enable-parser='aac*' --enable-parser=ac3 --enable-parser=cook --enable-parser=flac --enable-parser=gsm --enable-parser=mpegaudio --enable-parser=tak --enable-parser=vorbis --enable-parser=dca --enable-filter=overlay --enable-filter=equalizer --enable-protocol=async --enable-protocol=cache --enable-protocol=crypto --enable-protocol=data --enable-protocol=ffrtmphttp --enable-protocol=file --enable-protocol=ftp --enable-protocol=hls --enable-protocol=http --enable-protocol=httpproxy --enable-protocol=https --enable-protocol=pipe --enable-protocol=rtmp --enable-protocol=rtmps --enable-protocol=rtmpt --enable-protocol=rtmpts --enable-protocol=rtp --enable-protocol=subfile --enable-protocol=tcp --enable-protocol=tls --enable-protocol=srt --enable-network --extra-libs=-lstdc++",
+      "sourceStatus": "partial; exact base sources do not establish matching complete corresponding source",
+      "missingIds": [
+        "libmpv-release-build-recipe",
+        "libmpv-ffmpeg-patches",
+        "libmpv-static-dependency-revisions",
+        "libmpv-runtime-sources"
+      ],
+      "ffmpegBaseSourceAuthority": "Embedded named FFmpeg version n6.0 plus official n6.0 tag commit, not merely a later recipe guess. Exact binary patches remain unresolved."
+    },
+    {
+      "name": "Flutter framework and engine",
+      "version": "3.47.5",
+      "frameworkCommit": "6a19cca56475dbfba1478ee68d7bd0c2ef891da1",
+      "engineCommit": "af7e796e161ae0bb1ff0758c71a7105418bd9ded",
+      "license": "BSD-3-Clause plus third-party notices",
+      "binarySha256": "8bd7b61eee31aa436edb182db41624d1cd3b2688a7e03622320dbeae067b5251",
+      "fullNotices": "licenses/native/licenses/Flutter-engine-third-party.txt",
+      "sourceStatus": "framework and exact monorepo engine source archives collected with DEPS; fetched third-party dependency trees are not included and no whole-engine reproducible-build claim is made",
+      "staleSdkSourceLink": "SDK license.windows_flutter.md links flutter/engine at engine commit; codeload returned 404. Exact commit is reachable in flutter/flutter monorepo and archive is collected."
+    },
+    {
+      "name": "material_ui",
+      "version": "1.0.0",
+      "license": "BSD-3-Clause, copyright Flutter Authors",
+      "sourceStatus": "exact published source archive SHA256 equals pubspec.lock; retains Flutter notices, not PiliPlus GPL by default"
+    },
+    {
+      "name": "PiliPlus adapted UI",
+      "commit": "d9e9626f1a3f89cd9ca85e18f61aaba02634e12a",
+      "license": "GPL-3.0",
+      "sourceStatus": "exact upstream git archive and license collected; current XMPlus application modified sources and build scripts must be supplied separately by parent, not claimed to be this upstream archive"
+    },
+    {
+      "name": "Windows CMake plugins and Dart native assets",
+      "buildRules": "licenses/native/evidence/Windows-generated-plugins.cmake",
+      "items": [
+        "flutter_inappwebview_windows 0.6.0",
+        "flutter_secure_storage_windows 4.2.2",
+        "media_kit_libs_windows_audio 1.0.9",
+        "jni 1.1.2 native dartjni.dll",
+        "window_manager 0.5.1",
+        "screen_retriever_windows 0.2.2"
+      ],
+      "sourceStatus": "exact published source archives, licenses and relevant Windows rules collected",
+      "localBuildPatch": {
+        "hostFile": "windows/CMakeLists.txt",
+        "evidence": "licenses/native/evidence/XMPlus-Windows-CMakeLists.txt",
+        "originalManagerSha256": "eefc7b984c208696b3a3a34f99b0ddc11779fb7470009ebbabcfd274421d77ab",
+        "upstreamCommit": "0fc1598ec155659ed7c2db3628693a24bd4e0d25",
+        "upstreamUrl": "https://github.com/pichillilorenzo/flutter_inappwebview/commit/0fc1598ec155659ed7c2db3628693a24bd4e0d25",
+        "method": "Compile a hash-guarded generated manager source with the upstream single process-lifetime compositor reference; global Pub cache remains unchanged.",
+        "acceptance": "Tracked separately by native child exit verification."
+      },
+      "localDownloadGuard": {
+        "hostFile": "windows/CMakeLists.txt",
+        "guardSource": "windows/runner/webview_download_guard.h",
+        "guardEvidence": "licenses/native/evidence/XMPlus-webview-download-guard.h",
+        "originalChannelSha256": "e3a491fea03e5be934c6aec29c6e176f581250f9814eb179f8e0421c37bdbf3e",
+        "method": "Hash-pinned generated plugin channel implements xmplusDenyDownloads with ICoreWebView2_4::DownloadStarting; synchronous Cancel=true and Handled=true, registration failure is returned to Dart before loading the challenge. No shared Pub-cache modifications.",
+        "reason": "Installed WebView2 runtime rejects Page.setDownloadBehavior and Browser.setDownloadBehavior with HRESULT 0x80070057 (Not allowed).",
+        "acceptance": "Real local Blob download emitted DownloadStarting with Cancel=true and Handled=true; actual environment and inline JavaScript both initialized successfully."
+      }
+    },
+    {
+      "name": "WebView2Loader, WIL, nlohmann.json",
+      "packages": [
+        {
+          "name": "Microsoft.Web.WebView2",
+          "version": "1.0.2792.45",
+          "artifact": {
+            "path": "licenses/native/sources/Microsoft.Web.WebView2-1.0.2792.45.nupkg",
+            "sha256": "02ffd77440c09b5ff60f5f06defdc3fb07fb5630077c7cf6115bf6be793f91e3",
+            "size": 8474494,
+            "source": "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/1.0.2792.45/microsoft.web.webview2.1.0.2792.45.nupkg",
+            "role": "unaltered NuGet native SDK/header package"
+          }
+        },
+        {
+          "name": "Microsoft.Windows.ImplementationLibrary",
+          "version": "1.0.231216.1",
+          "artifact": {
+            "path": "licenses/native/sources/Microsoft.Windows.ImplementationLibrary-1.0.231216.1.nupkg",
+            "sha256": "5557b5c82d00db3bd539aa886058475be552ee09b538cef87cbcaff440baf5e8",
+            "size": 344168,
+            "source": "https://api.nuget.org/v3-flatcontainer/microsoft.windows.implementationlibrary/1.0.231216.1/microsoft.windows.implementationlibrary.1.0.231216.1.nupkg",
+            "role": "unaltered NuGet native SDK/header package"
+          }
+        },
+        {
+          "name": "nlohmann.json",
+          "version": "3.11.2",
+          "artifact": {
+            "path": "licenses/native/sources/nlohmann.json-3.11.2.nupkg",
+            "sha256": "3b28ccac11d8106dd91d17a21f0eb73782ea45de1c01e6e8158b428febc6c26d",
+            "size": 147669,
+            "source": "https://api.nuget.org/v3-flatcontainer/nlohmann.json/3.11.2/nlohmann.json.3.11.2.nupkg",
+            "role": "unaltered NuGet native SDK/header package"
+          }
+        }
+      ],
+      "licenses": {
+        "Microsoft.Web.WebView2": "BSD-3-Clause Microsoft package LICENSE.txt plus NOTICE.txt",
+        "Microsoft.Windows.ImplementationLibrary": "MIT plus ThirdPartyNotices.txt",
+        "nlohmann.json": "MIT"
+      },
+      "sourceStatus": "exact NuGet SDK/header archives preserved and licensing metadata collected. WebView2 browser runtime itself is NOT bundled/installed by this work and has separate terms."
+    },
+    {
+      "name": "Microsoft Visual C++ runtime",
+      "candidateVersionDirectory": "14.44.35112",
+      "license": "Microsoft proprietary redistribution terms, not GPL/BSD/MIT",
+      "candidates": [
+        {
+          "name": "msvcp140.dll",
+          "sourcePath": "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140.dll",
+          "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9",
+          "size": 557728,
+          "reason": "imports observed in flutter_inappwebview_windows_plugin.dll",
+          "status": "not staged in old runner Release; parent build script must package required runtime or document installed prerequisite"
+        },
+        {
+          "name": "vcruntime140.dll",
+          "sourcePath": "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140.dll",
+          "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+          "size": 124544,
+          "reason": "imports observed in flutter_inappwebview_windows_plugin.dll",
+          "status": "not staged in old runner Release; parent build script must package required runtime or document installed prerequisite"
+        },
+        {
+          "name": "vcruntime140_1.dll",
+          "sourcePath": "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140_1.dll",
+          "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f",
+          "size": 49792,
+          "reason": "imports observed in flutter_inappwebview_windows_plugin.dll",
+          "status": "not staged in old runner Release; parent build script must package required runtime or document installed prerequisite"
+        }
+      ],
+      "notice": "licenses/native/licenses/Visual-C-Runtime-2015-2022-License.txt",
+      "redistList": "https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution",
+      "copiedOrInstalled": false,
+      "missingId": "msvc-distributor-license"
+    },
+    {
+      "name": "window_manager and screen_retriever",
+      "versions": {
+        "window_manager": "0.5.1",
+        "screen_retriever": "0.2.2",
+        "screen_retriever_platform_interface": "0.2.2",
+        "screen_retriever_windows": "0.2.2",
+        "screen_retriever_linux": "0.2.2",
+        "screen_retriever_macos": "0.2.2"
+      },
+      "license": "MIT",
+      "build": "Published CMake MethodChannel plugins; Windows close is posted as WM_SYSCOMMAND rather than synchronously destroying the engine inside a Dart FFI callback.",
+      "sourceStatus": "Exact publisher package archives match the current lock; full LICENSE texts retained."
+    }
+  ],
+  "sourcePins": [
+    {
+      "name": "openal-soft",
+      "repository": "kcat/openal-soft",
+      "tag": "1.23.1",
+      "commit": "d3875f333fb6abe2f39d82caca329414871ae53b"
+    },
+    {
+      "name": "fribidi",
+      "repository": "fribidi/fribidi",
+      "tag": "v1.0.13",
+      "commit": "b54871c339dabb7434718da3fed2fa63320997e5"
+    },
+    {
+      "name": "libjpeg-turbo",
+      "repository": "libjpeg-turbo/libjpeg-turbo",
+      "tag": "3.0.1",
+      "commit": "ec32420f6b5dfa4e86883d42b209e8371e55aeb5"
+    },
+    {
+      "name": "nlohmann-json",
+      "repository": "nlohmann/json",
+      "tag": "v3.11.2",
+      "commit": "bc889afb4c5bf1c0d8ee29ef35eaaf4c8bef8a5d"
+    },
+    {
+      "name": "ffmpeg",
+      "repository": "FFmpeg/FFmpeg",
+      "tag": "n6.0",
+      "commit": "ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2"
+    }
+  ],
+  "binaryImportSummary": {
+    "libmpv-2.dll": {
+      "sha256": "0a5a0b476866c91a639a4e511e8153968f8fa23564461b0aa09acdba816164a4",
+      "imports": [
+        "ADVAPI32.dll",
+        "AVRT.dll",
+        "dwmapi.dll",
+        "KERNEL32.dll",
+        "api-ms-win-crt-convert-l1-1-0.dll",
+        "api-ms-win-crt-environment-l1-1-0.dll",
+        "api-ms-win-crt-filesystem-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-private-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-time-l1-1-0.dll",
+        "api-ms-win-crt-utility-l1-1-0.dll",
+        "SHELL32.dll",
+        "UxTheme.dll",
+        "WINMM.dll",
+        "bcrypt.dll",
+        "GDI32.dll",
+        "ole32.dll",
+        "OLEAUT32.dll",
+        "SHLWAPI.dll",
+        "USER32.dll",
+        "AVICAP32.dll",
+        "WS2_32.dll"
+      ],
+      "delayImports": []
+    },
+    "flutter_windows.dll": {
+      "sha256": "8bd7b61eee31aa436edb182db41624d1cd3b2688a7e03622320dbeae067b5251",
+      "imports": [
+        "ADVAPI32.dll",
+        "IPHLPAPI.DLL",
+        "ole32.dll",
+        "OLEAUT32.dll",
+        "PSAPI.DLL",
+        "SHLWAPI.dll",
+        "RPCRT4.dll",
+        "WINMM.dll",
+        "WS2_32.dll",
+        "IMM32.dll",
+        "USER32.dll",
+        "OPENGL32.dll",
+        "bcrypt.dll",
+        "api-ms-win-core-path-l1-1-0.dll",
+        "ntdll.dll",
+        "GDI32.dll",
+        "KERNEL32.dll",
+        "CRYPT32.dll",
+        "UIAutomationCore.DLL",
+        "OLEACC.dll",
+        "PROPSYS.dll",
+        "dxgi.dll",
+        "d3d9.dll",
+        "api-ms-win-core-synch-l1-2-0.dll"
+      ],
+      "delayImports": [
+        "dwmapi.dll",
+        "dbghelp.dll"
+      ]
+    },
+    "flutter_inappwebview_windows_plugin.dll": {
+      "sha256": "6735f2abff4b29d280ee636d63749ea01dac07252ad3779bd94c7a9a4ba31743",
+      "imports": [
+        "WebView2Loader.dll",
+        "flutter_windows.dll",
+        "KERNEL32.dll",
+        "USER32.dll",
+        "GDI32.dll",
+        "SHELL32.dll",
+        "ole32.dll",
+        "MSVCP140.dll",
+        "SHLWAPI.dll",
+        "d3d11.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-convert-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-time-l1-1-0.dll"
+      ],
+      "delayImports": []
+    },
+    "WebView2Loader.dll": {
+      "sha256": "9468470d6a4d11179ec179183d130465a380e0dedfdbe1fc2ab404c86c45a85e",
+      "imports": [
+        "KERNEL32.dll"
+      ],
+      "delayImports": [
+        "ADVAPI32.dll",
+        "ole32.dll"
+      ]
+    }
+  },
+  "missing": [
+    {
+      "id": "libmpv-release-build-recipe",
+      "component": "libmpv-2.dll",
+      "missing": "The exact workflow checkout, custom workflow input command, generated Meson/CMake cross files, environment/toolchain setup and patches used for the 2023-09-24 release are not tied to the release metadata.",
+      "known": "Release tag points to version-only commit f0f6ac7483396f345820660176cc84e2dd6ba220; release body pins mpv; embedded full mpv and FFmpeg configure options collected.",
+      "attempts": [
+        "release metadata and release tag tree inspected",
+        "historical master commit immediately before release inspected; flags contradict binary",
+        "current minimal audio recipe snapshot collected but dates to 2024-02-28",
+        "GitHub actions runs queried for 2023-09-23..2023-09-25: zero retained runs"
+      ],
+      "publicRedistributionBlocker": true
+    },
+    {
+      "id": "libmpv-ffmpeg-patches",
+      "component": "statically linked FFmpeg n6.0",
+      "missing": "Exact applied FFmpeg source changes and generated build configuration are unknown. Later recipe archives three patches but is not proven to match this DLL.",
+      "baseSourceCommit": "ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2",
+      "baseSourceEvidence": "Embedded FFmpeg version n6.0; official annotated n6.0 tag resolves to ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2, also pinned by later minimal-audio recipe.",
+      "candidatePatchPaths": [
+        "packages/ffmpeg-binutil-2.41-compile.patch",
+        "packages/ffmpeg-dash-base-url-escape.patch",
+        "packages/ffmpeg-fix-hls-mp4-seek.patch"
+      ],
+      "publicRedistributionBlocker": true
+    },
+    {
+      "id": "libmpv-static-dependency-revisions",
+      "component": "libmpv static third-party dependencies",
+      "missing": "Complete linked component inventory, precise commits, patches and build recipes remain unknown, especially development-version libarchive 3.7.3dev and libpng 1.6.41.git, unassigned xz 5.5.0alpha, font/text, charset, compression and runtime dependencies. Do not substitute nearest release archives.",
+      "knownSourceSnapshots": [
+        "mpv exact commit",
+        "FFmpeg n6.0 exact base commit",
+        "libass exact embedded commit",
+        "OpenAL Soft 1.23.1 upstream tag/commit",
+        "FriBidi 1.0.13 upstream tag/commit",
+        "libjpeg-turbo 3.0.1 upstream tag/commit"
+      ],
+      "publicRedistributionBlocker": true
+    },
+    {
+      "id": "libmpv-runtime-sources",
+      "component": "MinGW/GCC static runtime portions, if included",
+      "missing": "Compiler banners identify GCC (GNU) 13.1.1 20230610, but exact toolchain source revision/configuration and included runtime components are not established. Runtime exception full text collected; this alone does not prove all conditions.",
+      "publicRedistributionBlocker": true
+    },
+    {
+      "id": "msvc-distributor-license",
+      "component": "Microsoft CRT if bundled",
+      "missing": "Distributor must confirm rights under the applicable Visual Studio license and official redist list. The collected runtime end-user license alone is not a grant to redistribute arbitrary SDK files. No terms were accepted or installer run.",
+      "publicRedistributionBlocker": true
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "licenses/native/SOURCE-MATERIALS-INCOMPLETE.txt",
+      "sha256": "37867ddbd8b3133b8198cf453bb76504fe5959d8e0a3bb36093d30c5d5155668",
+      "size": 3319,
+      "source": "This task: evidence-backed public redistribution gate",
+      "role": "required explicit local candidate notice"
+    },
+    {
+      "path": "licenses/native/evidence/FFmpeg-LICENSE.txt",
+      "sha256": "cb48bf09a11f5fb576cddb0431c8f5ed0a60157a9ec942adffc13907cbe083f2",
+      "size": 4376,
+      "source": "https://github.com/FFmpeg/FFmpeg/blob/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/LICENSE.md",
+      "role": "full source license/classification"
+    },
+    {
+      "path": "licenses/native/evidence/Flutter-DEPS.txt",
+      "sha256": "6cbcd2c06ca89b6fb881c205000d18145b034fb9351081076feb26e521da323b",
+      "size": 38701,
+      "source": "https://github.com/flutter/flutter/blob/6a19cca56475dbfba1478ee68d7bd0c2ef891da1/DEPS",
+      "role": "framework source dependency pins"
+    },
+    {
+      "path": "licenses/native/evidence/Flutter-windows-binary-license.txt",
+      "sha256": "e5e806f2665cc1dd761775c7c32f08e89ec8dbc2b1665b9d282f8459ac78b3f0",
+      "size": 578,
+      "source": "Flutter SDK release engine artifact",
+      "role": "source entry shipped with engine artifact"
+    },
+    {
+      "path": "licenses/native/evidence/Microsoft.Web.WebView2-1.0.2792.45.nuspec",
+      "sha256": "ed3117e361a3a1b19ebb5d06a0696540d86f3af942266c5151808273844a58cf",
+      "size": 1367,
+      "source": "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/1.0.2792.45/microsoft.web.webview2.1.0.2792.45.nupkg:Microsoft.Web.WebView2.nuspec",
+      "role": "NuGet version and license metadata"
+    },
+    {
+      "path": "licenses/native/evidence/Microsoft.Windows.ImplementationLibrary-1.0.231216.1.nuspec",
+      "sha256": "4d7e73673d0e67d6d9d99948ce6363a9d54b45c3244ff228eaaab078ef95ec31",
+      "size": 859,
+      "source": "https://api.nuget.org/v3-flatcontainer/microsoft.windows.implementationlibrary/1.0.231216.1/microsoft.windows.implementationlibrary.1.0.231216.1.nupkg:Microsoft.Windows.ImplementationLibrary.nuspec",
+      "role": "NuGet version and license metadata"
+    },
+    {
+      "path": "licenses/native/evidence/VisualStudio-2022-Redist.txt",
+      "sha256": "da53b097e02b08e0fc69706102a60bc384fe756426ae4dc4a855e96f95cb2b9c",
+      "size": 187,
+      "source": "installed VS 2022 BuildTools",
+      "role": "installed redistribution list pointer"
+    },
+    {
+      "path": "licenses/native/evidence/Windows-generated-plugins.cmake",
+      "sha256": "8064611fd52b4fec1c269920af5ba347bde032ccdef206dc7f3a77cb18489e3f",
+      "size": 888,
+      "source": "current generated plugin rules",
+      "role": "actual native plugins"
+    },
+    {
+      "path": "licenses/native/evidence/flutter-inappwebview-windows-CMakeLists.txt",
+      "sha256": "73cfabae0fa0cbd346a5c7d605eebe1b1dee56e1878a7dfe84a72a0ad71d7f94",
+      "size": 11113,
+      "source": "installed locked pub source flutter_inappwebview_windows-0.6.0/windows/CMakeLists.txt",
+      "role": "actual Windows native plugin build rules"
+    },
+    {
+      "path": "licenses/native/evidence/flutter.version.json",
+      "sha256": "4dd63400c031756d235f0a3ae33ea94eb80170a0bb327580324c68d53b7b4c42",
+      "size": 559,
+      "source": "local fixed Flutter SDK",
+      "role": "SDK framework and engine identities"
+    },
+    {
+      "path": "licenses/native/evidence/jni-native-CMakeLists.txt",
+      "sha256": "14eb8b434dbd454ce0f9eec04875a49c28cdc501e1c74340bd9ea68fe7762063",
+      "size": 1851,
+      "source": "installed locked pub source jni-1.1.2/src/CMakeLists.txt",
+      "role": "actual Windows native plugin build rules"
+    },
+    {
+      "path": "licenses/native/evidence/jni-windows-CMakeLists.txt",
+      "sha256": "3cae0b3c8091c70f409d4ba24481ce168243b67ddc191da36637f3f1bbe376c5",
+      "size": 609,
+      "source": "installed locked pub source jni-1.1.2/windows/CMakeLists.txt",
+      "role": "actual Windows native plugin build rules"
+    },
+    {
+      "path": "licenses/native/evidence/libmpv-2.dll-license-strings.json",
+      "sha256": "f355a0dd9fb314a5a5fa25ac88cbd1baf739e314e45aa47546b1e891b5b9d7a4",
+      "size": 19164,
+      "source": "local release libmpv-2.dll; plugin archive MD5 validated",
+      "role": "bounded embedded license, configuration and version evidence"
+    },
+    {
+      "path": "licenses/native/evidence/libmpv-additional-version-strings.json",
+      "sha256": "c1040951f69f93ee638a68d885c956212f5af0c8c6ba013b1b69e50d3c42db8d",
+      "size": 1975,
+      "source": "offline libmpv-2.dll ASCII byte sequences",
+      "role": "additional FFmpeg base version and unassigned dependency version evidence"
+    },
+    {
+      "path": "licenses/native/evidence/libmpv-release-2023-09-24.json",
+      "sha256": "42351259364a8cecd878ba5febee19137c20ce807def0e50c584c1f90e36dd47",
+      "size": 8145,
+      "source": "https://api.github.com/repos/media-kit/libmpv-win32-audio-build/releases/tags/2023-09-24",
+      "role": "release metadata and exact mpv source commit"
+    },
+    {
+      "path": "licenses/native/evidence/media-kit-windows-CMakeLists.txt",
+      "sha256": "4e2174c6800b2757e3636a919ccda20f0275835c9db2a8abda456176167690f6",
+      "size": 4468,
+      "source": "media_kit_libs_windows_audio 1.0.9 pub archive",
+      "role": "actual libmpv release download and hash rules"
+    },
+    {
+      "path": "licenses/native/evidence/mpv-Copyright.txt",
+      "sha256": "ca8f78358716ff15098bf681e07d508007e4e5f1bbcbefc5d859bef55559d00d",
+      "size": 3740,
+      "source": "https://raw.githubusercontent.com/mpv-player/mpv/652a1dd90711839acdccc08004056d25514ef2d8/Copyright",
+      "role": "upstream license classification and linked-library caveat"
+    },
+    {
+      "path": "licenses/native/evidence/nlohmann.json-3.11.2.nuspec",
+      "sha256": "7436cba1e39798eb1a2482858f5cec858923984f8742a875addf7de9128fafaa",
+      "size": 1064,
+      "source": "https://api.nuget.org/v3-flatcontainer/nlohmann.json/3.11.2/nlohmann.json.3.11.2.nupkg:nlohmann.json.nuspec",
+      "role": "NuGet version and license metadata"
+    },
+    {
+      "path": "licenses/native/evidence/visualstudio-2022-redist.html",
+      "sha256": "5d0f481ac457e18abb4a7482433c7b52361a5110ece7dbab52b9baa960026ff9",
+      "size": 62616,
+      "source": "https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution",
+      "role": "Microsoft official redistributable list and conditions"
+    },
+    {
+      "path": "licenses/native/licenses/FFmpeg-LGPL-3.0.txt",
+      "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768",
+      "size": 7651,
+      "source": "https://github.com/FFmpeg/FFmpeg/blob/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/COPYING.LGPLv3",
+      "role": "full source license/classification"
+    },
+    {
+      "path": "licenses/native/licenses/Flutter-BSD.txt",
+      "sha256": "a3a9fd82f800a47377f7d3f60c60a5c91cae0495be8f329031e1448ce0f5dab9",
+      "size": 1544,
+      "source": "https://github.com/flutter/flutter/blob/6a19cca56475dbfba1478ee68d7bd0c2ef891da1/LICENSE",
+      "role": "Flutter framework full license"
+    },
+    {
+      "path": "licenses/native/licenses/Flutter-engine-third-party.txt",
+      "sha256": "3c0040023a5789bf56d6bf41fd44f08b21758523d41f128fb7dd6beb398d1191",
+      "size": 1269349,
+      "source": "Flutter SDK 3.47.5 sky_engine/license; engine af7e796e161ae0bb1ff0758c71a7105418bd9ded",
+      "role": "full engine and third-party notices shipped by SDK"
+    },
+    {
+      "path": "licenses/native/licenses/GCC-RUNTIME-EXCEPTION-3.1.txt",
+      "sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74",
+      "size": 3324,
+      "source": "https://api.github.com/repos/gcc-mirror/gcc/contents/COPYING.RUNTIME?ref=releases/gcc-13.1.0",
+      "role": "GCC runtime exception full text; actual custom GCC 13.1.1 runtime source pin unresolved"
+    },
+    {
+      "path": "licenses/native/licenses/GPL-3.0.txt",
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+      "size": 35147,
+      "source": "https://github.com/FFmpeg/FFmpeg/blob/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/COPYING.GPLv3",
+      "role": "full source license/classification"
+    },
+    {
+      "path": "licenses/native/licenses/LGPL-3.0.txt",
+      "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118",
+      "size": 7652,
+      "source": "https://www.gnu.org/licenses/lgpl-3.0.txt",
+      "role": "full LGPL version 3 text for embedded FFmpeg libraries"
+    },
+    {
+      "path": "licenses/native/licenses/Microsoft.Web.WebView2-LICENSE.txt",
+      "sha256": "0af8f1b807512aae39c2ac1aa4d0cae65cabecb6fd554b8439a5162a0d6eca55",
+      "size": 1487,
+      "source": "installed NuGet package Microsoft.Web.WebView2:LICENSE.txt",
+      "role": "full Microsoft dependency license/notice"
+    },
+    {
+      "path": "licenses/native/licenses/Microsoft.Web.WebView2-NOTICE.txt",
+      "sha256": "106423785c5b7eba0a8e61d1837f2132e9c828e20ad530f565d981c1df60dd90",
+      "size": 3894,
+      "source": "installed NuGet package Microsoft.Web.WebView2:NOTICE.txt",
+      "role": "full Microsoft dependency license/notice"
+    },
+    {
+      "path": "licenses/native/licenses/Microsoft.Windows.ImplementationLibrary-LICENSE",
+      "sha256": "27ebda9d51f0a56b7e281ccd8230a27236dcb51c05f64b07869ecf6e965d68b0",
+      "size": 1162,
+      "source": "installed NuGet package Microsoft.Windows.ImplementationLibrary:LICENSE",
+      "role": "full Microsoft dependency license/notice"
+    },
+    {
+      "path": "licenses/native/licenses/Microsoft.Windows.ImplementationLibrary-ThirdPartyNotices.txt",
+      "sha256": "36b2bfdce8b65a4cf1b3e4e25b1a63a855aa6d67d4b1ee78ac7903d46760aade",
+      "size": 3140,
+      "source": "installed NuGet package Microsoft.Windows.ImplementationLibrary:ThirdPartyNotices.txt",
+      "role": "full Microsoft dependency license/notice"
+    },
+    {
+      "path": "licenses/native/licenses/PiliPlus-GPL-3.0.txt",
+      "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+      "size": 35823,
+      "source": "https://github.com/bggRGjQaUbCoE/PiliPlus/blob/d9e9626f1a3f89cd9ca85e18f61aaba02634e12a/LICENSE",
+      "role": "full adapted UI upstream GPL 3 license"
+    },
+    {
+      "path": "licenses/native/licenses/Visual-C-Runtime-2015-2022-License.docx",
+      "sha256": "f1e3d56ceb2ad68aae0711b910375009e651ac5530fa0760f0dea6e81e54fae1",
+      "size": 39644,
+      "source": "https://visualstudio.microsoft.com/wp-content/uploads/2021/09/Visual-C-Runtime-2015-2022-License-1.docx",
+      "role": "full official Visual C++ runtime license; no acceptance or installation"
+    },
+    {
+      "path": "licenses/native/licenses/Visual-C-Runtime-2015-2022-License.txt",
+      "sha256": "7e96c27c67ef3e7cabc55e1dee05727e67d261f3944155a816a07dbf9b78fb1d",
+      "size": 6589,
+      "source": "Visual-C-Runtime-2015-2022-License.docx:word/document.xml",
+      "role": "readable full runtime license"
+    },
+    {
+      "path": "licenses/native/licenses/VisualStudio-2022-BuildTools-Terms.docx",
+      "sha256": "2f66b86a00e8d9833789897ce23d05a4a2dbea370cf39c8c1098dbc17d0e7bdc",
+      "size": 34395,
+      "source": "https://visualstudio.microsoft.com/wp-content/uploads/2024/03/Visual-Studio-2022-Diagnostic-Build-Tools-Agent-License_Update-March-2024_EN.docx",
+      "role": "full official Microsoft Build Tools terms; collection does not accept terms"
+    },
+    {
+      "path": "licenses/native/licenses/VisualStudio-2022-BuildTools-Terms.txt",
+      "sha256": "c8f5ebea5d05e71865d67ec699db544327c7b78e239f282f54e4c92d9c5a3e43",
+      "size": 11244,
+      "source": "VisualStudio-2022-BuildTools-Terms.docx:word/document.xml",
+      "role": "readable full Microsoft terms"
+    },
+    {
+      "path": "licenses/native/licenses/VisualStudio-2022-ThirdPartyNotices.txt",
+      "sha256": "782815bd1256f9ad798211eee4b0e574ddd113bd07700c6921ab25c591fbcda7",
+      "size": 7043986,
+      "source": "installed VS 2022 BuildTools",
+      "role": "Microsoft bundled third party notices; NOT a substitute for Microsoft license grant"
+    },
+    {
+      "path": "licenses/native/licenses/file_picker-13.3.2.LICENSE",
+      "sha256": "6278994817bd65fa32404e53c3a62a09d824d3f9a71f7fadcaca3e4f02641d66",
+      "size": 1069,
+      "source": "pub package file_picker 13.3.2:LICENSE",
+      "role": "full license text"
+    },
+    {
+      "path": "licenses/native/licenses/flutter_inappwebview_windows-0.6.0.LICENSE",
+      "sha256": "d98181ad10d102e1fb4d8214315c074699f01423725c9fb6bfe931f36342769c",
+      "size": 11547,
+      "source": "pub package flutter_inappwebview_windows 0.6.0:LICENSE",
+      "role": "full license text"
+    },
+    {
+      "path": "licenses/native/licenses/flutter_secure_storage_windows-4.2.2.LICENSE",
+      "sha256": "55dafb084270616f95b9bea53654adda8bdcad95c022a83c4cf8769073f829fa",
+      "size": 1509,
+      "source": "pub package flutter_secure_storage_windows 4.2.2:LICENSE",
+      "role": "full license text"
+    },
+    {
+      "path": "licenses/native/licenses/fribidi-v1.0.13-COPYING",
+      "sha256": "32434afcc8666ba060e111d715bfdb6c2d5dd8a35fa4d3ab8ad67d8f850d2f2b",
+      "size": 26440,
+      "source": "fribidi-v1.0.13.tar.gz:COPYING",
+      "role": "full upstream dependency license text"
+    },
+    {
+      "path": "licenses/native/licenses/jni-1.1.2.LICENSE",
+      "sha256": "08a004aa8956c3cf3b24f7f69c966247233953e18e6afaa61191ea47b7eb70f6",
+      "size": 1503,
+      "source": "pub package jni 1.1.2:LICENSE",
+      "role": "full license text"
+    },
+    {
+      "path": "licenses/native/licenses/libass-5c15c883a4783641f7e71a6a1f440209965eb64f-COPYING",
+      "sha256": "f7e30699d02798351e7f839e3d3bfeb29ce65e44efa7735c225464c4fd7dfe9c",
+      "size": 755,
+      "source": "libass-5c15c883a4783641f7e71a6a1f440209965eb64f.tar.gz:COPYING",
+      "role": "full upstream dependency license text"
+    },
+    {
+      "path": "licenses/native/licenses/libjpeg-turbo-3.0.1-LICENSE.txt",
+      "sha256": "60c756742db3ad1913304e8b13f0e86e22e51adb50cc0b3333c163f7e45ceec1",
+      "size": 5213,
+      "source": "libjpeg-turbo-3.0.1.tar.gz:LICENSE.md",
+      "role": "full upstream dependency license text"
+    },
+    {
+      "path": "licenses/native/licenses/material_ui-1.0.0.LICENSE",
+      "sha256": "420f7739f169097f0aad1242045169cd643c8f1d94e62866fad265ae4c369b7d",
+      "size": 1497,
+      "source": "pub package material_ui 1.0.0:LICENSE",
+      "role": "full license text"
+    },
+    {
+      "path": "licenses/native/licenses/media_kit-1.2.6.LICENSE",
+      "sha256": "2e3000f38718f050869d57540c288c661a446f64df1ba4ea4764df552b04a331",
+      "size": 1112,
+      "source": "pub package media_kit 1.2.6:LICENSE",
+      "role": "full license text"
+    },
+    {
+      "path": "licenses/native/licenses/media_kit_libs_audio-1.0.7.LICENSE",
+      "sha256": "2e3000f38718f050869d57540c288c661a446f64df1ba4ea4764df552b04a331",
+      "size": 1112,
+      "source": "pub package media_kit_libs_audio 1.0.7:LICENSE",
+      "role": "full license text"
+    },
+    {
+      "path": "licenses/native/licenses/media_kit_libs_windows_audio-1.0.9.LICENSE",
+      "sha256": "a78baa721ad6f5c0b2d8fb0c6cfff835ad8ed90393cac0087a90e8813490f2bd",
+      "size": 1133,
+      "source": "pub package media_kit_libs_windows_audio 1.0.9:LICENSE",
+      "role": "full license text"
+    },
+    {
+      "path": "licenses/native/licenses/mpv-LICENSE.GPL",
+      "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+      "size": 18092,
+      "source": "https://raw.githubusercontent.com/mpv-player/mpv/652a1dd90711839acdccc08004056d25514ef2d8/LICENSE.GPL",
+      "role": "full GPL 2 license text"
+    },
+    {
+      "path": "licenses/native/licenses/mpv-LICENSE.LGPL",
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+      "size": 26530,
+      "source": "https://raw.githubusercontent.com/mpv-player/mpv/652a1dd90711839acdccc08004056d25514ef2d8/LICENSE.LGPL",
+      "role": "full LGPL 2.1 license text"
+    },
+    {
+      "path": "licenses/native/licenses/nlohmann-json-LICENSE.MIT",
+      "sha256": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14",
+      "size": 1076,
+      "source": "https://raw.githubusercontent.com/nlohmann/json/bc889afb4c5bf1c0d8ee29ef35eaaf4c8bef8a5d/LICENSE.MIT",
+      "role": "full nlohmann JSON MIT license"
+    },
+    {
+      "path": "licenses/native/licenses/openal-soft-1.23.1-COPYING",
+      "sha256": "d808ce217e5b611854da622b57ec29fe545584c48bc5352fae72a4b6e5074a15",
+      "size": 23330,
+      "source": "openal-soft-1.23.1.tar.gz:COPYING",
+      "role": "full upstream dependency license text"
+    },
+    {
+      "path": "licenses/native/licenses/windows_file_picker-2.0.1.LICENSE",
+      "sha256": "12f7222de745bab3710ba88b59f33484ca423aa5e1deac9e56ed946706d5abab",
+      "size": 1070,
+      "source": "pub package windows_file_picker 2.0.1:LICENSE",
+      "role": "full license text"
+    },
+    {
+      "path": "licenses/native/sources/FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2.tar.gz",
+      "sha256": "aacce24d5bb6c67fbf1e3343bc15a6977ad700cdb4f43c8551f6544fa54ab7ec",
+      "size": 14751707,
+      "source": "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2",
+      "role": "candidate FFmpeg base pin from later minimal-audio recipe, not independently confirmed for DLL"
+    },
+    {
+      "path": "licenses/native/sources/Microsoft.Web.WebView2-1.0.2792.45.nupkg",
+      "sha256": "02ffd77440c09b5ff60f5f06defdc3fb07fb5630077c7cf6115bf6be793f91e3",
+      "size": 8474494,
+      "source": "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/1.0.2792.45/microsoft.web.webview2.1.0.2792.45.nupkg",
+      "role": "unaltered NuGet native SDK/header package"
+    },
+    {
+      "path": "licenses/native/sources/Microsoft.Windows.ImplementationLibrary-1.0.231216.1.nupkg",
+      "sha256": "5557b5c82d00db3bd539aa886058475be552ee09b538cef87cbcaff440baf5e8",
+      "size": 344168,
+      "source": "https://api.nuget.org/v3-flatcontainer/microsoft.windows.implementationlibrary/1.0.231216.1/microsoft.windows.implementationlibrary.1.0.231216.1.nupkg",
+      "role": "unaltered NuGet native SDK/header package"
+    },
+    {
+      "path": "licenses/native/sources/PiliPlus-d9e9626f1a3f89cd9ca85e18f61aaba02634e12a.tar.gz",
+      "sha256": "0322e876134d71483d1af2f3f30c768275d48d122fe79d75cca61bd90dc0a766",
+      "size": 10709510,
+      "source": "https://github.com/bggRGjQaUbCoE/PiliPlus/tree/d9e9626f1a3f89cd9ca85e18f61aaba02634e12a",
+      "role": "git archive of exact GPL adapted UI upstream commit, not current XMPlus corresponding source"
+    },
+    {
+      "path": "licenses/native/sources/file_picker-13.3.2.tar.gz",
+      "sha256": "c64036857780d7125f011d543f89eedcb5df61da473668bace4eee9ab875284d",
+      "size": 28950,
+      "source": "https://pub.dev/api/archives/file_picker-13.3.2.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/sources/flutter-6a19cca56475dbfba1478ee68d7bd0c2ef891da1.tar.gz",
+      "sha256": "2eb68ccc99c47094af09a72de8b7e83b38ca78394865bf04c71fe3e58791697c",
+      "size": 34727119,
+      "source": "https://github.com/flutter/flutter/tree/6a19cca56475dbfba1478ee68d7bd0c2ef891da1",
+      "role": "git archive of exact installed framework commit, includes engine sources and DEPS; fetched third-party dependency trees are not included"
+    },
+    {
+      "path": "licenses/native/sources/flutter-engine-monorepo-af7e796e161ae0bb1ff0758c71a7105418bd9ded.tar.gz",
+      "sha256": "e41b910089aa7031afcfde6c1af7786c6e64f3dc686238065009225ca1ffb94d",
+      "size": 34598859,
+      "source": "https://codeload.github.com/flutter/flutter/tar.gz/af7e796e161ae0bb1ff0758c71a7105418bd9ded",
+      "role": "exact engine revision in Flutter monorepo; dependency DEPS source pins included, fetched third-party source trees not included"
+    },
+    {
+      "path": "licenses/native/sources/flutter_inappwebview_windows-0.6.0.tar.gz",
+      "sha256": "8b4d3a46078a2cdc636c4a3d10d10f2a16882f6be607962dbfff8874d1642055",
+      "size": 144094,
+      "source": "https://pub.dev/api/archives/flutter_inappwebview_windows-0.6.0.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/sources/flutter_secure_storage_windows-4.2.2.tar.gz",
+      "sha256": "471951813a97006d899db4948acc654a4f28c440083ea08178935ce20b173ec1",
+      "size": 22237,
+      "source": "https://pub.dev/api/archives/flutter_secure_storage_windows-4.2.2.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/sources/fribidi-b54871c339dabb7434718da3fed2fa63320997e5.tar.gz",
+      "sha256": "bce511ab39af70a7022189adea45002c41b8be4bb571fc59ccd6e28ebbd06fa4",
+      "size": 2110461,
+      "source": "https://codeload.github.com/fribidi/fribidi/tar.gz/b54871c339dabb7434718da3fed2fa63320997e5",
+      "role": "immutable commit source snapshot; matching package/version where stated, patches not established for binary dependencies"
+    },
+    {
+      "path": "licenses/native/sources/fribidi-v1.0.13.tar.gz",
+      "sha256": "f24e8e381bcf76533ae56bd776196f3a0369ec28e9c0fdb6edd163277e008314",
+      "size": 2110352,
+      "source": "https://codeload.github.com/fribidi/fribidi/tar.gz/refs/tags/v1.0.13",
+      "role": "upstream source for embedded FriBidi version; local patches not known"
+    },
+    {
+      "path": "licenses/native/sources/jni-1.1.2.tar.gz",
+      "sha256": "2e91e6087291affd10b31b6c872f3e3ac7dc5d93b51b5ba485d930c8f08bde6c",
+      "size": 396141,
+      "source": "https://pub.dev/api/archives/jni-1.1.2.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/sources/libass-5c15c883a4783641f7e71a6a1f440209965eb64f.tar.gz",
+      "sha256": "9d03234be4ae68221e4e3e0db222cc9518a78415b73553aff1faa857cd65b268",
+      "size": 315189,
+      "source": "https://codeload.github.com/libass/libass/tar.gz/5c15c883a4783641f7e71a6a1f440209965eb64f",
+      "role": "exact libass source commit embedded in DLL"
+    },
+    {
+      "path": "licenses/native/sources/libjpeg-turbo-3.0.1.tar.gz",
+      "sha256": "5b9bbca2b2a87c6632c821799438d358e27004ab528abf798533c15d50b39f82",
+      "size": 2800900,
+      "source": "https://codeload.github.com/libjpeg-turbo/libjpeg-turbo/tar.gz/refs/tags/3.0.1",
+      "role": "upstream source for embedded JPEG library version; local patches not known"
+    },
+    {
+      "path": "licenses/native/sources/libjpeg-turbo-ec32420f6b5dfa4e86883d42b209e8371e55aeb5.tar.gz",
+      "sha256": "25f7478c335940f7abca4d739d61a15e2ea4af44290b2c30aa45775db7533a04",
+      "size": 2803219,
+      "source": "https://codeload.github.com/libjpeg-turbo/libjpeg-turbo/tar.gz/ec32420f6b5dfa4e86883d42b209e8371e55aeb5",
+      "role": "immutable commit source snapshot; matching package/version where stated, patches not established for binary dependencies"
+    },
+    {
+      "path": "licenses/native/sources/libmpv-win32-audio-build-222494909872cafd8359ec7a1bfd1e062f4482c9.tar.gz",
+      "sha256": "eb13b041c0ee0c44b376b7a0790b6d46fa830ae6b9280d2ac5ac08ae0ae3d874",
+      "size": 64518,
+      "source": "https://codeload.github.com/media-kit/libmpv-win32-audio-build/tar.gz/222494909872cafd8359ec7a1bfd1e062f4482c9",
+      "role": "current immutable minimal audio recipe snapshot, later than binary; NOT matching corresponding source"
+    },
+    {
+      "path": "licenses/native/sources/libmpv-win32-audio-build-f5a6f879c9b8bef6a73e52c8c0f35e51636c96e5.tar.gz",
+      "sha256": "4ace61f24b3c8bebef1cb6579a7708bbda8e2a745b6e4c38c195e3b371b983d3",
+      "size": 67308,
+      "source": "https://codeload.github.com/media-kit/libmpv-win32-audio-build/tar.gz/f5a6f879c9b8bef6a73e52c8c0f35e51636c96e5",
+      "role": "historical recipe snapshot, NOT established as recipe for supplied DLL"
+    },
+    {
+      "path": "licenses/native/sources/material_ui-1.0.0.tar.gz",
+      "sha256": "d9b4f6c69b80bc83d0a14357c86e4c14c8076e807ae73cf2960c8560f623995f",
+      "size": 3334229,
+      "source": "https://pub.dev/api/archives/material_ui-1.0.0.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/sources/media_kit-1.2.6.tar.gz",
+      "sha256": "ae9e79597500c7ad6083a3c7b7b7544ddabfceacce7ae5c9709b0ec16a5d6643",
+      "size": 2049647,
+      "source": "https://pub.dev/api/archives/media_kit-1.2.6.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/sources/media_kit_libs_audio-1.0.7.tar.gz",
+      "sha256": "81bf506c234e81e3ec536ba72f8f700a928543c14c345220210cae0411636316",
+      "size": 1736,
+      "source": "https://pub.dev/api/archives/media_kit_libs_audio-1.0.7.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/sources/media_kit_libs_windows_audio-1.0.9.tar.gz",
+      "sha256": "c2fd558cc87b9d89a801141fcdffe02e338a3b21a41a18fbd63d5b221a1b8e53",
+      "size": 3965,
+      "source": "https://pub.dev/api/archives/media_kit_libs_windows_audio-1.0.9.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/sources/mpv-652a1dd90711839acdccc08004056d25514ef2d8.tar.gz",
+      "sha256": "926dce4dfb918cbbac603ad5d453d453d0036d1e00e77baaf5d76ca99ce7a419",
+      "size": 3389698,
+      "source": "https://codeload.github.com/mpv-player/mpv/tar.gz/652a1dd90711839acdccc08004056d25514ef2d8",
+      "role": "mpv exact release commit source; not complete static-dependency source"
+    },
+    {
+      "path": "licenses/native/sources/nlohmann.json-3.11.2.nupkg",
+      "sha256": "3b28ccac11d8106dd91d17a21f0eb73782ea45de1c01e6e8158b428febc6c26d",
+      "size": 147669,
+      "source": "https://api.nuget.org/v3-flatcontainer/nlohmann.json/3.11.2/nlohmann.json.3.11.2.nupkg",
+      "role": "unaltered NuGet native SDK/header package"
+    },
+    {
+      "path": "licenses/native/sources/openal-soft-1.23.1.tar.gz",
+      "sha256": "dfddf3a1f61059853c625b7bb03de8433b455f2f79f89548cbcbd5edca3d4a4a",
+      "size": 840185,
+      "source": "https://codeload.github.com/kcat/openal-soft/tar.gz/refs/tags/1.23.1",
+      "role": "upstream source for embedded OpenAL Soft version; local patches not known"
+    },
+    {
+      "path": "licenses/native/sources/openal-soft-d3875f333fb6abe2f39d82caca329414871ae53b.tar.gz",
+      "sha256": "395f7f3906455594e8d15df7f017d85d7f521d261c52a7756d85d6867182be51",
+      "size": 841443,
+      "source": "https://codeload.github.com/kcat/openal-soft/tar.gz/d3875f333fb6abe2f39d82caca329414871ae53b",
+      "role": "immutable commit source snapshot; matching package/version where stated, patches not established for binary dependencies"
+    },
+    {
+      "path": "licenses/native/sources/windows_file_picker-2.0.1.tar.gz",
+      "sha256": "18452aa293de3b6961c6d05b0e71b4be7bb90c67635abdd3aa5c4e75dd875072",
+      "size": 10116,
+      "source": "https://pub.dev/api/archives/windows_file_picker-2.0.1.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/sources/window_manager-0.5.1.tar.gz",
+      "sha256": "7eb6d6c4164ec08e1bf978d6e733f3cebe792e2a23fb07cbca25c2872bfdbdcd",
+      "size": 262059,
+      "source": "https://pub.dev/api/archives/window_manager-0.5.1.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/licenses/window_manager-0.5.1.LICENSE",
+      "sha256": "516e1f470fd0e4c5c6cf02b6876153a9145283660a5de03fe9812b207dc34db5",
+      "size": 1095,
+      "source": "https://pub.dev/api/archives/window_manager-0.5.1.tar.gz#LICENSE",
+      "role": "exact package license"
+    },
+    {
+      "path": "licenses/native/sources/screen_retriever-0.2.2.tar.gz",
+      "sha256": "ace919117a7520c13a50a6259e60c4a0d4cbe98809468792a91b5c5adada2aa6",
+      "size": 205044,
+      "source": "https://pub.dev/api/archives/screen_retriever-0.2.2.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/licenses/screen_retriever-0.2.2.LICENSE",
+      "sha256": "4c275c4e1ab3ffb97508c3c66a87db1c6e4f5d0233205fff8ca57ac35d20199f",
+      "size": 1092,
+      "source": "https://pub.dev/api/archives/screen_retriever-0.2.2.tar.gz#LICENSE",
+      "role": "exact package license"
+    },
+    {
+      "path": "licenses/native/sources/screen_retriever_platform_interface-0.2.2.tar.gz",
+      "sha256": "94a5535277510a63184ca178ce12a1449bc0b38618879aa1c18bf57369c5064a",
+      "size": 4392,
+      "source": "https://pub.dev/api/archives/screen_retriever_platform_interface-0.2.2.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/licenses/screen_retriever_platform_interface-0.2.2.LICENSE",
+      "sha256": "4c275c4e1ab3ffb97508c3c66a87db1c6e4f5d0233205fff8ca57ac35d20199f",
+      "size": 1092,
+      "source": "https://pub.dev/api/archives/screen_retriever_platform_interface-0.2.2.tar.gz#LICENSE",
+      "role": "exact package license"
+    },
+    {
+      "path": "licenses/native/sources/screen_retriever_windows-0.2.2.tar.gz",
+      "sha256": "dafc6922b0bfbf1d48cf3ccbf519b4fff47bdcb820da1728ea6db675fecc9324",
+      "size": 6565,
+      "source": "https://pub.dev/api/archives/screen_retriever_windows-0.2.2.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/licenses/screen_retriever_windows-0.2.2.LICENSE",
+      "sha256": "4c275c4e1ab3ffb97508c3c66a87db1c6e4f5d0233205fff8ca57ac35d20199f",
+      "size": 1092,
+      "source": "https://pub.dev/api/archives/screen_retriever_windows-0.2.2.tar.gz#LICENSE",
+      "role": "exact package license"
+    },
+    {
+      "path": "licenses/native/sources/screen_retriever_linux-0.2.2.tar.gz",
+      "sha256": "7b52006a5ceae1f3d5af7f77188c3290d6e7d8ded16d99809bea84967c65c257",
+      "size": 5529,
+      "source": "https://pub.dev/api/archives/screen_retriever_linux-0.2.2.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/licenses/screen_retriever_linux-0.2.2.LICENSE",
+      "sha256": "4c275c4e1ab3ffb97508c3c66a87db1c6e4f5d0233205fff8ca57ac35d20199f",
+      "size": 1092,
+      "source": "https://pub.dev/api/archives/screen_retriever_linux-0.2.2.tar.gz#LICENSE",
+      "role": "exact package license"
+    },
+    {
+      "path": "licenses/native/sources/screen_retriever_macos-0.2.2.tar.gz",
+      "sha256": "a1489b99cce597c45a54b9aae1cd94c8d4705353b7e0bb2457a6e4de44e0ad8a",
+      "size": 3400,
+      "source": "https://pub.dev/api/archives/screen_retriever_macos-0.2.2.tar.gz",
+      "role": "unaltered hosted package source archive; README members not extracted"
+    },
+    {
+      "path": "licenses/native/licenses/screen_retriever_macos-0.2.2.LICENSE",
+      "sha256": "4c275c4e1ab3ffb97508c3c66a87db1c6e4f5d0233205fff8ca57ac35d20199f",
+      "size": 1092,
+      "source": "https://pub.dev/api/archives/screen_retriever_macos-0.2.2.tar.gz#LICENSE",
+      "role": "exact package license"
+    },
+    {
+      "path": "licenses/native/evidence/XMPlus-Windows-CMakeLists.txt",
+      "sha256": "24bee3a5ee1f2000eda43dc0ff69a69301c63aa664f835b644e44566a43dbe9a",
+      "size": 7526,
+      "source": "windows/CMakeLists.txt",
+      "role": "Exact host CMake transformation for the pinned Windows WebView compositor shutdown fix"
+    },
+    {
+      "path": "licenses/native/evidence/XMPlus-webview-download-guard.h",
+      "sha256": "c1efd9b74b118d4b725ac35db1320dcb7a0d0b0cc6872e883e8a3af96cf1c58d",
+      "size": 998,
+      "source": "windows/runner/webview_download_guard.h",
+      "role": "Exact synchronous WebView2 download-cancel implementation for isolated verification views"
+    }
+  ],
+  "boundaries": [
+    "No README file has been created, changed, renamed, removed or extracted. Original archives may contain untouched README members.",
+    "Application AGPL-3.0-or-later source and FFmpeg standalone essentials 9.0.2 materials belong to parent/MediaSourceMaterials inventory, not this manifest.",
+    "Hashes describe collected bytes and existing binaries, not a successful build or runtime verification.",
+    "Homepage or source link alone is not treated as complete corresponding source.",
+    "This manifest does not offer an unfulfillable written-source offer and does not authorize public distribution."
+  ],
+  "binaryImportSummaryScope": "Prebuilt dependency and historical generated-plugin import observations; actual current bundle file identities are in BUILD-MANIFEST.json."
+}

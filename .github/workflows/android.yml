@@ -1,0 +1,160 @@
+name: Android
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PUB_HOSTED_URL: https://pub.flutter-io.cn
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+          cache: true
+      - name: Resolve locked dependencies
+        run: flutter pub get --enforce-lockfile
+      - name: Compile Android (debug validation only, never published)
+        run: flutter build apk --debug --target-platform android-arm64 --no-pub
+
+  signed:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+          cache: true
+      - name: Check version and tag
+        id: version
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          match = re.search(r'^version:\s*(\d+\.\d+\.\d+)\+(\d+)\s*$', Path('pubspec.yaml').read_text(), re.M)
+          if not match:
+              raise SystemExit('pubspec.yaml must contain a stable version: X.Y.Z+N')
+          version = match[1]
+          ref = os.environ['RELEASE_REF']
+          if ref.startswith('refs/tags/') and ref != f'refs/tags/v{version}':
+              raise SystemExit(f'Tag must equal v{version} from pubspec.yaml')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'version={version}\n')
+          PY
+      - name: Resolve locked dependencies
+        run: flutter pub get --enforce-lockfile
+      - name: Install APK verification tools
+        run: sdkmanager 'build-tools;36.0.0'
+      - name: Restore and validate release signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_PASSWORD ANDROID_KEY_ALIAS; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Required signing secret $name is missing; refusing an unsigned or debug-signed release."
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/xmplus-release.jks"
+          keytool -exportcert -keystore "$RUNNER_TEMP/xmplus-release.jks" \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD -alias "$ANDROID_KEY_ALIAS" \
+            -file "$RUNNER_TEMP/xmplus-release.der"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/xmplus-release.jks" >> "$GITHUB_ENV"
+      - name: Build signed split APKs
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: flutter build apk --release --split-per-abi --no-pub
+      - name: Verify APK signatures, package and version
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          expected=$(sha256sum "$RUNNER_TEMP/xmplus-release.der" | cut -d' ' -f1)
+          mkdir -p release
+          for abi in armeabi-v7a arm64-v8a x86_64; do
+            apk="build/app/outputs/flutter-apk/app-$abi-release.apk"
+            test -s "$apk"
+            "$tools/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/apk-cert.txt"
+            actual=$(awk '/^Signer #1 certificate SHA-256 digest:/ {print tolower($NF)}' "$RUNNER_TEMP/apk-cert.txt")
+            [[ "$actual" == "$expected" ]] || { echo '::error::APK signing certificate differs from release keystore'; exit 1; }
+            package=$("$tools/aapt" dump badging "$apk" | grep '^package:')
+            [[ "$package" == *"name='teikengstudio.xmplus'"* ]] || { echo '::error::Unexpected applicationId'; exit 1; }
+            [[ "$package" == *"versionName='$APP_VERSION'"* ]] || { echo '::error::Unexpected APK version'; exit 1; }
+            cp "$apk" "release/XMPlus-$APP_VERSION-android-$abi.apk"
+          done
+          (cd release && sha256sum ./*.apk > SHA256SUMS)
+      - name: Upload verified release APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: XMPlus-${{ steps.version.outputs.version }}-android
+          path: release/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/xmplus-release.jks" "$RUNNER_TEMP/xmplus-release.der" "$RUNNER_TEMP/apk-cert.txt"
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: signed
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: XMPlus-${{ needs.signed.outputs.version }}-android
+          path: release
+      - name: Publish only verified Android artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          (cd release && sha256sum --check SHA256SUMS)
+          gh release create "$RELEASE_TAG" release/*.apk release/SHA256SUMS \
+            --verify-tag --title "$RELEASE_TAG" --generate-notes

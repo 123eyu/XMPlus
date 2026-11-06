@@ -1,0 +1,106 @@
+{
+  "binarySha256": "0a5a0b476866c91a639a4e511e8153968f8fa23564461b0aa09acdba816164a4",
+  "versions": [
+    {
+      "fileOffset": 10447363,
+      "value": "1.2.13"
+    },
+    {
+      "fileOffset": 11749838,
+      "value": "8.2.1"
+    },
+    {
+      "fileOffset": 11886624,
+      "value": "1.2.13"
+    },
+    {
+      "fileOffset": 12033472,
+      "value": "1.2.13"
+    },
+    {
+      "fileOffset": 12112681,
+      "value": "1.2.13"
+    },
+    {
+      "fileOffset": 12118742,
+      "value": "1.2.13"
+    },
+    {
+      "fileOffset": 12402711,
+      "value": "1.2.13"
+    },
+    {
+      "fileOffset": 12477056,
+      "value": "FFmpeg version n6.0"
+    },
+    {
+      "fileOffset": 12544241,
+      "value": "1.2.13"
+    },
+    {
+      "fileOffset": 12877280,
+      "value": "5.5.0alpha"
+    },
+    {
+      "fileOffset": 12908928,
+      "value": "FFmpeg version n6.0"
+    },
+    {
+      "fileOffset": 12998960,
+      "value": "n6.0"
+    },
+    {
+      "fileOffset": 13002368,
+      "value": "FFmpeg version n6.0"
+    },
+    {
+      "fileOffset": 13028336,
+      "value": "FFmpeg version n6.0"
+    },
+    {
+      "fileOffset": 13069729,
+      "value": "1.2.13"
+    },
+    {
+      "fileOffset": 13136480,
+      "value": "FFmpeg version n6.0"
+    },
+    {
+      "fileOffset": 13155351,
+      "value": "1.2.13"
+    },
+    {
+      "fileOffset": 13182093,
+      "value": "1.2.13"
+    },
+    {
+      "fileOffset": 13421743,
+      "value": "1.2.13"
+    },
+    {
+      "fileOffset": 13423263,
+      "value": "1.2.13"
+    },
+    {
+      "fileOffset": 13424883,
+      "value": "1.2.13"
+    },
+    {
+      "fileOffset": 13431047,
+      "value": "1.2.13"
+    },
+    {
+      "fileOffset": 13718331,
+      "value": "1.23.1"
+    },
+    {
+      "fileOffset": 13726982,
+      "value": "1.23.1"
+    },
+    {
+      "fileOffset": 14248736,
+      "value": "1.2.13"
+    }
+  ],
+  "caveat": "Short numbers alone do not establish which linked component owns them; named prefixes carry greater authority."
+}
