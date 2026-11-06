@@ -4,6 +4,7 @@ Linux x64 prerequisites: Python >=3.11, make, cmake, ninja, pkg-config, meson >=
 Jinja2. No target libraries are taken from the host. Invoke through windows-native-build.sh.
 """
 import argparse
+from collections import deque
 import hashlib
 import json
 import os
@@ -136,7 +137,13 @@ def main():
     def run(command, cwd=work):
         print('+', ' '.join(map(str, command)), flush=True)
         log.write('+ ' + ' '.join(map(str, command)) + '\n'); log.flush()
-        subprocess.run(list(map(str, command)), cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+        try:
+            subprocess.run(list(map(str, command)), cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+        except subprocess.CalledProcessError:
+            log.flush()
+            with (out / 'BUILD.log').open(encoding='utf-8', errors='replace') as failed_log:
+                print('\nLast 80 build log lines:\n' + ''.join(deque(failed_log, maxlen=80)), flush=True)
+            raise
     cross = work / 'windows.cross'
     cross.write_text(f"""[binaries]
 c = '{cc}'
@@ -188,7 +195,10 @@ cpp_link_args = ['-static', '-static-libstdc++']
          '--disable-debug', '--disable-doc', '--disable-ffplay', '--disable-x86asm',
          '--enable-libmp3lame', '--enable-zlib', '--enable-schannel',
          '--extra-cflags=-I' + str(prefix / 'include'), '--extra-ldflags=-L' + str(prefix / 'lib') + ' -static'], ffbuild)
-    run(['make', '-j', jobs], ffbuild); run(['make', 'install'], ffbuild)
+    run(['make', '-j', jobs], ffbuild)
+    # install includes examples/README; only install actual SDK/program targets.
+    # install-headers already depends on every per-library pkg-config install target.
+    run(['make', 'install-libs', 'install-headers', 'install-progs'], ffbuild)
     meson('freetype', '-Dzlib=disabled')
     meson('fribidi', '-Ddocs=false', '-Dtests=false')
     meson('harfbuzz', '-Dtests=disabled', '-Dutilities=disabled', '-Ddocs=disabled')

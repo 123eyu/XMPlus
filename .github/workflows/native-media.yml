@@ -101,5 +101,6 @@ jobs:
           path: |
             build/windows-native/BUILD-RECEIPT.json
             build/windows-native/logs/
+            build/windows-native/BUILD.log
           if-no-files-found: warn
           retention-days: 14
