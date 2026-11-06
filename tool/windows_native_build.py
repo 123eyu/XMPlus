@@ -33,7 +33,7 @@ def extract(archive, destination):
             raise ValueError(f'Expected one archive root: {archive}')
         for member in members:
             parts = Path(member.name).parts[1:]
-            if not parts or any(p.lower().startswith('readme') for p in parts):
+            if not parts:
                 continue
             target = destination.joinpath(*parts)
             if '..' in parts or member.name.startswith('/'):
