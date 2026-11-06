@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "target": "x86_64-w64-mingw32",
+  "sourcePolicy": "Exact archives for new source builds only; none claim correspondence to retired Gyan/2023 libmpv binaries. Unmodified upstream sources; no downstream patches.",
+  "mpvCommit": "902818753849d9ad8f0096fad6ca5aeaa37113b9",
+  "libplaceboCommit": "9fabf6d5057c40089afb020017c6347002b07308",
+  "components": [
+    {
+      "url": "https://codeload.github.com/freetype/freetype/tar.gz/refs/tags/VER-2-13-3",
+      "sha256": "bc5c898e4756d373e0d991bab053036c5eb2aa7c0d5c67e8662ddc6da40c4103",
+      "bytes": 2482495,
+      "name": "freetype",
+      "file": "licenses/native/sources/windows-freetype.tar.gz",
+      "kind": "source"
+    },
+    {
+      "url": "https://codeload.github.com/fribidi/fribidi/tar.gz/refs/tags/v1.0.13",
+      "sha256": "f24e8e381bcf76533ae56bd776196f3a0369ec28e9c0fdb6edd163277e008314",
+      "bytes": 2110352,
+      "name": "fribidi",
+      "file": "licenses/native/sources/windows-fribidi.tar.gz",
+      "kind": "source"
+    },
+    {
+      "url": "https://codeload.github.com/harfbuzz/harfbuzz/tar.gz/refs/tags/10.4.0",
+      "sha256": "0d25a3f74af4e8744700ac19050af5a80ae330378a5802a5cd71e523bb6fda1f",
+      "bytes": 36671212,
+      "name": "harfbuzz",
+      "file": "licenses/native/sources/windows-harfbuzz.tar.gz",
+      "kind": "source"
+    },
+    {
+      "url": "https://codeload.github.com/libass/libass/tar.gz/refs/tags/0.17.4",
+      "sha256": "c287d180d93dc9c9021872574b618ac49027e84cc90e1289318b1ee68bb42251",
+      "bytes": 341543,
+      "name": "libass",
+      "file": "licenses/native/sources/windows-libass.tar.gz",
+      "kind": "source"
+    },
+    {
+      "url": "https://codeload.github.com/mstorsjo/llvm-mingw/tar.gz/refs/tags/20240619",
+      "sha256": "938e8e7398a2a674d55d573220fbef81bc107b1599c5e61aa6e57c96275e5c8c",
+      "bytes": 61720,
+      "name": "llvm-mingw",
+      "file": "licenses/native/sources/windows-llvm-mingw.tar.gz",
+      "kind": "source"
+    },
+    {
+      "url": "https://codeload.github.com/mingw-w64/mingw-w64/tar.gz/7c9cfe6708cafc83c14a2654308b2db62b126eae",
+      "sha256": "f8f768198696bde35b54deb97be413e592db0d3dbb3b9ed5d10eb4e4e3d63bee",
+      "bytes": 14502665,
+      "name": "mingw-w64",
+      "file": "licenses/native/sources/windows-mingw-w64.tar.gz",
+      "kind": "source"
+    },
+    {
+      "url": "https://codeload.github.com/llvm/llvm-project/tar.gz/refs/tags/llvmorg-18.1.8",
+      "sha256": "09c08693a9afd6236f27a2ebae62cda656eba19021ef3f94d59e931d662d4856",
+      "bytes": 205562783,
+      "name": "llvm-project",
+      "file": "build/windows-native-sources/windows-llvm-project.tar.gz",
+      "kind": "source"
+    },
+    {
+      "url": "https://codeload.github.com/mpv-player/mpv/tar.gz/902818753849d9ad8f0096fad6ca5aeaa37113b9",
+      "sha256": "2c87e1ea0825a0eee9cf3f66c79518789c1366fd4331a3cf159d089b9cb1456e",
+      "bytes": 7517092,
+      "name": "mpv-current",
+      "file": "licenses/native/sources/windows-mpv-current.tar.gz",
+      "kind": "source"
+    },
+    {
+      "url": "https://codeload.github.com/haasn/libplacebo/tar.gz/9fabf6d5057c40089afb020017c6347002b07308",
+      "sha256": "7dcab00ae44905f30ce1201e13fff65602acd744b6dcd3f30301022ecf17f50b",
+      "bytes": 975032,
+      "name": "libplacebo-current",
+      "file": "licenses/native/sources/windows-libplacebo-current.tar.gz",
+      "kind": "source"
+    },
+    {
+      "url": "https://codeload.github.com/fastfloat/fast_float/tar.gz/refs/tags/v6.1.6",
+      "sha256": "4458aae4b0eb55717968edda42987cabf5f7fc737aee8fede87a70035dba9ab0",
+      "bytes": 101727,
+      "name": "fast-float",
+      "file": "licenses/native/sources/windows-fast-float.tar.gz",
+      "kind": "source"
+    },
+    {
+      "url": "https://zlib.net/fossils/zlib-1.3.1.tar.gz",
+      "sha256": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+      "bytes": 1512791,
+      "name": "zlib",
+      "file": "licenses/native/sources/windows-zlib.tar.gz",
+      "kind": "source"
+    },
+    {
+      "url": "https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64.tar.xz",
+      "sha256": "27d33157cc252c29ad6f777a96a0d94176fea1b534ff09b5071485def143b90e",
+      "bytes": 87933348,
+      "name": "llvm-mingw-toolchain",
+      "file": "licenses/native/sources/windows-llvm-mingw-toolchain.tar.gz",
+      "kind": "toolchain"
+    }
+  ]
+}

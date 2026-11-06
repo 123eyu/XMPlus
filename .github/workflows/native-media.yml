@@ -1,0 +1,105 @@
+name: Native media tools
+
+on:
+  workflow_dispatch:
+    inputs:
+      android:
+        type: boolean
+        default: true
+      windows:
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      android:
+        type: boolean
+        default: true
+      windows:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    if: inputs.android
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [armeabi-v7a, arm64-v8a, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install native host tools
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y nasm jq make pkg-config
+      - name: Cache source-built Android tools
+        id: native-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            android/app/src/main/jniLibs/${{ matrix.abi }}
+            build/android-media/${{ matrix.abi }}/receipt
+          key: android-media-ndk28.2-api24-${{ matrix.abi }}-${{ hashFiles('tool/build_android_media.sh', 'tool/media_sources.json') }}
+      - name: Install pinned Android NDK
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"'
+      - name: Build FFmpeg and FFprobe from verified source
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        run: ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358" bash tool/build_android_media.sh '${{ matrix.abi }}'
+      - name: Upload ABI-specific installed executables
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-tools-${{ matrix.abi }}
+          path: android/app/src/main/jniLibs/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload native configuration and build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-native-evidence-${{ matrix.abi }}
+          path: build/android-media/${{ matrix.abi }}/receipt/
+          if-no-files-found: warn
+          retention-days: 14
+
+  windows:
+    if: inputs.windows
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install native build tools
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y build-essential cmake ninja-build meson pkg-config autoconf automake libtool nasm unzip zip python3-venv
+      - name: Install pinned build-only Python helpers
+        run: |
+          python3 -m venv "$RUNNER_TEMP/native-build-python"
+          "$RUNNER_TEMP/native-build-python/bin/pip" install 'meson==1.7.2' 'Jinja2==3.1.6'
+          echo "$RUNNER_TEMP/native-build-python/bin" >> "$GITHUB_PATH"
+      - name: Build source-traceable Windows native supply
+        run: bash tool/windows-native-build.sh build/windows-native
+      - name: Upload native runtime and complete source materials
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-native-supply
+          path: build/windows-native/windows-native-supply.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload native build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-native-evidence
+          path: |
+            build/windows-native/BUILD-RECEIPT.json
+            build/windows-native/logs/
+          if-no-files-found: warn
+          retention-days: 14

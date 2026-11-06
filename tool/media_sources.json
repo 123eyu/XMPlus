@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "components": [
+    {
+      "name": "ffmpeg",
+      "version": "9.0.2",
+      "file": "licenses/media/sources/ffmpeg-9.0.2.tar.xz",
+      "url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+      "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
+      "bytes": 12040788
+    },
+    {
+      "name": "lame",
+      "version": "3.100",
+      "file": "licenses/media/sources/lame-3.100.tar.gz",
+      "url": "https://deb.debian.org/debian/pool/main/l/lame/lame_3.100.orig.tar.gz",
+      "sha256": "ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e",
+      "bytes": 1524133
+    }
+  ]
+}
