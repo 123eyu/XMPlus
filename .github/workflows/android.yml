@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  PUB_HOSTED_URL: https://pub.flutter-io.cn
+  PUB_HOSTED_URL: https://pub.dev
 
 permissions:
   contents: read
@@ -144,6 +144,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: XMPlus-${{ needs.signed.outputs.version }}-android
@@ -157,4 +160,4 @@ jobs:
           set -euo pipefail
           (cd release && sha256sum --check SHA256SUMS)
           gh release create "$RELEASE_TAG" release/*.apk release/SHA256SUMS \
-            --verify-tag --title "$RELEASE_TAG" --generate-notes
+            --verify-tag --title "$RELEASE_TAG" --notes-file CHANGELOG.md
