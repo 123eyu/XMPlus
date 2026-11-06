@@ -45,10 +45,10 @@ Android 首版提供客户端基础界面和在线收听；现有下载落盘、
 
 ## 编译
 
-当前工具链固定为 **Flutter 3.47.5 / Dart 3.13.4**，依赖版本见 `pubspec.lock`。
+当前工具链固定为 **Flutter 3.47.5 / Dart 3.13.4**；Android 使用 Java 17、Gradle 8.14.3、AGP 8.13.0 与 Kotlin 2.2.20，以兼容现有原生插件。依赖版本和归档校验值见 `pubspec.lock`，CI 从官方 `pub.dev` 获取并强制校验。
 
 ```sh
-flutter pub get
+flutter pub get --enforce-lockfile
 flutter build apk --release --split-per-abi
 ```
 
@@ -62,6 +62,10 @@ Android 正式构建需要配置签名；不使用 debug 证书冒充正式发�
 | `ANDROID_KEY_ALIAS` | 签名别名 |
 
 私钥、密码与 `key.properties` 不得提交到仓库。请单独备份签名材料；丢失签名会影响后续覆盖升级。
+
+本地正式构建读取环境变量 `ANDROID_KEYSTORE_PATH`（JKS 绝对路径）、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_PASSWORD`、`ANDROID_KEY_ALIAS`；CI 会把 Base64 Secret 解码到临时文件后设置路径。缺少签名时正式构建直接失败。
+
+Android 原生音频库的固定构建配方、组件源码归档、许可证及已知浮动输入见 [`licenses/android/SOURCES.json`](licenses/android/SOURCES.json)。应用内「查看许可」也可阅读完整声明，源码归档不打入 APK。
 
 推送 `main` 或提交 PR 会触发 Android 编译验证；手动触发可生成构建产物，`v*` 标签用于正式发行。版本号来自 `pubspec.yaml`，发行标签应与之对应。详细步骤以 [Android 工作流](.github/workflows/android.yml) 为准。
 
