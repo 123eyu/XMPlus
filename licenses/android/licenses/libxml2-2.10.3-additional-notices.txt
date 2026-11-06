@@ -1,0 +1,126 @@
+Source: https://gitlab.gnome.org/GNOME/libxml2/-/blob/v2.10.3/hash.c
+Archive member: libxml2-2.10.3/hash.c
+
+/*
+ * hash.c: chained hash tables
+ *
+ * Reference: Your favorite introductory book on algorithms
+ *
+ * Copyright (C) 2000,2012 Bjorn Reese and Daniel Veillard.
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS AND
+ * CONTRIBUTORS ACCEPT NO RESPONSIBILITY IN ANY CONCEIVABLE MANNER.
+ *
+ * Author: breese@users.sourceforge.net
+ */
+
+Source: https://gitlab.gnome.org/GNOME/libxml2/-/blob/v2.10.3/list.c
+Archive member: libxml2-2.10.3/list.c
+
+/*
+ * list.c: lists handling implementation
+ *
+ * Copyright (C) 2000 Gary Pennington and Daniel Veillard.
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS AND
+ * CONTRIBUTORS ACCEPT NO RESPONSIBILITY IN ANY CONCEIVABLE MANNER.
+ *
+ * Author: Gary.Pennington@uk.sun.com
+ */
+
+Source: https://gitlab.gnome.org/GNOME/libxml2/-/blob/v2.10.3/trio.c
+Archive member: libxml2-2.10.3/trio.c
+
+/*************************************************************************
+ *
+ * $Id$
+ *
+ * Copyright (C) 1998 Bjorn Reese and Daniel Stenberg.
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS AND
+ * CONTRIBUTORS ACCEPT NO RESPONSIBILITY IN ANY CONCEIVABLE MANNER.
+ *
+ *************************************************************************
+ *
+ * A note to trio contributors:
+ *
+ * Avoid heap allocation at all costs to ensure that the trio functions
+ * are async-safe. The exceptions are the printf/fprintf functions, which
+ * uses fputc, and the asprintf functions and the <alloc> modifier, which
+ * by design are required to allocate form the heap.
+ *
+ ************************************************************************/
+
+Source: https://gitlab.gnome.org/GNOME/libxml2/-/blob/v2.10.3/trionan.c
+Archive member: libxml2-2.10.3/trionan.c
+
+/*************************************************************************
+ *
+ * $Id$
+ *
+ * Copyright (C) 2001 Bjorn Reese <breese@users.sourceforge.net>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS AND
+ * CONTRIBUTORS ACCEPT NO RESPONSIBILITY IN ANY CONCEIVABLE MANNER.
+ *
+ ************************************************************************
+ *
+ * Functions to handle special quantities in floating-point numbers
+ * (that is, NaNs and infinity). They provide the capability to detect
+ * and fabricate special quantities.
+ *
+ * Although written to be as portable as possible, it can never be
+ * guaranteed to work on all platforms, as not all hardware supports
+ * special quantities.
+ *
+ * The approach used here (approximately) is to:
+ *
+ *   1. Use C99 functionality when available.
+ *   2. Use IEEE 754 bit-patterns if possible.
+ *   3. Use platform-specific techniques.
+ *
+ ************************************************************************/
+
+Source: https://gitlab.gnome.org/GNOME/libxml2/-/blob/v2.10.3/triostr.c
+Archive member: libxml2-2.10.3/triostr.c
+
+/*************************************************************************
+ *
+ * $Id$
+ *
+ * Copyright (C) 2001 Bjorn Reese and Daniel Stenberg.
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS AND
+ * CONTRIBUTORS ACCEPT NO RESPONSIBILITY IN ANY CONCEIVABLE MANNER.
+ *
+ ************************************************************************/

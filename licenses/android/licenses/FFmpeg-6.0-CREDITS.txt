@@ -1,0 +1,10 @@
+Source: https://github.com/FFmpeg/FFmpeg/blob/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/CREDITS
+Archive: licenses/native/sources/FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2.tar.gz
+Archive member: FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/CREDITS
+
+See the Git history of the project (git://source.ffmpeg.org/ffmpeg) to
+get the names of people who have contributed to FFmpeg.
+
+To check the log, you can type the command "git log" in the FFmpeg
+source directory, or browse the online repository at
+http://source.ffmpeg.org.

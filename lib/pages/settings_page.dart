@@ -431,7 +431,7 @@ class _AboutSettings extends StatelessWidget {
                 Text('原喜马拉雅组件来自 XIAOYA Nano，采用 AGPL-3.0-or-later。'),
                 SizedBox(height: 8),
                 Text(
-                  '许可证、版权与版本来源说明见程序目录下的 LICENSE、NOTICE、LICENSE.PiliPlus 和 licenses。',
+                  '应用与第三方许可证见“查看许可”，对应源码和构建来源见项目仓库；桌面包另附 LICENSE、NOTICE 和 licenses。',
                 ),
               ],
             ),
@@ -450,6 +450,20 @@ class _AboutSettings extends StatelessWidget {
             label: const Text('许可与来源'),
             onPressed: () async {
               try {
+                if (Platform.isAndroid) {
+                  final version = updates.packageInfo?.version;
+                  final ref = version == null ? 'main' : 'v$version';
+                  if (!await launchUrl(
+                    Uri.https(
+                      'github.com',
+                      '/teikengstudio/XMPlus/tree/$ref/licenses/android',
+                    ),
+                    mode: LaunchMode.externalApplication,
+                  )) {
+                    throw const FormatException('无法打开来源页面');
+                  }
+                  return;
+                }
                 final root = p.dirname(Platform.resolvedExecutable);
                 final opener = Platform.isWindows
                     ? 'explorer.exe'
@@ -460,7 +474,9 @@ class _AboutSettings extends StatelessWidget {
               } catch (_) {
                 if (context.mounted)
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('请查看程序目录下的 licenses 文件夹')),
+                    const SnackBar(
+                      content: Text('无法打开许可与来源，请查看项目仓库中的 licenses 目录'),
+                    ),
                   );
               }
             },

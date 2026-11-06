@@ -4,12 +4,25 @@
 // Desktop setup only; audio and account services are not initialized here.
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:window_manager/window_manager.dart';
 
 import 'pages/startup_page.dart';
 
 Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
+  LicenseRegistry.addLicense(() async* {
+    for (final entry in const {
+      'XMPlus': 'LICENSE',
+      'XMPlus — 版权与来源': 'NOTICE',
+      'PiliPlus': 'windows/LICENSE.PiliPlus',
+      'Android 原生音频组件': 'licenses/android/THIRD-PARTY-NOTICES.txt',
+    }.entries) {
+      yield LicenseEntryWithLineBreaks([
+        entry.key,
+      ], await rootBundle.loadString(entry.value));
+    }
+  });
   if (!kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.windows ||
           defaultTargetPlatform == TargetPlatform.macOS ||

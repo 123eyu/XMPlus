@@ -1,0 +1,430 @@
+{
+  "schema_version": 1,
+  "scope": "Android audio native source and license materials for media_kit_libs_android_audio 1.3.8; not the Windows media stack.",
+  "paths_relative_to": "repository root",
+  "collected_on": "2026-11-07",
+  "status": {
+    "recipe_and_declared_native_sources_collected": true,
+    "complete_binary_dependency_closure_audited": false,
+    "upstream_release_reproduced": false,
+    "binary_to_source_identity_verified": false,
+    "explanation": "These are upstream source materials and declared build configuration, not proof that every shipped native object was rebuilt from these inputs. The upstream helper main and gas-preprocessor master references float. No signing key or release runtime archive is collected here."
+  },
+  "source_access": {
+    "instructions": "Obtain the application source repository/release source and retain licenses/android plus the reused licenses/native/sources/FFmpeg archive. Extract the recipe and each native source archive; restore the Mbed TLS framework submodule at the recorded commit. The recipe download-deps.sh specifies directory names under buildscripts/deps; patch.sh applies the four recorded patches. Read scripts/*.sh and bundle.sh for the original build commands. Source archives are development/release-source materials, not APK assets. The APK displays THIRD-PARTY-NOTICES.txt instead.",
+    "limitations": "Do not claim exact reproduction or full Corresponding Source closure solely from these files. Historical revisions of floating helper/tool inputs are not encoded in the original tag. LGPL/GPL terms, applicable notices, source access and rights to modify/relink remain in force; wrapper MIT does not relicense native libraries."
+  },
+  "recipe": {
+    "name": "media-kit/libmpv-android-audio-build",
+    "tag": "v1.1.8",
+    "commit": "87744be8b337c50ed54961249b7a97c5e8cc37c9",
+    "file": "licenses/android/sources/libmpv-android-audio-build-87744be8b337c50ed54961249b7a97c5e8cc37c9.tar.gz",
+    "url": "https://codeload.github.com/media-kit/libmpv-android-audio-build/tar.gz/87744be8b337c50ed54961249b7a97c5e8cc37c9",
+    "sha256": "1f3ef7f8c3559d671e2e107cd102b0e60971e3993a9f2ef5a48c8182850e2d74",
+    "bytes": 94164,
+    "license": "See recipe LICENSE: MIT terms for default/full recipe; GPL-3.0-or-later for encoders-gpl recipe. These are not the native component licenses.",
+    "source_url": "https://github.com/media-kit/libmpv-android-audio-build/tree/87744be8b337c50ed54961249b7a97c5e8cc37c9",
+    "recipe_files": {
+      "buildscripts/include/depinfo.sh": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/include/depinfo.sh",
+      "buildscripts/include/download-deps.sh": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/include/download-deps.sh",
+      "buildscripts/include/download-sdk.sh": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/include/download-sdk.sh",
+      "buildscripts/build.sh": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/build.sh",
+      "buildscripts/bundle.sh": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/bundle.sh",
+      "buildscripts/patch.sh": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/patch.sh",
+      "buildscripts/scripts/mpv.sh": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/scripts/mpv.sh",
+      "buildscripts/scripts/ffmpeg.sh": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/scripts/ffmpeg.sh",
+      "buildscripts/scripts/mbedtls.sh": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/scripts/mbedtls.sh",
+      "buildscripts/scripts/libxml2.sh": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/scripts/libxml2.sh"
+    },
+    "patches": [
+      {
+        "path_in_recipe_archive": "libmpv-android-audio-build-87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/patches/ffmpeg/001.dash_base_url_escape.patch",
+        "url": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/patches/ffmpeg/001.dash_base_url_escape.patch",
+        "sha256": "625b8c09f356fcf60850a18856736d9b96055674102177d4faf739f50bd8dd7d"
+      },
+      {
+        "path_in_recipe_archive": "libmpv-android-audio-build-87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/patches/mpv/001.audiotrack_threadsafe.patch",
+        "url": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/patches/mpv/001.audiotrack_threadsafe.patch",
+        "sha256": "897fe9b44c0c1c74922a0921172b0e1f980377b0a34a1f37a893565be22faf50"
+      },
+      {
+        "path_in_recipe_archive": "libmpv-android-audio-build-87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/patches/mpv/002.lavc_set_java_vm.patch",
+        "url": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/patches/mpv/002.lavc_set_java_vm.patch",
+        "sha256": "4154d67464466f953b552208ff35f1e70994d45f55b39b3c1ea8bd806c9b9343"
+      },
+      {
+        "path_in_recipe_archive": "libmpv-android-audio-build-87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/patches/mpv/003.mpv_remove_libass.patch",
+        "url": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/buildscripts/patches/mpv/003.mpv_remove_libass.patch",
+        "sha256": "a5a4e1a03a5eac820893c8c5a184a0170e80a42578e1c04c7583b286244b1ee6"
+      }
+    ]
+  },
+  "wrapper": {
+    "name": "media_kit_libs_android_audio",
+    "version": "1.3.8",
+    "license": "MIT (wrapper only)",
+    "file": "licenses/android/sources/media_kit_libs_android_audio-1.3.8.tar.gz",
+    "url": "https://pub.dev/api/archives/media_kit_libs_android_audio-1.3.8.tar.gz",
+    "sha256": "8f8f9759e537e12d66f08bc4d5279eb1bb21a0ccc519ff3442c68a9f3b6dd68b",
+    "bytes": 4358,
+    "expected_pubspec_lock_sha256": "8f8f9759e537e12d66f08bc4d5279eb1bb21a0ccc519ff3442c68a9f3b6dd68b",
+    "pubspec_lock_sha256_matches": true,
+    "native_release_tag": "v1.1.8",
+    "native_artifacts_not_downloaded": [
+      {
+        "abi": "arm64-v8a",
+        "url": "https://github.com/media-kit/libmpv-android-audio-build/releases/download/v1.1.8/default-arm64-v8a.jar",
+        "upstream_wrapper_md5": "6f4af754ae94da8cbb24655fd66c07ed"
+      },
+      {
+        "abi": "armeabi-v7a",
+        "url": "https://github.com/media-kit/libmpv-android-audio-build/releases/download/v1.1.8/default-armeabi-v7a.jar",
+        "upstream_wrapper_md5": "d8d1ba181d3d6ecb341e1e8d87506e17"
+      },
+      {
+        "abi": "x86_64",
+        "url": "https://github.com/media-kit/libmpv-android-audio-build/releases/download/v1.1.8/default-x86_64.jar",
+        "upstream_wrapper_md5": "43ed7b0e6bdaa1a6ed2c1eee01f5e44a"
+      },
+      {
+        "abi": "x86",
+        "url": "https://github.com/media-kit/libmpv-android-audio-build/releases/download/v1.1.8/default-x86.jar",
+        "upstream_wrapper_md5": "a2acb148c02d02f0892047f5c6c4f964"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "mpv",
+      "version": "0.35.1",
+      "tag": "v0.35.1",
+      "commit": "140ec21c89d671d392877a7f3b91d67e7d7b9239",
+      "file": "licenses/android/sources/mpv-v0.35.1.tar.gz",
+      "url": "https://codeload.github.com/mpv-player/mpv/tar.gz/refs/tags/v0.35.1",
+      "sha256": "41df981b7b84e33a2ef4478aaf81d6f4f5c8b9cd2c0d337ac142fc20b387d1a9",
+      "bytes": 3367913,
+      "immutable_source_url": "https://github.com/mpv-player/mpv/tree/140ec21c89d671d392877a7f3b91d67e7d7b9239",
+      "license": "LGPL-2.1-or-later in --enable-lgpl mode; default source tree GPL-2.0-or-later, with per-file permissive notices. Linked FFmpeg uses LGPLv3 mode.",
+      "configuration": {
+        "recipe_path": "buildscripts/scripts/mpv.sh",
+        "flags": [
+          "--enable-lgpl",
+          "--disable-cplayer",
+          "--disable-vulkan",
+          "--disable-libplacebo",
+          "--disable-lua",
+          "--disable-iconv",
+          "--enable-libmpv-shared",
+          "--disable-manpage-build"
+        ],
+        "linking": "libmpv shared; dependency lookup pkg-config --static"
+      },
+      "patch_paths": [
+        "buildscripts/patches/mpv/001.audiotrack_threadsafe.patch",
+        "buildscripts/patches/mpv/002.lavc_set_java_vm.patch",
+        "buildscripts/patches/mpv/003.mpv_remove_libass.patch"
+      ]
+    },
+    {
+      "name": "FFmpeg",
+      "version": "6.0",
+      "tag": "n6.0",
+      "commit": "ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2",
+      "file": "licenses/native/sources/FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2.tar.gz",
+      "url": "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2",
+      "sha256": "aacce24d5bb6c67fbf1e3343bc15a6977ad700cdb4f43c8551f6544fa54ab7ec",
+      "bytes": 14751707,
+      "reuse_existing_archive": true,
+      "immutable_source_url": "https://github.com/FFmpeg/FFmpeg/tree/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2",
+      "tag_commit_evidence_url": "https://api.github.com/repos/FFmpeg/FFmpeg/git/tags/3949db4d261748a9f34358a388ee255ad1a7f0c0",
+      "license": "LGPL-3.0-or-later configured (--disable-gpl --disable-nonfree --enable-version3); source also includes GPL-only optional files and permissive/IJG notices.",
+      "configuration": {
+        "recipe_path": "buildscripts/scripts/ffmpeg.sh",
+        "license_and_link_flags": [
+          "--disable-gpl",
+          "--disable-nonfree",
+          "--enable-version3",
+          "--enable-static",
+          "--disable-shared",
+          "--enable-mbedtls",
+          "--enable-libxml2"
+        ],
+        "mode": "Audio-oriented explicit codec/demuxer/protocol allowlist, some image codecs; full exact configure arguments retained in the recipe archive."
+      },
+      "patch_paths": [
+        "buildscripts/patches/ffmpeg/001.dash_base_url_escape.patch"
+      ],
+      "ijg_acknowledgment": "This software is based in part on the work of the Independent JPEG Group. The recipe FFmpeg patch changes DASH URL handling, not the three IJG files named by upstream LICENSE.md."
+    },
+    {
+      "name": "Mbed TLS",
+      "version": "3.6.1",
+      "tag": "v3.6.1",
+      "commit": "71c569d44bf3a8bd53d874c81ee8ac644dd6e9e3",
+      "file": "licenses/android/sources/mbedtls-v3.6.1.tar.gz",
+      "url": "https://codeload.github.com/Mbed-TLS/mbedtls/tar.gz/refs/tags/v3.6.1",
+      "sha256": "e3650e1a2adb506a721ba67ccf0041b2b78bca6979daaebced5b3454275be8b6",
+      "bytes": 5373924,
+      "immutable_source_url": "https://github.com/Mbed-TLS/mbedtls/tree/71c569d44bf3a8bd53d874c81ee8ac644dd6e9e3",
+      "license": "Apache-2.0 OR GPL-2.0-or-later; Apache-2.0 option compatible with the FFmpeg LGPLv3 configured mode. Full dual-license text retained.",
+      "configuration": {
+        "recipe_path": "buildscripts/scripts/mbedtls.sh",
+        "command": "make CFLAGS=-fPIC CXXFLAGS=-fPIC -j$cores no_test; make CFLAGS=-fPIC CXXFLAGS=-fPIC DESTDIR=\"$prefix_dir\" install"
+      },
+      "patch_paths": [],
+      "submodules": [
+        {
+          "path": "framework",
+          "commit": "94599c0e3b5036e086446a51a3f79640f70f22f6",
+          "file": "licenses/android/sources/mbedtls-framework-94599c0e3b5036e086446a51a3f79640f70f22f6.tar.gz",
+          "url": "https://codeload.github.com/Mbed-TLS/mbedtls-framework/tar.gz/94599c0e3b5036e086446a51a3f79640f70f22f6",
+          "sha256": "632d5aa4dd2e4179f9d648be12af9a9c3158d7f503a93e70e651751b5f31257c",
+          "bytes": 636678,
+          "license": "Apache-2.0 OR GPL-2.0-or-later",
+          "source_url": "https://github.com/Mbed-TLS/mbedtls-framework/tree/94599c0e3b5036e086446a51a3f79640f70f22f6",
+          "gitlink_evidence_url": "https://api.github.com/repos/Mbed-TLS/mbedtls/git/trees/v3.6.1"
+        }
+      ]
+    },
+    {
+      "name": "libxml2",
+      "version": "2.10.3",
+      "tag": "v2.10.3",
+      "file": "licenses/android/sources/libxml2-2.10.3.tar.xz",
+      "url": "https://download.gnome.org/sources/libxml2/2.10/libxml2-2.10.3.tar.xz",
+      "sha256": "5d2cc3d78bec3dbe212a9d7fa629ada25a7da928af432c93060ff5c17ee28a9c",
+      "bytes": 2639908,
+      "source_url": "https://gitlab.gnome.org/GNOME/libxml2/-/tree/v2.10.3",
+      "license": "MIT with ISC-style/per-file copyright variants (hash/list/trio); see Copyright and source-header notices.",
+      "archive_note": "Official GNOME 2.10.3 release tarball, rather than a git export; includes generated configure files. The recipe clones v2.10.3 and runs autogen.sh when configure is absent.",
+      "configuration": {
+        "recipe_path": "buildscripts/scripts/libxml2.sh",
+        "flags": [
+          "--disable-shared",
+          "--enable-static",
+          "--with-minimum",
+          "--with-threads",
+          "--with-tree",
+          "--without-lzma"
+        ],
+        "cflags": "-fPIC",
+        "cxxflags": "-fPIC"
+      },
+      "patch_paths": []
+    }
+  ],
+  "floating_recipe_inputs": [
+    {
+      "name": "media-kit-android-helper",
+      "role": "Native helper shared library bundled alongside libmpv by bundle.sh",
+      "recipe_ref": "main",
+      "recipe_url": "https://github.com/media-kit/media-kit-android-helper.git",
+      "historical_release_commit": null,
+      "collected_snapshot_commit": "42054e5d479f39ccbb0ae604862e2bcaf59b74c2",
+      "file": "licenses/android/sources/media-kit-android-helper-42054e5d479f39ccbb0ae604862e2bcaf59b74c2.tar.gz",
+      "url": "https://codeload.github.com/media-kit/media-kit-android-helper/tar.gz/42054e5d479f39ccbb0ae604862e2bcaf59b74c2",
+      "sha256": "53ea71476d1cbc9a5d63d4898c6b027af4ccb6525800c7b42e267e6128652423",
+      "bytes": 1391851,
+      "license": "MIT",
+      "limitation": "Current main snapshot collected on the collection date. It is not established as the exact helper input used for the upstream v1.1.8 release."
+    },
+    {
+      "name": "gas-preprocessor",
+      "role": "Build-time assembler preprocessor",
+      "recipe_ref": "master",
+      "recipe_url": "https://github.com/FFmpeg/gas-preprocessor/raw/master/gas-preprocessor.pl",
+      "historical_release_commit": null,
+      "collected_snapshot_commit": "ac1836309c2e77023c228b7184485597286289d3",
+      "file": "licenses/android/sources/gas-preprocessor-ac1836309c2e77023c228b7184485597286289d3.tar.gz",
+      "url": "https://codeload.github.com/FFmpeg/gas-preprocessor/tar.gz/ac1836309c2e77023c228b7184485597286289d3",
+      "sha256": "28d8277b7b77eed93927243939be10c21cbf135bc41bc4813f34816508ba85be",
+      "bytes": 14629,
+      "license": "GPL-2.0-or-later, as stated by David Conrad in gas-preprocessor.pl; GPLv2 text retained with FFmpeg COPYING.GPLv2",
+      "limitation": "Current master snapshot only, not asserted to match the historical release input."
+    }
+  ],
+  "toolchain_not_collected": {
+    "recipe_path": "buildscripts/include/download-sdk.sh",
+    "android_command_line_tools": "11076708_latest",
+    "download_url_linux": "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip",
+    "download_url_mac": "https://dl.google.com/android/repository/commandlinetools-mac-11076708_latest.zip",
+    "sdkmanager_packages": [
+      "platforms;android-35",
+      "build-tools;35.0.0",
+      "ndk;27.1.12297006",
+      "cmake;3.30.3"
+    ],
+    "package_source_and_license_information": "https://developer.android.com/tools/sdkmanager",
+    "ndk_source_and_license_information": "https://android.googlesource.com/toolchain/llvm-project/",
+    "build_host_dependencies": "Unversioned apt/yum/brew packages and pip meson/jsonschema/jinja2 are installed by the recipe. These build-tool inputs are not a fully pinned or audited closure.",
+    "mpv_bootstrap_waf_not_collected": {
+      "version": "2.0.24",
+      "urls": [
+        "https://waf.io/waf-2.0.24",
+        "https://www.freehackers.org/~tnagy/release/waf-2.0.24"
+      ],
+      "upstream_bootstrap_expected_sha256": "93909bca823a675f9f40af7c65b24887c3a3c0efdf411ff1978ba827194bdeb0",
+      "recipe_source": "https://github.com/mpv-player/mpv/blob/140ec21c89d671d392877a7f3b91d67e7d7b9239/bootstrap.py",
+      "note": "Build-time executable not collected; original download/checksum and Python interpreter adjustment remain in mpv bootstrap.py."
+    },
+    "other_build_tool_acquisition_urls": [
+      "https://dl.google.com/android/repository/repository2-3.xml",
+      "https://pypi.org/project/meson/",
+      "https://pypi.org/project/jsonschema/",
+      "https://pypi.org/project/Jinja2/",
+      "https://packages.ubuntu.com/",
+      "https://formulae.brew.sh/"
+    ]
+  },
+  "license_materials": [
+    {
+      "path": "licenses/android/licenses/recipe-LICENSE.txt",
+      "source_url": "https://github.com/media-kit/libmpv-android-audio-build/blob/87744be8b337c50ed54961249b7a97c5e8cc37c9/LICENSE",
+      "source_archive": "licenses/android/sources/libmpv-android-audio-build-87744be8b337c50ed54961249b7a97c5e8cc37c9.tar.gz",
+      "archive_member": "libmpv-android-audio-build-87744be8b337c50ed54961249b7a97c5e8cc37c9/LICENSE",
+      "upstream_text_sha256": "8f25da1621b9e063833aaae0d4a28c6b83c3e70176aad0fae5e4893e219ae799"
+    },
+    {
+      "path": "licenses/android/licenses/media_kit_libs_android_audio-1.3.8-LICENSE.txt",
+      "source_url": "https://pub.dev/packages/media_kit_libs_android_audio/versions/1.3.8",
+      "source_archive": "licenses/android/sources/media_kit_libs_android_audio-1.3.8.tar.gz",
+      "archive_member": "LICENSE",
+      "upstream_text_sha256": "2e3000f38718f050869d57540c288c661a446f64df1ba4ea4764df552b04a331"
+    },
+    {
+      "path": "licenses/android/licenses/mpv-0.35.1-Copyright.txt",
+      "source_url": "https://github.com/mpv-player/mpv/blob/140ec21c89d671d392877a7f3b91d67e7d7b9239/Copyright",
+      "source_archive": "licenses/android/sources/mpv-v0.35.1.tar.gz",
+      "archive_member": "mpv-0.35.1/Copyright",
+      "upstream_text_sha256": "160139ae889eacb76789123463ae04a7c851cd62692ab2b5851bc02eb0efd5fc"
+    },
+    {
+      "path": "licenses/android/licenses/mpv-0.35.1-LICENSE.GPL.txt",
+      "source_url": "https://github.com/mpv-player/mpv/blob/140ec21c89d671d392877a7f3b91d67e7d7b9239/LICENSE.GPL",
+      "source_archive": "licenses/android/sources/mpv-v0.35.1.tar.gz",
+      "archive_member": "mpv-0.35.1/LICENSE.GPL",
+      "upstream_text_sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    },
+    {
+      "path": "licenses/android/licenses/mpv-0.35.1-LICENSE.LGPL.txt",
+      "source_url": "https://github.com/mpv-player/mpv/blob/140ec21c89d671d392877a7f3b91d67e7d7b9239/LICENSE.LGPL",
+      "source_archive": "licenses/android/sources/mpv-v0.35.1.tar.gz",
+      "archive_member": "mpv-0.35.1/LICENSE.LGPL",
+      "upstream_text_sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+    },
+    {
+      "path": "licenses/android/licenses/FFmpeg-6.0-LICENSE.txt",
+      "source_url": "https://github.com/FFmpeg/FFmpeg/blob/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/LICENSE.md",
+      "source_archive": "licenses/native/sources/FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2.tar.gz",
+      "archive_member": "FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/LICENSE.md",
+      "upstream_text_sha256": "cb48bf09a11f5fb576cddb0431c8f5ed0a60157a9ec942adffc13907cbe083f2"
+    },
+    {
+      "path": "licenses/android/licenses/FFmpeg-6.0-CREDITS.txt",
+      "source_url": "https://github.com/FFmpeg/FFmpeg/blob/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/CREDITS",
+      "source_archive": "licenses/native/sources/FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2.tar.gz",
+      "archive_member": "FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/CREDITS",
+      "upstream_text_sha256": "60d6a6c71bf2b92249796c38b3a104c16aa4ac4f91fa5cb22c00058fd46170d1"
+    },
+    {
+      "path": "licenses/android/licenses/mbedtls-3.6.1-LICENSE.txt",
+      "source_url": "https://github.com/Mbed-TLS/mbedtls/blob/71c569d44bf3a8bd53d874c81ee8ac644dd6e9e3/LICENSE",
+      "source_archive": "licenses/android/sources/mbedtls-v3.6.1.tar.gz",
+      "archive_member": "mbedtls-3.6.1/LICENSE",
+      "upstream_text_sha256": "9b405ef4c89342f5eae1dd828882f931747f71001cfba7d114801039b52ad09b"
+    },
+    {
+      "path": "licenses/android/licenses/mbedtls-framework-LICENSE.txt",
+      "source_url": "https://github.com/Mbed-TLS/mbedtls-framework/blob/94599c0e3b5036e086446a51a3f79640f70f22f6/LICENSE",
+      "source_archive": "licenses/android/sources/mbedtls-framework-94599c0e3b5036e086446a51a3f79640f70f22f6.tar.gz",
+      "archive_member": "mbedtls-framework-94599c0e3b5036e086446a51a3f79640f70f22f6/LICENSE",
+      "upstream_text_sha256": "11402351e38392230bb8934ba1095c0c0049a296c0f8821f76e4672dff54b490"
+    },
+    {
+      "path": "licenses/android/licenses/libxml2-2.10.3-Copyright.txt",
+      "source_url": "https://gitlab.gnome.org/GNOME/libxml2/-/blob/v2.10.3/Copyright",
+      "source_archive": "licenses/android/sources/libxml2-2.10.3.tar.xz",
+      "archive_member": "libxml2-2.10.3/Copyright",
+      "upstream_text_sha256": "c5c63674f8a83c4d2e385d96d1c670a03cb871ba2927755467017317878574bd"
+    },
+    {
+      "path": "licenses/android/licenses/media-kit-android-helper-LICENSE.txt",
+      "source_url": "https://github.com/media-kit/media-kit-android-helper/blob/42054e5d479f39ccbb0ae604862e2bcaf59b74c2/LICENSE",
+      "source_archive": "licenses/android/sources/media-kit-android-helper-42054e5d479f39ccbb0ae604862e2bcaf59b74c2.tar.gz",
+      "archive_member": "media-kit-android-helper-42054e5d479f39ccbb0ae604862e2bcaf59b74c2/LICENSE",
+      "upstream_text_sha256": "2e3000f38718f050869d57540c288c661a446f64df1ba4ea4764df552b04a331"
+    },
+    {
+      "path": "licenses/android/licenses/FFmpeg-6.0-COPYING.GPLv2.txt",
+      "source_url": "https://github.com/FFmpeg/FFmpeg/blob/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/COPYING.GPLv2",
+      "source_archive": "licenses/native/sources/FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2.tar.gz",
+      "archive_member": "FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/COPYING.GPLv2",
+      "upstream_text_sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    },
+    {
+      "path": "licenses/android/licenses/FFmpeg-6.0-COPYING.GPLv3.txt",
+      "source_url": "https://github.com/FFmpeg/FFmpeg/blob/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/COPYING.GPLv3",
+      "source_archive": "licenses/native/sources/FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2.tar.gz",
+      "archive_member": "FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/COPYING.GPLv3",
+      "upstream_text_sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    {
+      "path": "licenses/android/licenses/FFmpeg-6.0-COPYING.LGPLv2.1.txt",
+      "source_url": "https://github.com/FFmpeg/FFmpeg/blob/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/COPYING.LGPLv2.1",
+      "source_archive": "licenses/native/sources/FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2.tar.gz",
+      "archive_member": "FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/COPYING.LGPLv2.1",
+      "upstream_text_sha256": "b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe"
+    },
+    {
+      "path": "licenses/android/licenses/FFmpeg-6.0-COPYING.LGPLv3.txt",
+      "source_url": "https://github.com/FFmpeg/FFmpeg/blob/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/COPYING.LGPLv3",
+      "source_archive": "licenses/native/sources/FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2.tar.gz",
+      "archive_member": "FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/COPYING.LGPLv3",
+      "upstream_text_sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+    },
+    {
+      "path": "licenses/android/licenses/FFmpeg-6.0-IJG-notices.txt",
+      "source_archive": "licenses/native/sources/FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2.tar.gz",
+      "archive_members": [
+        "FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/libavcodec/jfdctfst.c",
+        "FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/libavcodec/jfdctint_template.c",
+        "FFmpeg-ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/libavcodec/jrevdct.c"
+      ],
+      "source_urls": [
+        "https://github.com/FFmpeg/FFmpeg/blob/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/libavcodec/jfdctfst.c",
+        "https://github.com/FFmpeg/FFmpeg/blob/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/libavcodec/jfdctint_template.c",
+        "https://github.com/FFmpeg/FFmpeg/blob/ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2/libavcodec/jrevdct.c"
+      ]
+    },
+    {
+      "path": "licenses/android/licenses/libxml2-2.10.3-additional-notices.txt",
+      "source_archive": "licenses/android/sources/libxml2-2.10.3.tar.xz",
+      "archive_members": [
+        "libxml2-2.10.3/hash.c",
+        "libxml2-2.10.3/list.c",
+        "libxml2-2.10.3/trio.c",
+        "libxml2-2.10.3/trionan.c",
+        "libxml2-2.10.3/triostr.c"
+      ],
+      "source_urls": [
+        "https://gitlab.gnome.org/GNOME/libxml2/-/blob/v2.10.3/hash.c",
+        "https://gitlab.gnome.org/GNOME/libxml2/-/blob/v2.10.3/list.c",
+        "https://gitlab.gnome.org/GNOME/libxml2/-/blob/v2.10.3/trio.c",
+        "https://gitlab.gnome.org/GNOME/libxml2/-/blob/v2.10.3/trionan.c",
+        "https://gitlab.gnome.org/GNOME/libxml2/-/blob/v2.10.3/triostr.c"
+      ]
+    },
+    {
+      "path": "licenses/android/licenses/NATIVE-SOURCE-HEADER-NOTICES.txt",
+      "method": "Leading copyright/license comment blocks from C/C++/assembly sources in the four collected native source archives, grouped by identical text; overinclusive, not proof of the linked binary closure."
+    }
+  ],
+  "apk_notice_asset": "licenses/android/THIRD-PARTY-NOTICES.txt",
+  "known_limitations": [
+    "No Android native release JAR/APK, signing material or private key is stored in this collection.",
+    "Archives use upstream version/ref URLs plus locally calculated SHA256; no new claim of independent release-signature validation is made.",
+    "Original recipe and patches are preserved unmodified in the pinned recipe archive. No new native patches are introduced by this source collection.",
+    "Native source-header attribution appendix is overinclusive source material, not proof of which files were linked. Other application/Flutter/plugin/runtime notices remain outside this focused native collection.",
+    "The existing Windows native-source completeness gate and notices are unchanged."
+  ]
+}
