@@ -19,7 +19,14 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  native-tools:
+    uses: ./.github/workflows/native-media.yml
+    with:
+      android: true
+      windows: false
+
   validate:
+    needs: native-tools
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     steps:
@@ -37,10 +44,17 @@ jobs:
           cache: true
       - name: Resolve locked dependencies
         run: flutter pub get --enforce-lockfile
+      - name: Restore source-built native media executables
+        uses: actions/download-artifact@v4
+        with:
+          pattern: android-tools-*
+          path: android/app/src/main/jniLibs/
+          merge-multiple: true
       - name: Compile Android (debug validation only, never published)
         run: flutter build apk --debug --target-platform android-arm64 --no-pub
 
   signed:
+    needs: native-tools
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-24.04
     outputs:
@@ -78,6 +92,12 @@ jobs:
           PY
       - name: Resolve locked dependencies
         run: flutter pub get --enforce-lockfile
+      - name: Restore source-built native media executables
+        uses: actions/download-artifact@v4
+        with:
+          pattern: android-tools-*
+          path: android/app/src/main/jniLibs/
+          merge-multiple: true
       - name: Install APK verification tools
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"'
       - name: Restore and validate release signing key

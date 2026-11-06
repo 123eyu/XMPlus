@@ -10,6 +10,7 @@ import 'package:synchronized/synchronized.dart';
 import '../models/download_task.dart';
 import '../models/xmly_models.dart';
 import 'download_paths.dart';
+import 'android_platform.dart';
 
 class MediaResult {
   MediaResult({
@@ -30,8 +31,12 @@ class MediaProcessor {
     String? ffprobePath,
     String? executableDirectory,
     DownloadPaths? paths,
-  }) : ffmpegPath = ffmpegPath ?? _tool(executableDirectory, 'ffmpeg'),
-       ffprobePath = ffprobePath ?? _tool(executableDirectory, 'ffprobe'),
+  }) : ffmpegPath = Platform.isAndroid
+           ? 'libxmplus_ffmpeg.so'
+           : ffmpegPath ?? _tool(executableDirectory, 'ffmpeg'),
+       ffprobePath = Platform.isAndroid
+           ? 'libxmplus_ffprobe.so'
+           : ffprobePath ?? _tool(executableDirectory, 'ffprobe'),
        _paths = paths ?? DownloadPaths();
 
   final String ffmpegPath, ffprobePath;
@@ -49,7 +54,8 @@ class MediaProcessor {
     '$name${Platform.isWindows ? '.exe' : ''}',
   );
 
-  Future<void> checkTools() => _checkTools(null);
+  Future<void> checkTools({Future<void> Function()? checkpoint}) =>
+      _checkTools(checkpoint);
 
   Future<void> _checkTools(Future<void> Function()? checkpoint) async {
     for (final entry in [(ffmpegPath, 'ffmpeg'), (ffprobePath, 'ffprobe')]) {
@@ -166,6 +172,7 @@ class MediaProcessor {
     String key,
     String fallback,
   ) {
+    if (Platform.isAndroid) return fallback;
     final value = options[key];
     if (value == null || value == '') return fallback;
     if (value is! String || !p.isAbsolute(value)) {
@@ -839,13 +846,17 @@ class MediaProcessor {
     return addresses;
   }
 
-  static Future<String> _run(
+  Future<String> _run(
     String executable,
     List<String> arguments, {
     Future<void> Function()? checkpoint,
     Duration timeout = const Duration(minutes: 30),
   }) async {
     await checkpoint?.call();
+    if (Platform.isAndroid) {
+      final tools = await AndroidPlatform.mediaToolPaths();
+      executable = tools[executable == ffmpegPath ? 'ffmpeg' : 'ffprobe']!;
+    }
     Process process;
     try {
       process = await Process.start(executable, arguments, runInShell: false);
@@ -853,7 +864,7 @@ class MediaProcessor {
       if (Platform.isAndroid) {
         throw const XmlyException(
           'media_tool_missing',
-          '当前 Android 安装包不含 FFmpeg/FFprobe 媒体处理工具，无法完成下载或转码；源缓存已保留，在线收听不受影响',
+          '随附 Android FFmpeg/FFprobe 无法启动，请重新安装完整安装包；源缓存已保留，在线收听不受影响',
         );
       }
       throw const XmlyException('media_tool_missing', '无法启动媒体工具，请检查路径');

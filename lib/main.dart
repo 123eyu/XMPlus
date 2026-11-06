@@ -17,6 +17,7 @@ Future<void> main(List<String> arguments) async {
       'XMPlus — 版权与来源': 'NOTICE',
       'PiliPlus': 'windows/LICENSE.PiliPlus',
       'Android 原生音频组件': 'licenses/android/THIRD-PARTY-NOTICES.txt',
+      'FFmpeg / FFprobe 与 LAME': 'licenses/media/THIRD-PARTY-NOTICES.txt',
     }.entries) {
       yield LicenseEntryWithLineBreaks([
         entry.key,

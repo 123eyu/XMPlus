@@ -23,7 +23,7 @@ if (releaseRequested) {
 android {
     namespace = "teikengstudio.xmplus"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -36,6 +36,13 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            keepDebugSymbols += setOf("**/libxmplus_ffmpeg.so", "**/libxmplus_ffprobe.so")
+        }
     }
 
     signingConfigs {
@@ -73,3 +80,21 @@ flutter {
 dependencies {
     implementation("androidx.core:core:1.15.0")
 }
+
+val verifyAndroidMediaTools = tasks.register("verifyAndroidMediaTools") {
+    val platforms = providers.gradleProperty("target-platform")
+        .orElse("android-arm,android-arm64,android-x64")
+    doLast {
+        val abiNames = mapOf("android-arm" to "armeabi-v7a", "android-arm64" to "arm64-v8a", "android-x64" to "x86_64")
+        for (platform in platforms.get().split(",")) {
+            val abi = requireNotNull(abiNames[platform.trim()]) { "Unsupported Android target: $platform" }
+            for (tool in listOf("ffmpeg", "ffprobe")) {
+                val executable = file("src/main/jniLibs/$abi/libxmplus_$tool.so")
+                require(executable.isFile && executable.length() > 0) {
+                    "Missing Android $abi $tool. Run bash tool/build_android_media.sh $abi before building Flutter."
+                }
+            }
+        }
+    }
+}
+tasks.named("preBuild") { dependsOn(verifyAndroidMediaTools) }

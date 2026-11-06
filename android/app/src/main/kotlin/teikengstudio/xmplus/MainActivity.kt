@@ -15,6 +15,19 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 try {
                     when (call.method) {
+                        "mediaToolPaths" -> {
+                            val directory = File(applicationInfo.nativeLibraryDir).canonicalFile
+                            val paths = mutableMapOf("directory" to directory.path)
+                            for (name in listOf("ffmpeg", "ffprobe")) {
+                                val file = File(directory, "libxmplus_$name.so")
+                                require(file.isAbsolute && file.canonicalFile == file &&
+                                    file.parentFile == directory && file.isFile && file.canExecute()) {
+                                    "Installed media executable is missing or invalid: $name"
+                                }
+                                paths[name] = file.path
+                            }
+                            result.success(paths)
+                        }
                         "availableBytes" -> {
                             val path = requireNotNull(call.argument<String>("path"))
                             result.success(StatFs(File(path).canonicalPath).availableBytes)

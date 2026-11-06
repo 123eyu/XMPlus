@@ -12,6 +12,7 @@ import '../storage/app_storage.dart';
 import 'account_service.dart';
 import 'usage_ledger.dart';
 import 'download_paths.dart';
+import 'media_processor.dart';
 
 export '../models/download_task.dart';
 
@@ -295,7 +296,7 @@ class DownloadService {
     Map<String, dynamic> settings,
     List<({Track track, String? taskId})> selected,
   ) async {
-    _requireMediaTools();
+    await _requireMediaTools();
     Future<DownloadBatch> read(XmlyClient client) async {
       final items = <DownloadBatchItem>[];
       int? balance;
@@ -373,7 +374,7 @@ class DownloadService {
     bool Function()? allowed,
   }) async {
     _ensureOpen();
-    _requireMediaTools();
+    await _requireMediaTools();
     if (!identical(batch.owner, this))
       throw const XmlyException('batch_invalid', '下载确认已失效');
     if (!confirmed) return;
@@ -752,11 +753,12 @@ class DownloadService {
 
   Future<void> _run(String id, DownloadControl control) async {
     try {
-      _requireMediaTools();
       if (!(_automaticGuards[id]?.call() ?? true))
         throw const DownloadStopped();
       _automaticGuards.remove(id);
       while (true) {
+        await control.checkpoint();
+        await _requireMediaTools(checkpoint: control.checkpoint);
         await control.checkpoint();
         try {
           final String path;
@@ -1045,13 +1047,11 @@ class DownloadService {
     return value;
   }
 
-  static void _requireMediaTools() {
-    if (Platform.isAndroid) {
-      throw const XmlyException(
-        'media_tool_missing',
-        '当前 Android 安装包不含 FFmpeg/FFprobe，无法下载或转码；本次操作不会扣除听时，仍可在线收听',
-      );
-    }
+  static Future<void> _requireMediaTools({
+    Future<void> Function()? checkpoint,
+  }) async {
+    if (Platform.isAndroid)
+      await MediaProcessor().checkTools(checkpoint: checkpoint);
   }
 
   static Future<void> _checkRoot(String path, [Map? settings]) =>
@@ -1087,7 +1087,7 @@ class DownloadService {
           return '媒体处理服务未接入，不能重试处理';
         case 'media_tool_missing':
           return Platform.isAndroid
-              ? '当前 Android 安装包不含 FFmpeg/FFprobe，未执行下载或扣时；已有任务及听时记录保留，可在线收听'
+              ? '随附 Android FFmpeg/FFprobe 无法使用，请重新安装完整安装包；任务、源缓存及已确认的听时记录保留'
               : '无法启动媒体工具，请检查路径';
         case 'source_missing':
           return '本地源音频缺失或损坏，请选择重新获取';

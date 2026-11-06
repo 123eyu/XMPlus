@@ -37,5 +37,6 @@ android/captures/
 android/app/debug/
 android/app/profile/
 android/app/release/
+android/app/src/main/jniLibs/
 windows/flutter/ephemeral/
 windows/flutter/generated_*

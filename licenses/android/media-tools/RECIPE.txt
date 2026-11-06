@@ -1,0 +1,108 @@
+XMPlus Android media executable recipe
+
+Scope and artifact identity
+---------------------------
+This application builds its own FFmpeg and FFprobe command-line executables
+from the exact source archives locked in tool/media_sources.json. It does not
+use FFmpegKit, download executable binaries, or call a JNI FFmpeg library.
+The names libxmplus_ffmpeg.so and libxmplus_ffprobe.so are Android packaging
+names for PIE command-line executables, not shared-library entry points.
+
+Source inputs and licenses
+--------------------------
+FFmpeg 9.0.2:
+  licenses/media/sources/ffmpeg-9.0.2.tar.xz
+  SHA-256: 8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+  Source: https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz
+  Default LGPL configuration; neither --enable-gpl, --enable-version3 nor
+  --enable-nonfree is passed. Consult the source LICENSE.md and individual
+  source file notices for the complete terms and component-specific notices.
+
+LAME 3.100 (static libmp3lame, frontend and MP3 decoder disabled):
+  licenses/media/sources/lame-3.100.tar.gz
+  SHA-256: ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e
+  Archive URL and exact byte count: tool/media_sources.json
+  GNU Library General Public License version 2 or, at the recipient's option,
+  any later version, as declared by libmp3lame source headers and COPYING.
+  The compatible later LGPL version applies when combined with FFmpeg.
+
+Full source archives and complete license texts are shared under licenses/media;
+these inputs are not duplicated under this directory. The archive sources and
+this recipe allow rebuilding and relinking modified FFmpeg/LAME executables.
+No compiled source is modified. README-named files are excluded from the build
+extraction (case-insensitive); the complete original archives remain intact.
+No proprietary application code
+is linked into the media executable: Flutter communicates via process arguments,
+local files and standard output/error. This description is not a replacement
+for the licenses or a claim that a build has passed a legal review.
+
+Android supplies the public NDK runtime libraries libc, libm, libdl and libz.
+They are platform prerequisites, not additional libraries copied into the APK.
+The NDK system zlib headers and -lz preserve PNG decoding; libz is not claimed
+to be a separately distributed static dependency. Exact DT_NEEDED entries are
+recorded by llvm-readelf for each generated executable. Page-size claims for
+our executables do not assert anything about a device's platform libraries.
+
+Build command
+-------------
+Use Linux x86_64, Bash, make, tar, jq, sha256sum and the Android NDK
+28.2.13676358 toolchain. Install nasm for the x86_64 FFmpeg assembler.
+Set ANDROID_NDK_HOME to that NDK, or set ANDROID_HOME to an SDK containing it.
+No SDK license terms are accepted by this script.
+
+  bash tool/build_android_media.sh
+  bash tool/build_android_media.sh arm64-v8a
+  bash tool/build_android_media.sh armeabi-v7a
+  bash tool/build_android_media.sh x86_64
+
+JOBS overrides make parallelism. SOURCE_ROOT may point to another checkout/root
+containing tool/media_sources.json and its relative archive paths. There is no
+network fetching or unverified fallback. Every invocation hashes its archives
+and extracts fresh copies into build/android-media/sources before compiling.
+
+Configuration
+-------------
+Targets: arm64-v8a, armeabi-v7a and x86_64, Android API 24, NDK r28c clang.
+FFmpeg and LAME libraries are static inside each PIE executable. The recipe
+uses -fPIE/-pie and maximum/common ELF page sizes of 16384. Platform runtime
+libraries remain dynamic. Original configure scripts, exact configure command
+arguments, generated config.h/config_components.h, config.log, output SHA-256,
+source lock and ELF headers/program headers/dynamic entries are retained in:
+
+  build/android-media/<abi>/receipt/
+  build/android-media/media_sources.json
+
+The recipe disables external-library autodetection, FFplay, device IO, docs,
+debug information and network protocols. Only file and pipe protocols remain.
+Starting with --disable-everything, the recipe explicitly enables the audio
+decoders/encoders, PCM integer/float bit depths, parsers, remux containers,
+hash/null muxers, AAC bitstream filter and audio conversion filters required by
+MediaProcessor. Image inputs are image2/image2pipe/image_png_pipe/image_jpeg_pipe;
+the latter two are FFmpeg 9 configure names, not the shorter runtime names.
+FFmpeg also selects its required core graph helper filters. Explicit external
+features are libmp3lame and Android system zlib. AAC/MP3/M4A/M4B/ALAC/FLAC,
+Ogg Vorbis/Opus and WAV input, MP3/AAC/FLAC output, original stream copying,
+aac_adtstoasc, SHA-256 packet hashing, null decode, PCM/format conversion,
+PNG/JPEG cover decode, attached pictures and container metadata remain within
+the configuration. Actual runtime capabilities require execution on Android;
+this recipe itself is not runtime smoke evidence.
+
+Installation and execution
+--------------------------
+Output paths are android/app/src/main/jniLibs/<abi>/libxmplus_{ffmpeg,ffprobe}.so.
+Gradle requires both nonempty files for each requested target ABI before
+preBuild; missing tools must fail a build, not create a misleading APK.
+Legacy native packaging and extractNativeLibs request installer extraction.
+MainActivity returns only canonical executable paths in the application's
+nativeLibraryDir. Dart validates the absolute directory and exact child file
+paths before using the existing bounded, cancellable Process runner. Tools
+are never copied to writable filesDir/cache for execution. Android ignores
+restored desktop tool overrides; Windows retains its existing path behavior.
+
+Build and runtime evidence
+--------------------------
+The build manifest describes the selected recipe and source/output hashes;
+it does not independently prove successful Android installation or runtime
+behavior. Release acceptance must inspect the actual packaged ELF files and
+run the production MediaProcessor on Android, including conversion, original
+packet hash, covers, cancellation and prepayment prevention when tools fail.
