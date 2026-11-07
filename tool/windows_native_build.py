@@ -160,6 +160,8 @@ endian = 'little'
 [properties]
 needs_exe_wrapper = true
 [built-in options]
+c_args = ['-I{prefix / 'include'}']
+cpp_args = ['-I{prefix / 'include'}']
 c_link_args = ['-static']
 cpp_link_args = ['-static', '-static-libstdc++']
 """, encoding='utf-8')
@@ -203,6 +205,9 @@ cpp_link_args = ['-static', '-static-libstdc++']
     meson('fribidi', '-Ddocs=false', '-Dtests=false')
     meson('harfbuzz', '-Dtests=disabled', '-Dutilities=disabled', '-Ddocs=disabled')
     meson('libass', '-Drequire-system-font-provider=false')
+    # Even disabled Vulkan stubs expose public Vulkan types. Supply only exact
+    # headers (including vk_video); no loader, pkg-config discovery or runtime.
+    shutil.copytree(sources['vulkan-headers'] / 'include', prefix / 'include', dirs_exist_ok=True)
     # libc++18 lacks floating-point from_chars; use one fully pinned header-only dependency.
     shutil.copytree(sources['fast-float'], sources['libplacebo-current'] / '3rdparty/fast_float', dirs_exist_ok=True)
     meson('libplacebo-current', '-Ddemos=false', '-Dtests=false', '-Dbench=false')

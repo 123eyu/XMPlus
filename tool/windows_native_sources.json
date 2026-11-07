@@ -6,6 +6,17 @@
   "libplaceboCommit": "9fabf6d5057c40089afb020017c6347002b07308",
   "components": [
     {
+      "url": "https://codeload.github.com/KhronosGroup/Vulkan-Headers/tar.gz/409c16be502e39fe70dd6fe2d9ad4842ef2c9a53",
+      "sha256": "dc96688e8cf01f2f0a8f31a41fa76a7f8d1e27f022e31bbd3a59ff40a24da9d6",
+      "bytes": 2636165,
+      "name": "vulkan-headers",
+      "version": "1.4.313",
+      "commit": "409c16be502e39fe70dd6fe2d9ad4842ef2c9a53",
+      "file": "licenses/native/sources/windows-vulkan-headers.tar.gz",
+      "kind": "source",
+      "role": "Header-only declarations required by libplacebo public headers/stubs; no Vulkan loader or runtime is built or linked."
+    },
+    {
       "url": "https://codeload.github.com/freetype/freetype/tar.gz/refs/tags/VER-2-13-3",
       "sha256": "bc5c898e4756d373e0d991bab053036c5eb2aa7c0d5c67e8662ddc6da40c4103",
       "bytes": 2482495,
