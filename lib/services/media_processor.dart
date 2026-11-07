@@ -736,7 +736,9 @@ class MediaProcessor {
     client.findProxy = (_) => 'DIRECT';
     client.connectionFactory = (uri, proxyHost, proxyPort) async {
       final addresses = await _safeCoverUri(uri);
-      return Socket.startConnect(addresses.first, uri.port);
+      return uri.scheme == 'https'
+          ? SecureSocket.startConnect(addresses.first, uri.port)
+          : Socket.startConnect(addresses.first, uri.port);
     };
     final deadline = DateTime.now().add(const Duration(seconds: 30));
     Future<T> wait<T>(Future<T> future) async {
