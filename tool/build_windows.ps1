@@ -22,8 +22,6 @@ $ErrorActionPreference = 'Stop'
 $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (-not $SdkRoot) { $SdkRoot = Split-Path (Split-Path (Get-Command flutter.bat -ErrorAction Stop).Source) }
 $Flutter = Join-Path $SdkRoot 'bin\flutter.bat'
-$PackageName = 'XMPlus-1.0.0-windows-x64'
-$SourceName = 'XMPlus-1.0.0-source'
 $Utf8 = New-Object System.Text.UTF8Encoding($false)
 
 function Read-Json([string]$Path) {
@@ -258,9 +256,14 @@ if ($sdk.frameworkVersion -ne '3.47.9' -or $sdk.dartSdkVersion -ne '3.13.7') {
     throw 'Required SDK: Flutter 3.47.9 / Dart 3.13.7. Update the selected SDK before packaging.'
 }
 $pubspec = [IO.File]::ReadAllText((Join-Path $ProjectRoot 'pubspec.yaml'), [Text.Encoding]::UTF8)
-if ($pubspec -notmatch '(?m)^name:\s*xmly_flutter\s*$' -or $pubspec -notmatch '(?m)^version:\s*1\.0\.0\+1\s*$') {
-    throw 'This packaging script requires xmly_flutter version 1.0.0+1.'
+$versionMatch = [regex]::Match($pubspec, '(?m)^version:[ \t]*(?<version>(?<release>[0-9]+\.[0-9]+\.[0-9]+)\+[0-9]+)[ \t]*\r?$')
+if ($pubspec -notmatch '(?m)^name:\s*xmly_flutter\s*$' -or -not $versionMatch.Success) {
+    throw 'This packaging script requires xmly_flutter with a stable pubspec version X.Y.Z+N.'
 }
+$PackageVersion = $versionMatch.Groups['version'].Value
+$ReleaseVersion = $versionMatch.Groups['release'].Value
+$PackageName = "XMPlus-$ReleaseVersion-windows-x64"
+$SourceName = "XMPlus-$ReleaseVersion-source"
 if (-not [IO.Path]::IsPathRooted($OutputDirectory)) { $OutputDirectory = Join-Path $ProjectRoot $OutputDirectory }
 $dist = [IO.Path]::GetFullPath($OutputDirectory)
 $target = Join-Path $dist $PackageName
@@ -385,7 +388,7 @@ try {
     $nativeSdk = @($nativeManifest.components | Where-Object { $_.name -eq 'WebView2Loader, WIL, nlohmann.json' })[0]
     $origins = [ordered]@{
         schemaVersion = 1
-        application = 'XMPlus 1.0.0+1'
+        application = "XMPlus $PackageVersion"
         notice = 'Hash-locked source-built Windows media payload. Exact source archives, recipe and relink objects remain separate development materials, never inside the application package. Microsoft CRT DLLs are not redistributed.'
         flutter = [ordered]@{ version = $sdk.frameworkVersion; frameworkCommit = $sdk.frameworkRevision; engineCommit = $sdk.engineRevision; url = 'https://github.com/flutter/flutter' }
         upstreamEntries = $nativeManifest.aboutSourceEntry.upstreamEntries
@@ -405,7 +408,7 @@ try {
         sourceMaterialsComplete = $true
         redistributionReady = $false
         distributionRequirement = 'Provide applicable corresponding-source access separately before public binary distribution; it is not bundled with this runtime package.'
-        schemaVersion = 1; application = 'XMPlus'; version = '1.0.0+1'; package = $PackageName
+        schemaVersion = 1; application = 'XMPlus'; version = $PackageVersion; package = $PackageName
         status = $statusValue
         generatedAtUtc = [DateTime]::UtcNow.ToString('o'); blockers = @($blockers.ToArray())
         ffmpegReleaseCompliance = [ordered]@{ completeCorrespondingSource = $true; sourceBuild = $true }
@@ -469,7 +472,7 @@ try {
     Ensure-Directory $evidence
     Write-Json (Join-Path $evidence 'RELEASE-STATUS.json') $status
     $manifest = [ordered]@{
-        schemaVersion = 1; application = 'XMPlus'; version = '1.0.0+1'; buildMode = 'release'; target = 'windows-x64'
+        schemaVersion = 1; application = 'XMPlus'; version = $PackageVersion; buildMode = 'release'; target = 'windows-x64'
         flutterVersion = $sdk.frameworkVersion; dartVersion = $sdk.dartSdkVersion
         frameworkRevision = $sdk.frameworkRevision; engineRevision = $sdk.engineRevision
         engineSha256 = $engineHash; pubspecLockSha256 = $lockHash; ffmpegExecutableSha256 = $nativeFFmpegHash

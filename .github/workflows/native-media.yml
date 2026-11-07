@@ -95,6 +95,14 @@ jobs:
             build/windows-native/licenses/
           if-no-files-found: error
           retention-days: 14
+      - name: Upload complete native supply for Windows packaging
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-native-supply
+          path: build/windows-native/windows-native-supply.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
       - name: Upload native build evidence
         if: always()
         uses: actions/upload-artifact@v4
