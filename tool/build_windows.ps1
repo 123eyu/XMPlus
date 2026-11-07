@@ -240,7 +240,7 @@ foreach ($required in @('runtime/libmpv-2.dll', 'runtime/tools/ffmpeg/ffmpeg.exe
         throw "Native supply omits a required hashed member: $required"
     }
 }
-$FixedFFmpegHash = File-Hash (Join-Path $NativeSupply 'runtime\tools\ffmpeg\ffmpeg.exe')
+$nativeFFmpegHash = File-Hash (Join-Path $NativeSupply 'runtime\tools\ffmpeg\ffmpeg.exe')
 $blockers = New-Object 'System.Collections.Generic.List[string]'
 # Historical Gyan/2023-mpv gaps are not waived: those binaries are no longer packaged.
 # Admission instead binds the generated payload to all exact sources, recipe and relink objects.
@@ -453,7 +453,8 @@ try {
         schemaVersion = 1; application = 'XMPlus'; version = '1.0.0+1'; buildMode = 'release'; target = 'windows-x64'
         flutterVersion = $sdk.frameworkVersion; dartVersion = $sdk.dartSdkVersion
         frameworkRevision = $sdk.frameworkRevision; engineRevision = $sdk.engineRevision
-        engineSha256 = $engineHash; pubspecLockSha256 = $lockHash; ffmpegPackageSha256 = $FixedFFmpegHash
+        engineSha256 = $engineHash; pubspecLockSha256 = $lockHash; ffmpegExecutableSha256 = $nativeFFmpegHash
+        nativeBuildReceiptSha256 = File-Hash (Join-Path $NativeSupply 'BUILD-RECEIPT.json')
         fileHashScope = 'Every payload file except BUILD-MANIFEST.json itself; ZIP creation also hashes and verifies the manifest.'
         files = @(File-Inventory $bundle)
     }
