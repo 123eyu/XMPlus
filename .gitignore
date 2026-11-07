@@ -6,6 +6,8 @@
 .pub-cache/
 .pub/
 /build/
+/android/build/
+/android/app/build/
 /dist/
 /coverage/
 /ephemeral/
@@ -40,3 +42,4 @@ android/app/release/
 android/app/src/main/jniLibs/
 windows/flutter/ephemeral/
 windows/flutter/generated_*
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
