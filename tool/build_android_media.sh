@@ -90,9 +90,9 @@ for abi in "${ABIS[@]}"; do
               --enable-muxer=mp3,mov,mp4,ipod,flac,ogg,wav,null,hash
               --enable-decoder=aac,alac,mp3,mp3float,flac,vorbis,opus,png,mjpeg
               --enable-decoder=pcm_alaw,pcm_mulaw,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_s32be,pcm_s64le,pcm_s64be,pcm_u16le,pcm_u16be,pcm_u24le,pcm_u24be,pcm_u32le,pcm_u32be,pcm_f16le,pcm_f24le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be
-              --enable-encoder=libmp3lame,aac,flac,pcm_s16le,wrapped_avframe
+              --enable-encoder=libmp3lame,aac,flac,pcm_s16le,wrapped_avframe,mjpeg
               --enable-parser=aac,flac,mpegaudio,opus,vorbis,png,mjpeg
-              --enable-bsf=aac_adtstoasc --enable-filter=anull,aresample,aformat,format
+              --enable-bsf=aac_adtstoasc --enable-filter=anull,aresample,aformat,format,scale
               --disable-avdevice --disable-indevs --disable-outdevs --disable-ffplay --disable-doc --disable-debug
               "--extra-cflags=-O2 -fPIE -I$PREFIX/include"
               "--extra-ldflags=-L$PREFIX/lib -pie -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"

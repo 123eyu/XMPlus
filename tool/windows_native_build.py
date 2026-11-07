@@ -151,7 +151,7 @@ cpp = '{cxx}'
 ar = '{triple}-ar'
 strip = '{triple}-strip'
 windres = '{triple}-windres'
-pkg-config = 'pkg-config'
+pkg-config = ['pkg-config', '--static']
 [host_machine]
 system = 'windows'
 cpu_family = 'x86_64'
