@@ -30,16 +30,16 @@ jobs:
       matrix:
         abi: [armeabi-v7a, arm64-v8a, x86_64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
       - name: Cache source-built Android tools
         id: native-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             android/app/src/main/jniLibs/${{ matrix.abi }}
@@ -55,7 +55,7 @@ jobs:
         if: steps.native-cache.outputs.cache-hit != 'true'
         run: ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358" bash tool/build_android_media.sh '${{ matrix.abi }}'
       - name: Upload ABI-specific installed executables
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: android-tools-${{ matrix.abi }}
           path: android/app/src/main/jniLibs/
@@ -63,7 +63,7 @@ jobs:
           retention-days: 14
       - name: Upload native configuration and build evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: android-native-evidence-${{ matrix.abi }}
           path: build/android-media/${{ matrix.abi }}/receipt/
@@ -74,7 +74,7 @@ jobs:
     if: inputs.windows
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
       - name: Install native build tools
@@ -87,7 +87,7 @@ jobs:
       - name: Build source-traceable Windows native supply
         run: bash tool/windows-native-build.sh build/windows-native
       - name: Upload native runtime only (no source or build objects)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-native-runtime
           path: |
@@ -96,7 +96,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Upload complete native supply for Windows packaging
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-native-supply
           path: build/windows-native/windows-native-supply.zip
@@ -105,7 +105,7 @@ jobs:
           retention-days: 14
       - name: Upload native build evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-native-evidence
           path: |

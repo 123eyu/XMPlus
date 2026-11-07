@@ -30,10 +30,10 @@ jobs:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
@@ -45,7 +45,7 @@ jobs:
       - name: Resolve locked dependencies
         run: flutter pub get --enforce-lockfile
       - name: Restore source-built native media executables
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: android-tools-*
           path: android/app/src/main/jniLibs/
@@ -60,10 +60,10 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
@@ -93,7 +93,7 @@ jobs:
       - name: Resolve locked dependencies
         run: flutter pub get --enforce-lockfile
       - name: Restore source-built native media executables
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: android-tools-*
           path: android/app/src/main/jniLibs/
@@ -147,7 +147,7 @@ jobs:
           done
           (cd release && sha256sum ./*.apk > SHA256SUMS)
       - name: Upload verified release APKs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: XMPlus-${{ steps.version.outputs.version }}-android
           path: release/*
@@ -162,7 +162,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
       - uses: subosito/flutter-action@v2
@@ -171,7 +171,7 @@ jobs:
           channel: stable
           cache: true
       - name: Restore source-built Windows native supply
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: windows-native-supply
           path: ${{ runner.temp }}/windows-native
@@ -188,7 +188,7 @@ jobs:
           tar -czf "dist/XMPlus-$version-windows-corresponding-source.tar.gz" -C build/corresponding-source "XMPlus-$version-source"
           if ($LASTEXITCODE -ne 0) { throw 'Corresponding-source archive failed.' }
       - name: Upload Windows release files
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: XMPlus-windows
           path: |
@@ -205,14 +205,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: XMPlus-${{ needs.signed.outputs.version }}-android
           path: release
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: XMPlus-windows
           path: release
