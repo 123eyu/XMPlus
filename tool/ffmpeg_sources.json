@@ -1,15 +1,23 @@
 {
   "schemaVersion": 1,
-  "component": "FFmpeg Gyan essentials Windows x64",
+  "component": "Windows FFmpeg/FFprobe source-build admission; retired Gyan evidence retained below",
   "version": "9.0.2",
-  "generatedOn": "2026-11-05",
+  "generatedOn": "2026-11-07",
   "releaseCompliance": {
-    "status": "blocked",
+    "status": "source-build-receipt-required",
     "completeCorrespondingSource": false,
     "redistributionReady": false,
-    "reason": "Pinned upstream sources, licenses and build options acquired; exact publisher patches/recipes, unversioned static libraries and full transitive static-source closure are not established."
+    "reason": "Gyan binary is retired, not declared source-complete. The package uses only tool/windows_native_build.py outputs with every exact source and current recipe verified by build_windows.ps1; actual binary build receipt and Windows acceptance are still required."
   },
-  "package": {
+  "replacement": {
+    "recipe": "tool/windows_native_build.py",
+    "sourceLocks": ["tool/media_sources.json", "tool/windows_native_sources.json"],
+    "patches": [],
+    "configuration": "Unmodified FFmpeg9.0.2; LGPL build; static LAME3.100 and zlib1.3.1; built-in AAC/FLAC, remux, hash, JPEG/PNG covers, Windows Schannel HTTPS. No Gyan external libraries or GPL/nonfree features.",
+    "sourceArtifacts": "NativeSupply/sources contains every locked archive, recipe, generated configuration and BUILD-OBJECTS.tar.gz; supplied separately in the public application source ZIP.",
+    "binaryIdentity": "NativeSupply/BUILD-RECEIPT.json produced by the successful cross-build; no fabricated output digest is predeclared."
+  },
+  "retiredPackage": {
     "url": "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip",
     "publisherReleaseApi": "https://api.github.com/repos/GyanD/codexffmpeg/releases/tags/9.0.2",
     "publisherMirrorUrl": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip",
@@ -35,7 +43,7 @@
     ]
   },
   "materialsDirectory": "C:/Users/Nahida/Documents/XMLY Flutter\\build\\dependency-cache\\ffmpeg-sources-9.0.2",
-  "sourceArchives": [
+  "historicalSourceArchives": [
     {
       "component": "ffmpeg",
       "repository": "https://github.com/FFmpeg/FFmpeg",
@@ -1599,7 +1607,7 @@
     ],
     "licenseMemberCount": 145
   },
-  "missing": [
+  "historicalMissingForRetiredGyanBinary": [
     {
       "id": "publisher-build-recipe-and-patches",
       "details": "GyanD/codexffmpeg release 9.0.2 contains binaries and a FFmpeg upstream commit only; repository root contains .github and README.md, not the custom dependency build orchestration, patches or build dependency lock. Compiler provenance MSYS2 GCC 16.2.0 Rev3 does not establish that ordinary MSYS2 package recipes produced these binaries."
@@ -1636,7 +1644,7 @@
       "details": "Pinned complete MSYS2 MINGW-packages source archive includes standard PKGBUILDs and patches. These are expressly reference-only, not asserted to match Gyan. For example x264 recipe is r3222.b35605a versus binary r3223.0480cb0, x265 recipe 4.3 versus binary 4.3+45, Cairo recipe 1.18.6 versus publisher 1.18.5."
     }
   ],
-  "packagingInstructions": [
+  "historicalPackagingInstructionsForRetiredGyanBinary": [
     "Keep acquired archives intact; README members inside source archives may remain but must not be extracted or copied as standalone README files.",
     "Runtime bundles include license texts, copyright notices and a compact version/source-origin summary only. Keep source archives, reference recipes and build evidence separately in the project materials; do not copy them into the application bundle.",
     "Do not describe these materials as complete corresponding source, treat the gate as passed, or publish/redistribute the fixed binary until missing publisher materials and complete source/license closure are resolved.",

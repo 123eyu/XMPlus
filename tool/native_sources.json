@@ -6,6 +6,16 @@
   "localCandidateAllowed": true,
   "correspondingSourceComplete": false,
   "requiredCandidateNotice": "licenses/native/SOURCE-MATERIALS-INCOMPLETE.txt",
+  "currentSupply": {
+    "policy": "Replace the retired 2023 libmpv binary, never waive its unknown sources. Do not bundle MSVC CRT DLLs.",
+    "sourceLock": "tool/windows_native_sources.json",
+    "sharedSourceLock": "tool/media_sources.json",
+    "recipe": "tool/windows_native_build.py",
+    "buildCommand": "bash tool/windows-native-build.sh build/windows-native",
+    "gate": "tool/build_windows.ps1 requires and hashes every supply member, matches every source archive/URL/hash to both source locks, matches the current build recipe, requires relinkable objects, and uses only the produced libmpv/FFmpeg binaries.",
+    "status": "Exact replacement source materials acquired; binary build receipt and Windows functional acceptance required, not asserted here.",
+    "msvcRuntime": "Not bundled. Windows requires the official Microsoft Visual C++ v14 x64 Redistributable: https://aka.ms/vc14/vc_redist.x64.exe. This is not a grant of redistribution rights."
+  },
   "notPerformed": [
     "No actual media_kit Player creation/open/play or sound-card access",
     "No signing, public publishing, OS-service installation or acceptance of license terms",
@@ -15,7 +25,7 @@
     "label": "源代码与第三方许可",
     "localManifest": "tool/native_sources.json",
     "localMaterials": "licenses/native/",
-    "notice": "源码材料尚未齐全；此包仅作本地候选验收，不表示可以对外分发。",
+    "notice": "Windows媒体库改由精确源码自产；构建收据、对应源码归档及重链接对象单独随源码包提供。旧2023二进制缺口保留为历史证据，不作为新供应包授权。",
     "upstreamEntries": [
       {
         "component": "Flutter framework 3.47.5",
@@ -35,7 +45,7 @@
       },
       {
         "component": "mpv base source",
-        "url": "https://github.com/mpv-player/mpv/tree/652a1dd90711839acdccc08004056d25514ef2d8"
+        "url": "https://github.com/mpv-player/mpv/tree/902818753849d9ad8f0096fad6ca5aeaa37113b9"
       }
     ]
   },
@@ -189,6 +199,8 @@
     },
     {
       "name": "libmpv-2.dll",
+      "retired": true,
+      "replacement": "Source-built libmpv from tool/windows_native_sources.json; this record and hashes below describe ONLY the retired 2023 candidate, never the new DLL.",
       "licenseClassification": "mpv LGPL-2.1-or-later configured with -Dgpl=false; embedded static FFmpeg LGPL-3.0-or-later. The combined supplied library must not be described as MIT or default GPL mpv. Full static dependency closure unresolved.",
       "binary": {
         "sha256": "0a5a0b476866c91a639a4e511e8153968f8fa23564461b0aa09acdba816164a4",
@@ -250,7 +262,7 @@
       "sourceStatus": "exact published source archives, licenses and relevant Windows rules collected",
       "localBuildPatch": {
         "hostFile": "windows/CMakeLists.txt",
-        "evidence": "licenses/native/evidence/XMPlus-Windows-CMakeLists.txt",
+        "evidence": "licenses/native/evidence/XMPlus-Windows-CMakeLists.txt is a historical pre-source-cutover snapshot; current full transformations are supplied in windows/CMakeLists.txt",
         "originalManagerSha256": "eefc7b984c208696b3a3a34f99b0ddc11779fb7470009ebbabcfd274421d77ab",
         "upstreamCommit": "0fc1598ec155659ed7c2db3628693a24bd4e0d25",
         "upstreamUrl": "https://github.com/pichillilorenzo/flutter_inappwebview/commit/0fc1598ec155659ed7c2db3628693a24bd4e0d25",
@@ -313,6 +325,8 @@
     },
     {
       "name": "Microsoft Visual C++ runtime",
+      "bundled": false,
+      "currentPolicy": "Official separately installed Microsoft Visual C++ v14 x64 Redistributable is required; build_windows.ps1 excludes msvcp140*/vcruntime140* DLLs. Historical candidate hashes below are not packaged and no redistribution license is asserted.",
       "candidateVersionDirectory": "14.44.35112",
       "license": "Microsoft proprietary redistribution terms, not GPL/BSD/MIT",
       "candidates": [
@@ -497,7 +511,7 @@
       ]
     }
   },
-  "missing": [
+  "historicalMissingForRetiredCandidate": [
     {
       "id": "libmpv-release-build-recipe",
       "component": "libmpv-2.dll",
@@ -554,10 +568,10 @@
   "artifacts": [
     {
       "path": "licenses/native/SOURCE-MATERIALS-INCOMPLETE.txt",
-      "sha256": "37867ddbd8b3133b8198cf453bb76504fe5959d8e0a3bb36093d30c5d5155668",
-      "size": 3319,
+      "sha256": "271b3ac9e6d68668b273d815d049fa6dfe48ec1313232bea24e1f6086ab75289",
+      "size": 4042,
       "source": "This task: evidence-backed public redistribution gate",
-      "role": "required explicit local candidate notice"
+      "role": "source-build cutover, source gate, prerequisites and validation contract; historical publisher gaps are not waived"
     },
     {
       "path": "licenses/native/evidence/FFmpeg-LICENSE.txt",
@@ -1180,7 +1194,7 @@
       "sha256": "24bee3a5ee1f2000eda43dc0ff69a69301c63aa664f835b644e44566a43dbe9a",
       "size": 7526,
       "source": "windows/CMakeLists.txt",
-      "role": "Exact host CMake transformation for the pinned Windows WebView compositor shutdown fix"
+      "role": "Historical pre-source-cutover CMake snapshot documenting the original pinned WebView fix; current source is windows/CMakeLists.txt"
     },
     {
       "path": "licenses/native/evidence/XMPlus-webview-download-guard.h",
@@ -1192,7 +1206,7 @@
   ],
   "boundaries": [
     "No README file has been created, changed, renamed, removed or extracted. Original archives may contain untouched README members.",
-    "Application AGPL-3.0-or-later source and FFmpeg standalone essentials 9.0.2 materials belong to parent/MediaSourceMaterials inventory, not this manifest.",
+    "Application AGPL-3.0-or-later source is supplied by the parent. New Windows FFmpeg9.0.2/LAME source inputs use tool/media_sources.json; historical Gyan materials do not authorize or describe the replacement binaries.",
     "Hashes describe collected bytes and existing binaries, not a successful build or runtime verification.",
     "Homepage or source link alone is not treated as complete corresponding source.",
     "This manifest does not offer an unfulfillable written-source offer and does not authorize public distribution."

@@ -1,48 +1,64 @@
-SOURCE MATERIALS INCOMPLETE — LOCAL CANDIDATE ONLY
+WINDOWS NATIVE SOURCE SUPPLY — SOURCE-BUILD CUTOVER
 
-This material set does not establish that XMPlus is ready for public redistribution.
-It is suitable for the parent task's private local candidate build and acceptance work.
-No public distribution, installation, terms acceptance or source offer is authorized by this notice.
+The retired Gyan 9.0.2 and media-kit 2023-09-24 libmpv binaries are NOT admitted
+for public packaging. Their exact publisher patch/recipe/static-dependency gaps
+remain historical facts; no nearest-version archive is asserted to close them.
+Historical evidence is retained in tool/ffmpeg_sources.json (retiredPackage and
+historicalSourceArchives) and tool/native_sources.json
+(historicalMissingForRetiredCandidate, retired libmpv entry).
 
-The pinned media_kit wrappers are MIT licensed. That does not license the downloaded
-libmpv-2.dll as MIT. The actual DLL embeds mpv -Dgpl=false and FFmpeg --disable-gpl,
---disable-nonfree, --enable-version3. Its libav* license strings state LGPL version 3
-or later. mpv's exact source Copyright explains its LGPL-2.1-or-later mode and the
-fact that linked libraries can change the combined library's licensing requirements.
+Replacement:
+  bash tool/windows-native-build.sh build/windows-native
+Linux x64 host prerequisites: Python >=3.11, make, cmake, ninja, pkg-config,
+Meson >=1.3 and Jinja2. Python is build-only, never an application dependency.
+No global installation, terms acceptance, signing or public release is performed
+by this recipe. The parent can use an already-authorized Linux CI environment.
 
-Collected exact bases:
-- mpv: 652a1dd90711839acdccc08004056d25514ef2d8.
-- FFmpeg: n6.0, ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2.
-- libass: embedded commit 5c15c883a4783641f7e71a6a1f440209965eb64f.
-- Source snapshots for the named OpenAL Soft 1.23.1, FriBidi 1.0.13 and
-  libjpeg-turbo 3.0.1 upstream releases; binary-local patches are not established.
-- Exact Flutter framework and monorepo engine revisions, DEPS and full SDK engine
-  third-party notices; fetched third-party source trees are not in these archives.
-- Published Dart/native package archives whose SHA-256 matches the current lock,
-  including the window_manager 0.5.1 MethodChannel backend and screen_retriever.
-- Exact fixed PiliPlus upstream source and full GPL license. This upstream archive
-  is not a substitute for the adapted XMPlus application source and build scripts.
+Inputs are immutable URL/SHA-256 locks:
+- tool/media_sources.json: FFmpeg9.0.2 and LAME3.100.
+- tool/windows_native_sources.json: exact mpv and libplacebo commits, FreeType,
+  FriBidi, HarfBuzz, libass, fast_float, zlib and LLVM/MinGW toolchain/runtime sources.
+The complete source archives have been acquired, not merely linked. LLVM's large
+source archive is cached under build/windows-native-sources rather than committed
+to the application repository. CI downloads missing archives and verifies hashes.
 
-Still missing for a supported public-redistribution claim:
-1. The exact libmpv release build checkout, workflow custom inputs, patches,
-   generated cross files and toolchain/environment recipe. The version release
-   tag contains only a version file. Retained release-date workflow runs are absent.
-2. Proof of the exact patches applied to FFmpeg n6.0. A later 2024 minimal-audio
-   recipe and its patch files are archived only as candidate evidence, not as the
-   matching 2023-09-24 release recipe.
-3. A complete linked static-dependency inventory and matching source revisions,
-   patches and recipes. Development identifiers include libarchive 3.7.3dev and
-   libpng 1.6.41.git; short XZ/compiler banners do not resolve their exact sources.
-4. Exact custom MinGW/GCC runtime source and configuration where required; a
-   GCC 13.1.1 banner and collected Runtime Exception are not proof of compliance.
-5. If Microsoft CRT binaries are packaged, the distributor must establish its
-   rights under its applicable Visual Studio license and the official redist list.
-   Full runtime terms, Build Tools terms, notices and exact installed candidate
-   hashes are supplied; no license agreement was accepted or installer executed.
+The unmodified FFmpeg source builds both real Windows ffmpeg.exe and ffprobe.exe.
+LAME enables MP3 encoding, native FFmpeg AAC/FLAC encoders remain available;
+remuxing, packet hashing and JPEG/PNG artwork remain enabled. zlib is built from
+its locked source. HTTPS uses Windows Schannel, not an unknown static TLS chain.
+The real mpv client API and WASAPI output remain; only unused optional graphics,
+scripting and system-integration features are disabled at configure time. No
+video-source deletion or fake platform library is used. No downstream patches.
 
-A homepage, version approximation, unpatched upstream tarball or build recipe from
-another date is not represented as complete corresponding source. No written offer
-for missing materials is made. Full artifact URLs, SHA-256 values, observed flags,
-source pin evidence, DLL import evidence and concrete missing fields are recorded
-in tool/native_sources.json. Preserve this notice in every local candidate bundle
-until those public-redistribution prerequisites have actually been resolved.
+The recipe produces:
+- runtime/libmpv-2.dll and runtime/tools/ffmpeg/{ffmpeg,ffprobe}.exe
+- sources/: every exact archive, source locks and actual build recipe
+- sources/BUILD-OBJECTS.tar.gz: build trees, generated configs, object files,
+  static libraries and libmpv link map for inspection/relinking
+- licenses/THIRD-PARTY-NOTICES.txt and WINDOWS-PREREQUISITES.txt
+- IMPORTS.json, BUILD.log, BUILD-RECEIPT.json, windows-native-supply.zip
+The recipe rejects unexpected non-system imported DLLs. The receipt is generated
+only after every real native build and import/source/payload check succeeds.
+A runnable digest check is: python tool/windows_native_build.py <supply> --verify-supply
+
+Package with:
+  powershell -File tool/build_windows.ps1 -NativeSupply build/windows-native
+The packager requires the receipt, rehashes every payload and source, compares the
+entire source closure and recipe to the current locks, and refuses old binaries.
+The real media-kit wrapper is compiled with its hash-pinned download section
+replaced in a generated build-directory copy; the global Pub cache is unchanged.
+Public packaging includes a separate application source ZIP with the full native
+source and relink materials. Local candidate mode does not bypass supply checks.
+
+MSVC CRT policy: do not redistribute msvcp140*/vcruntime140* DLLs. Users need the
+separately installed Microsoft Visual C++ v14 x64 Redistributable from Microsoft:
+https://aka.ms/vc14/vc_redist.x64.exe
+https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist
+This is a prerequisite link, NOT a grant of distribution rights or terms acceptance.
+
+Static inventory booleans remain false until actual build evidence exists; the
+packager clears the media source gate only from the validated new supply. This
+file does not assert that a build, playback test or release has occurred. The
+parent must run the real Windows package: media-kit open/play/pause/seek/close,
+all MP3/AAC/FLAC outputs, original remux + audio packet hash, JPEG/PNG cover and
+metadata, plus FFprobe. A successful cross-build is not functional acceptance.

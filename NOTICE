@@ -85,23 +85,36 @@ This notice does not replace the existing component's AGPL license or the
 upstream GPL obligations. Distribution must retain the applicable licenses
 and provide the Corresponding Source, including these modifications.
 
-Native media and build materials:
-- FFmpeg/FFprobe: Gyan essentials 9.0.2, GPL-3.0-or-later configured static build.
-  The package version, executable hashes and upstream source pins are summarized
-  in licenses/SOURCES.json; full development records remain in tool/ffmpeg_sources.json.
-- media_kit wrappers: MIT; this does not license the bundled native DLL as MIT.
-  The selected libmpv-2.dll disables GPL features but statically includes
-  LGPL-3.0-or-later FFmpeg. Version/source references are in licenses/SOURCES.json;
-  applicable license texts and copyright notices are in licenses/native/licenses/.
-- Required Microsoft Visual C++ runtime files retain Microsoft's redistribution
-  terms; readable license and notice texts accompany this runtime bundle.
+Native media and build materials
+--------------------------------
+- The Gyan 9.0.2 command-line binaries and 2023 media-kit Windows libmpv DLL are
+  retired from new builds. Their historical source gaps are not waived or
+  represented as solved by a nearby upstream version.
+- Android FFmpeg/FFprobe: FFmpeg 9.0.2 and LAME 3.100, source-built for API 24 in
+  three ABIs with Android NDK 28.2.13676358. The installed executables are LGPL
+  builds, separate processes rather than application-linked FFmpeg libraries.
+  Exact source archives, hashes and licenses are in licenses/media/ and
+  tool/media_sources.json; the recipe is tool/build_android_media.sh.
+  Android system libc, libm, libdl and libz are supplied by the operating system.
+  This software is based in part on the work of the Independent JPEG Group.
+- Windows FFmpeg/FFprobe/libmpv are built from the exact source closure recorded
+  in tool/windows_native_sources.json and tool/media_sources.json. The build
+  recipe retains source archives, actual configuration, relinkable objects,
+  import evidence and a payload-hash receipt. New Windows packages require that
+  verified supply; they never silently fall back to the retired publisher DLLs.
+- media_kit wrappers remain MIT; that does not relicense their native libraries.
+  Per-component licenses and notices accompany the native supply, separately
+  from the application license. No downstream media-library patches are used.
+- Microsoft CRT DLLs are not redistributed. The Flutter Windows application
+  requires the official Microsoft Visual C++ v14 x64 Redistributable:
+  https://aka.ms/vc14/vc_redist.x64.exe
+  This prerequisite link is not a grant of redistribution rights.
 
-Source archives, SDK packages, reference recipes and build evidence are development
-materials maintained separately; they are not included in the runtime bundle.
-
-The collected third-party source materials are explicitly incomplete for public
-redistribution. Local candidate bundles retain SOURCE-MATERIALS-INCOMPLETE notices
-and RELEASE-STATUS.json; they must not be described as redistribution-ready.
+Source archives, SDK packages, recipes and relink/build evidence remain separate
+development/source-distribution materials, not runtime payload. Windows public
+packaging emits a corresponding-source ZIP alongside the application ZIP and
+binds both to the verified native supply. Successful source compilation alone
+does not constitute functional playback or media-processing acceptance.
 
 
 Search endpoint documentation consulted:
@@ -156,4 +169,4 @@ are not specified by the tag; collected current immutable snapshots are
 explicitly labelled as such. Build-tool inputs are not a fully pinned closure.
 The original v1.1.8 recipe and component source versions remain available;
 precise collected and uncollected input URLs and limitations are in SOURCES.json.
-The existing Windows source-completeness/release restrictions above are unchanged.
+The retired Windows binary gaps above do not describe the new source-built supply.

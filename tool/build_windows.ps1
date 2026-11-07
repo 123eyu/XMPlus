@@ -1,17 +1,18 @@
 #requires -Version 5.1
 <#
-Builds directly in the workspace; closes XMPlus instances before replacing outputs.
-Never launches XMPlus or changes the shared SDK. Source archives and build evidence
-remain outside the runtime bundle. Without -LocalCandidate, incomplete source gates fail
-before pub get. -ReplaceLocalCandidate replaces only a recognized private candidate,
-retaining the previous bundle/ZIP as uniquely named backups.
+Builds directly in the workspace; refuses to replace a running project client.
+Requires a verified source-built native supply, including in private candidate mode.
+Never launches XMPlus or changes the shared SDK. Public outputs include a separate
+source ZIP with exact native source archives and relinkable build objects.
+-ReplaceLocalCandidate preserves the previous private bundle/ZIP as unique backups.
 #>
 [CmdletBinding()]
 param(
     [switch]$LocalCandidate,
     [switch]$ReplaceLocalCandidate,
     [string]$NugetPath,
-    [string]$FFmpegZip
+    [string]$NativeSupply = 'build/windows-native',
+    [string]$OutputDirectory = 'dist'
 )
 
 Set-StrictMode -Version Latest
@@ -21,7 +22,6 @@ $SdkRoot = 'C:\src\flutter'
 $Flutter = Join-Path $SdkRoot 'bin\flutter.bat'
 $PackageName = 'XMPlus-1.0.0-windows-x64'
 $SourceName = 'XMPlus-1.0.0-source'
-$FixedFFmpegHash = '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba'
 $Utf8 = New-Object System.Text.UTF8Encoding($false)
 
 function Read-Json([string]$Path) {
@@ -145,25 +145,14 @@ function Tool-Identity([string]$Executable, [string]$Argument) {
         return $text
     } finally { $process.Dispose() }
 }
-function Stop-ProjectClients {
+function Assert-ProjectClientsStopped {
     $prefix = $ProjectRoot.TrimEnd('\') + '\'
     foreach ($item in Get-CimInstance -ClassName Win32_Process -Filter "Name='XMPlus.exe' OR Name='xmly_flutter.exe'") {
         $path = [string]$item.ExecutablePath
         if (-not $path) { throw "Cannot identify the application at PID $($item.ProcessId)." }
-        $isProject = $path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
-        if (-not $isProject -and [Diagnostics.FileVersionInfo]::GetVersionInfo($path).ProductName -ne 'XMPlus') { continue }
-        $process = Get-Process -Id $item.ProcessId -ErrorAction SilentlyContinue
-        if ($null -eq $process) { continue }
-        try {
-            if (-not $process.HasExited) {
-                Write-Host "Closing XMPlus PID $($process.Id) for the workspace build."
-                [void]$process.CloseMainWindow()
-                if (-not $process.WaitForExit(10000)) {
-                    $process.Kill()
-                    $process.WaitForExit()
-                }
-            }
-        } finally { $process.Dispose() }
+        if ($path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Close the project client at PID $($item.ProcessId) before building; it was not stopped automatically."
+        }
     }
 }
 function Assert-Replacement([string]$Target, [string]$Zip, [string]$SourceZip) {
@@ -217,26 +206,45 @@ function New-VerifiedZip([string]$Directory, [string]$ZipPath) {
     } finally { $zip.Dispose() }
 }
 
-$ffmpegManifest = Read-Json (Join-Path $ProjectRoot 'tool\ffmpeg_sources.json')
 $nativeManifest = Read-Json (Join-Path $ProjectRoot 'tool\native_sources.json')
+if (-not [IO.Path]::IsPathRooted($NativeSupply)) { $NativeSupply = Join-Path $ProjectRoot $NativeSupply }
+$NativeSupply = [IO.Path]::GetFullPath($NativeSupply)
+if (-not (Test-Path -LiteralPath (Join-Path $NativeSupply 'BUILD-RECEIPT.json') -PathType Leaf)) {
+    throw 'Build the hash-locked native supply first: bash tool/windows-native-build.sh build/windows-native'
+}
+$supplyReceipt = Read-Json (Join-Path $NativeSupply 'BUILD-RECEIPT.json')
+if ($supplyReceipt.schemaVersion -ne 1 -or $supplyReceipt.target -ne 'windows-x64' -or
+    $supplyReceipt.producer -ne 'tool/windows_native_build.py' -or $supplyReceipt.sourceComplete -ne $true) {
+    throw 'Unsupported or incomplete Windows native supply receipt.'
+}
+foreach ($file in $supplyReceipt.files) { Assert-Hash (Child-Path $NativeSupply $file.path) $file.sha256 }
+$supplySources = Read-Json (Join-Path $NativeSupply 'sources\SOURCES.json')
+$expectedSources = @((Read-Json (Join-Path $ProjectRoot 'tool\media_sources.json')).components) +
+    @((Read-Json (Join-Path $ProjectRoot 'tool\windows_native_sources.json')).components)
+if (@($supplySources.components).Count -ne $expectedSources.Count -or @($supplySources.patches).Count -ne 0) {
+    throw 'Native source closure differs from the admitted source locks.'
+}
+foreach ($expected in $expectedSources) {
+    $actual = @($supplySources.components | Where-Object { $_.name -eq $expected.name })
+    if ($actual.Count -ne 1 -or $actual[0].sha256 -ne $expected.sha256 -or $actual[0].url -ne $expected.url) {
+        throw "Native source lock mismatch: $($expected.name)"
+    }
+    Assert-Hash (Join-Path $NativeSupply ('sources\' + (Split-Path -Leaf $expected.file))) $expected.sha256
+}
+foreach ($name in @('windows_native_build.py', 'windows-native-build.sh', 'windows_native_sources.json', 'media_sources.json')) {
+    Assert-Hash (Join-Path $NativeSupply ('sources\' + $name)) (File-Hash (Join-Path $PSScriptRoot $name))
+}
+foreach ($required in @('runtime/libmpv-2.dll', 'runtime/tools/ffmpeg/ffmpeg.exe', 'runtime/tools/ffmpeg/ffprobe.exe',
+    'sources/BUILD-OBJECTS.tar.gz', 'licenses/THIRD-PARTY-NOTICES.txt', 'licenses/WINDOWS-PREREQUISITES.txt', 'IMPORTS.json')) {
+    if (@($supplyReceipt.files | Where-Object { $_.path -eq $required }).Count -ne 1) {
+        throw "Native supply omits a required hashed member: $required"
+    }
+}
+$FixedFFmpegHash = File-Hash (Join-Path $NativeSupply 'runtime\tools\ffmpeg\ffmpeg.exe')
 $blockers = New-Object 'System.Collections.Generic.List[string]'
-if ((Field $ffmpegManifest.releaseCompliance 'redistributionReady') -ne $true -or
-    (Field $ffmpegManifest.releaseCompliance 'completeCorrespondingSource') -ne $true) {
-    $blockers.Add('FFmpeg exact publisher recipes/patches and full corresponding-source closure are incomplete.')
-    foreach ($missing in $ffmpegManifest.missing) { $blockers.Add('FFmpeg: ' + $missing.id) }
-}
-if ((Field $nativeManifest 'distributionReady') -ne $true -or
-    (Field $nativeManifest 'correspondingSourceComplete') -ne $true) {
-    $blockers.Add('Native dependency corresponding sources and CRT redistribution rights are incomplete.')
-    foreach ($missing in $nativeManifest.missing) { $blockers.Add('Native: ' + $missing.id) }
-}
-if (-not $LocalCandidate -and $blockers.Count -gt 0) {
-    throw ("Public release blocked. Use -LocalCandidate only for private local verification.`n - " + ($blockers -join "`n - "))
-}
+# Historical Gyan/2023-mpv gaps are not waived: those binaries are no longer packaged.
+# Admission instead binds the generated payload to all exact sources, recipe and relink objects.
 if ($ReplaceLocalCandidate -and -not $LocalCandidate) { throw '-ReplaceLocalCandidate requires -LocalCandidate.' }
-if ($ffmpegManifest.package.sha256 -ne $FixedFFmpegHash -or $ffmpegManifest.version -ne '9.0.2') {
-    throw 'FFmpeg manifest does not describe the pinned Gyan 9.0.2 package.'
-}
 $sdk = Read-Json (Join-Path $SdkRoot 'bin\cache\flutter.version.json')
 if ($sdk.frameworkVersion -ne '3.47.5' -or $sdk.dartSdkVersion -ne '3.13.4') {
     throw 'Required SDK: Flutter 3.47.5 / Dart 3.13.4. The shared SDK will not be upgraded.'
@@ -245,11 +253,12 @@ $pubspec = [IO.File]::ReadAllText((Join-Path $ProjectRoot 'pubspec.yaml'), [Text
 if ($pubspec -notmatch '(?m)^name:\s*xmly_flutter\s*$' -or $pubspec -notmatch '(?m)^version:\s*1\.0\.0\+1\s*$') {
     throw 'This packaging script requires xmly_flutter version 1.0.0+1.'
 }
-$dist = Join-Path $ProjectRoot 'dist'
+if (-not [IO.Path]::IsPathRooted($OutputDirectory)) { $OutputDirectory = Join-Path $ProjectRoot $OutputDirectory }
+$dist = [IO.Path]::GetFullPath($OutputDirectory)
 $target = Join-Path $dist $PackageName
 $targetZip = $target + '.zip'
 $targetSourceZip = Join-Path $dist ($SourceName + '.zip')
-Stop-ProjectClients
+Assert-ProjectClientsStopped
 Assert-Replacement $target $targetZip $targetSourceZip
 
 $stage = Join-Path $ProjectRoot ('build\xmplus-package-' + [Guid]::NewGuid().ToString('N'))
@@ -258,6 +267,7 @@ $bundle = Join-Path $stage $PackageName
 Ensure-Directory $bundle
 $oldPath = $env:PATH
 $oldTls = [Net.ServicePointManager]::SecurityProtocol
+$oldNativeSupply = [Environment]::GetEnvironmentVariable('XMPLUS_NATIVE_SUPPLY', 'Process')
 $oldLocation = Get-Location
 try {
     [Net.ServicePointManager]::SecurityProtocol = $oldTls -bor [Net.SecurityProtocolType]::Tls12
@@ -285,6 +295,7 @@ try {
     Copy-File $NugetPath (Join-Path $buildTools 'nuget.exe')
     Assert-MicrosoftSignature (Join-Path $buildTools 'nuget.exe')
     $env:PATH = $buildTools + ';' + $oldPath
+    [Environment]::SetEnvironmentVariable('XMPLUS_NATIVE_SUPPLY', $NativeSupply, 'Process')
     Set-Location -LiteralPath $source
     Invoke-Flutter -Arguments @('pub', 'get', '--enforce-lockfile')
     Assert-Hash (Join-Path $source 'pubspec.lock') $lockHash
@@ -305,6 +316,7 @@ try {
     Copy-File (Join-Path $release 'XMPlus.exe') (Join-Path $bundle 'XMPlus.exe')
     Copy-Tree (Join-Path $release 'data') (Join-Path $bundle 'data') 'runtime'
     foreach ($dll in Get-ChildItem -LiteralPath $release -Filter '*.dll' -File) {
+        if ($dll.Name -match '^(?i:msvcp140.*|vcruntime140.*|concrt140)\.dll$') { continue }
         Copy-File $dll.FullName (Join-Path $bundle $dll.Name)
     }
     foreach ($required in @('data\app.so', 'data\icudtl.dat', 'data\flutter_assets', 'flutter_windows.dll',
@@ -314,61 +326,33 @@ try {
     $enginePath = Join-Path $SdkRoot 'bin\cache\artifacts\engine\windows-x64-release\flutter_windows.dll'
     $engineHash = File-Hash $enginePath
     Assert-Hash (Join-Path $bundle 'flutter_windows.dll') $engineHash
-    $mpv = @($nativeManifest.components | Where-Object { $_.name -eq 'libmpv-2.dll' })
-    if ($mpv.Count -ne 1) { throw 'Missing unique libmpv manifest entry.' }
-    Assert-Hash (Join-Path $bundle 'libmpv-2.dll') $mpv[0].binary.sha256
-    $crt = @($nativeManifest.components | Where-Object { $_.name -eq 'Microsoft Visual C++ runtime' })
-    if ($crt.Count -ne 1 -or @($crt[0].candidates).Count -ne 3) { throw 'Expected three declared CRT DLLs.' }
-    foreach ($candidate in $crt[0].candidates) {
-        if ($candidate.name -notin @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) { throw 'Unexpected CRT candidate.' }
-        Assert-Hash $candidate.sourcePath $candidate.sha256
-        $destination = Join-Path $bundle $candidate.name
-        if (Test-Path -LiteralPath $destination) { Assert-Hash $destination $candidate.sha256 }
-        else { Copy-File $candidate.sourcePath $destination }
-    }
-
-    if ($FFmpegZip) { $FFmpegZip = (Resolve-Path -LiteralPath $FFmpegZip).Path }
-    elseif (Test-Path -LiteralPath $ffmpegManifest.package.localPath -PathType Leaf) { $FFmpegZip = $ffmpegManifest.package.localPath }
-    else {
-        $FFmpegZip = Join-Path $stage 'ffmpeg-9.0.2-essentials_build.zip'
-        try { Download-File 'https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip' $FFmpegZip }
-        catch { Download-File 'https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip' $FFmpegZip }
-    }
-    Assert-Hash $FFmpegZip $FixedFFmpegHash
-    $ffmpegTools = Join-Path $bundle 'tools\ffmpeg'
-    Ensure-Directory $ffmpegTools
-    $archive = [IO.Compression.ZipFile]::OpenRead($FFmpegZip)
-    try {
-        foreach ($name in @('ffmpeg.exe', 'ffprobe.exe', 'LICENSE')) {
-            $entries = @($archive.Entries | Where-Object {
-                if ($name -eq 'LICENSE') { $_.FullName -match '^[^/]+/LICENSE$' }
-                else { $_.FullName -eq ('ffmpeg-9.0.2-essentials_build/bin/' + $name) }
-            })
-            if ($entries.Count -ne 1) { throw "Expected one fixed FFmpeg ZIP member: $name" }
-            [IO.Compression.ZipFileExtensions]::ExtractToFile($entries[0], (Join-Path $ffmpegTools $name), $false)
-        }
-    } finally { $archive.Dispose() }
+    $mpvFile = @($supplyReceipt.files | Where-Object { $_.path -eq 'runtime/libmpv-2.dll' })[0]
+    Assert-Hash (Join-Path $bundle 'libmpv-2.dll') $mpvFile.sha256
+    Copy-Tree (Join-Path $NativeSupply 'runtime\tools') (Join-Path $bundle 'tools') 'runtime'
+    Copy-Tree (Join-Path $NativeSupply 'licenses') (Join-Path $bundle 'licenses\native\source-build') 'runtime'
+    Copy-File (Join-Path $NativeSupply 'licenses\WINDOWS-PREREQUISITES.txt') (Join-Path $bundle 'WINDOWS-PREREQUISITES.txt')
     $identities = @()
     foreach ($name in @('ffmpeg.exe', 'ffprobe.exe')) {
-        $tool = @($ffmpegManifest.package.tools | Where-Object { $_.name -eq $name })
-        if ($tool.Count -ne 1) { throw "Missing pinned executable digest: $name" }
-        $executable = Join-Path $ffmpegTools $name
-        Assert-Hash $executable $tool[0].sha256
+        $executable = Join-Path $bundle ('tools\ffmpeg\' + $name)
         $versionText = Tool-Identity $executable '-version'
         if ($versionText -notmatch 'version 9\.0\.2') { throw "Unexpected FFmpeg version: $name" }
         $buildConf = (($versionText -split '\r?\n' | Where-Object { $_ -match '^configuration:' }) -join "`r`n")
-        if (-not $buildConf) { throw "Missing embedded FFmpeg build configuration: $name" }
-        [IO.File]::WriteAllText((Join-Path $ffmpegTools ($name + '.buildconf.txt')), $buildConf, $Utf8)
-        $identities += [pscustomobject]@{ name = $name; sha256 = $tool[0].sha256; version = $versionText; buildConfiguration = $buildConf }
+        if (-not $buildConf -or $buildConf -notmatch '--enable-libmp3lame' -or $buildConf -notmatch '--enable-zlib') {
+            throw "Missing required FFmpeg build configuration: $name"
+        }
+        $identities += [pscustomobject]@{ name = $name; sha256 = (File-Hash $executable); version = $versionText; buildConfiguration = $buildConf }
     }
-    Write-Json (Join-Path $ffmpegTools 'version-identity.json') ([ordered]@{ packageSha256 = $FixedFFmpegHash; tools = $identities })
+    Write-Json (Join-Path $bundle 'tools\ffmpeg\version-identity.json') ([ordered]@{ sourceBuild = $true; tools = $identities })
 
     Copy-File (Join-Path $ProjectRoot 'LICENSE') (Join-Path $bundle 'LICENSE')
     Copy-File (Join-Path $ProjectRoot 'NOTICE') (Join-Path $bundle 'NOTICE')
     Copy-File (Join-Path $ProjectRoot 'windows\LICENSE.PiliPlus') (Join-Path $bundle 'LICENSE.PiliPlus')
     # Runtime payload: licenses and notices only, not source archives or build evidence.
     $nativeLicenses = @($nativeManifest.artifacts | Where-Object {
-        $_.path -like 'licenses/native/licenses/*' -and $_.path -notlike '*.docx'
+        $_.path -like 'licenses/native/licenses/*' -and
+            ($_.path -like '*.LICENSE' -or $_.path -like '*/Flutter-*' -or $_.path -like '*/PiliPlus-GPL-*' -or
+             $_.path -like '*/Microsoft.Web.WebView2-*' -or $_.path -like '*/Microsoft.Windows.ImplementationLibrary-*' -or
+             $_.path -like '*/nlohmann-*')
     })
     foreach ($artifact in $nativeLicenses) {
         Assert-Hash (Child-Path $ProjectRoot $artifact.path) $artifact.sha256
@@ -376,35 +360,28 @@ try {
         Copy-File (Child-Path $ProjectRoot $artifact.path) $destination
         Assert-Hash $destination $artifact.sha256
     }
-    foreach ($name in @('FFmpeg-LICENSE.txt', 'Flutter-windows-binary-license.txt', 'mpv-Copyright.txt')) {
+    foreach ($name in @('Flutter-windows-binary-license.txt')) {
         $relative = 'licenses/native/evidence/' + $name
         $artifact = @($nativeManifest.artifacts | Where-Object { $_.path -eq $relative })
         if ($artifact.Count -ne 1) { throw "Missing native copyright notice: $name" }
         Assert-Hash (Child-Path $ProjectRoot $relative) $artifact[0].sha256
         Copy-File (Child-Path $ProjectRoot $relative) (Join-Path $bundle ('licenses\native\licenses\' + $name))
     }
-    foreach ($name in @('LICENSE-GPL-3.0.txt', 'THIRD-PARTY-LICENSES.txt')) {
-        Copy-File (Join-Path $ProjectRoot ('licenses\ffmpeg\' + $name)) (Join-Path $bundle ('licenses\ffmpeg\' + $name))
-    }
-    $mpv = @($nativeManifest.components | Where-Object { $_.name -eq 'libmpv-2.dll' })[0]
+    # Gyan license/configuration files describe retired binaries, not this source build.
     $nativeSdk = @($nativeManifest.components | Where-Object { $_.name -eq 'WebView2Loader, WIL, nlohmann.json' })[0]
     $origins = [ordered]@{
         schemaVersion = 1
         application = 'XMPlus 1.0.0+1'
-        notice = 'Version and upstream origin references only; matching complete corresponding source is not asserted. Source archives and build evidence are maintained separately from this runtime bundle.'
+        notice = 'Hash-locked source-built Windows media payload. Exact source archives, build recipe, patches (none), generated configuration and relinkable objects accompany the separate source archive. Microsoft CRT DLLs are not redistributed.'
         flutter = [ordered]@{ version = $sdk.frameworkVersion; frameworkCommit = $sdk.frameworkRevision; engineCommit = $sdk.engineRevision; url = 'https://github.com/flutter/flutter' }
         upstreamEntries = $nativeManifest.aboutSourceEntry.upstreamEntries
         packages = @($nativeManifest.packages | Select-Object name, version, url, archiveSha256)
         nativeSdk = @($nativeSdk.packages | ForEach-Object {
             [ordered]@{ name = $_.name; version = $_.version; url = $_.artifact.source; sha256 = $_.artifact.sha256 }
         })
-        libmpv = [ordered]@{ binarySha256 = $mpv.binary.sha256; url = $mpv.download.url; mpvSourceCommit = $mpv.mpvSourceCommit; ffmpegBaseCommit = $mpv.ffmpegBaseCommit; license = $mpv.licenseClassification }
-        sourcePins = $nativeManifest.sourcePins
-        ffmpeg = [ordered]@{
-            version = $ffmpegManifest.version; url = $ffmpegManifest.package.url; packageSha256 = $FixedFFmpegHash; license = $ffmpegManifest.package.license
-            tools = @($ffmpegManifest.package.tools | Select-Object name, sha256)
-            sourcePins = @($ffmpegManifest.sourceArchives | Select-Object component, repository, ref, license)
-        }
+        libmpv = [ordered]@{ binarySha256 = $mpvFile.sha256; sourceCommit = (Read-Json (Join-Path $PSScriptRoot 'windows_native_sources.json')).mpvCommit; license = 'LGPL-2.1-or-later; linked dependency licenses in native/source-build/THIRD-PARTY-NOTICES.txt' }
+        sourcePins = $supplySources.components
+        ffmpeg = [ordered]@{ version = '9.0.2'; sourceBuild = $true; license = 'LGPL-2.1-or-later; LAME LGPL-2.0-or-later'; tools = $identities }
     }
     Write-Json (Join-Path $bundle 'licenses\SOURCES.json') $origins
     $private = [bool]$LocalCandidate
@@ -414,9 +391,9 @@ try {
         schemaVersion = 1; application = 'XMPlus'; version = '1.0.0+1'; package = $PackageName
         status = $statusValue; redistributionReady = (-not $private -and $blockers.Count -eq 0)
         generatedAtUtc = [DateTime]::UtcNow.ToString('o'); blockers = @($blockers.ToArray())
-        ffmpegReleaseCompliance = $ffmpegManifest.releaseCompliance
-        nativeDistributionReady = $nativeManifest.distributionReady
-        functionalValidation = 'Not performed by this script; SMS/reward UI and no-playback acceptance belong to the parent.'
+        ffmpegReleaseCompliance = [ordered]@{ completeCorrespondingSource = $true; sourceBuild = $true }
+        nativeDistributionReady = $true
+        functionalValidation = 'Packaging verifies tool identities/hashes, not playback. Real Windows media_kit playback and all media processing formats/remux/cover/hash require parent acceptance.'
         sourceArchive = $null
     }
     if ($private) {
@@ -428,7 +405,7 @@ try {
 
     $stagedSourceZip = $null
     if (-not $private) {
-        # A clean app-only allowlist; no whole-workspace/archive glob, Python or account data.
+        # App sources plus explicitly admitted third-party sources; never account data.
         $appSource = Join-Path $stage $SourceName
         Ensure-Directory $appSource
         foreach ($tree in @('lib', 'windows', 'assets')) {
@@ -438,9 +415,35 @@ try {
         }
         foreach ($name in @('pubspec.yaml', 'pubspec.lock')) { Copy-File (Join-Path $source $name) (Join-Path $appSource $name) }
         foreach ($name in @('LICENSE', 'NOTICE', 'CHANGELOG.md')) { Copy-File (Join-Path $ProjectRoot $name) (Join-Path $appSource $name) }
-        foreach ($name in @('build_windows.ps1', 'ffmpeg_sources.json', 'native_sources.json')) {
+        foreach ($name in @('build_windows.ps1', 'ffmpeg_sources.json', 'native_sources.json', 'windows-native-build.sh',
+            'windows_native_build.py', 'windows_native_sources.json', 'media_sources.json')) {
             Copy-File (Join-Path $ProjectRoot ('tool\' + $name)) (Join-Path $appSource ('tool\' + $name))
         }
+        foreach ($relative in @('licenses/android/THIRD-PARTY-NOTICES.txt', 'licenses/media/THIRD-PARTY-NOTICES.txt',
+            'licenses/native/evidence/Flutter-windows-binary-license.txt')) {
+            Copy-File (Child-Path $ProjectRoot $relative) (Child-Path $appSource $relative)
+        }
+        foreach ($artifact in $nativeLicenses) {
+            Copy-File (Child-Path $ProjectRoot $artifact.path) (Child-Path $appSource $artifact.path)
+        }
+        # Keep native lock-relative paths; Flutter dependencies still resolve via pubspec.lock.
+        foreach ($expected in $expectedSources) {
+            Copy-File (Join-Path $NativeSupply ('sources\' + (Split-Path -Leaf $expected.file))) (Child-Path $appSource $expected.file)
+        }
+        foreach ($package in $nativeManifest.packages) {
+            Assert-Hash (Child-Path $ProjectRoot $package.artifact) $package.archiveSha256
+            Copy-File (Child-Path $ProjectRoot $package.artifact) (Child-Path $appSource $package.artifact)
+        }
+        foreach ($package in $nativeSdk.packages) {
+            Assert-Hash (Child-Path $ProjectRoot $package.artifact.path) $package.artifact.sha256
+            Copy-File (Child-Path $ProjectRoot $package.artifact.path) (Child-Path $appSource $package.artifact.path)
+        }
+        foreach ($name in @('SOURCES.json', 'BUILD-OBJECTS.tar.gz')) {
+            Copy-File (Join-Path $NativeSupply ('sources\' + $name)) (Join-Path $appSource ('native-sources\' + $name))
+        }
+        Copy-Tree (Join-Path $NativeSupply 'licenses') (Join-Path $appSource 'native-sources\licenses') 'runtime'
+        Copy-File (Join-Path $NativeSupply 'BUILD-RECEIPT.json') (Join-Path $appSource 'native-sources\BUILD-RECEIPT.json')
+        Copy-File (Join-Path $NativeSupply 'IMPORTS.json') (Join-Path $appSource 'native-sources\IMPORTS.json')
         $stagedSourceZip = Join-Path $stage ($SourceName + '.zip')
         New-VerifiedZip $appSource $stagedSourceZip
         $status.sourceArchive = [ordered]@{ file = ($SourceName + '.zip'); sha256 = (File-Hash $stagedSourceZip) }
@@ -461,7 +464,7 @@ try {
 
     # Both new artifacts are complete and verified before an existing candidate moves.
     Ensure-Directory $dist
-    Stop-ProjectClients
+    Assert-ProjectClientsStopped
     Assert-Replacement $target $targetZip $targetSourceZip
     $moves = @(@{ from = $bundle; to = $target }, @{ from = $stagedZip; to = $targetZip })
     if ($stagedSourceZip) { $moves += @{ from = $stagedSourceZip; to = $targetSourceZip } }
@@ -496,6 +499,7 @@ try {
     Write-Host "Packaging staging retained: $stage"
 } finally {
     $env:PATH = $oldPath
+    [Environment]::SetEnvironmentVariable('XMPLUS_NATIVE_SUPPLY', $oldNativeSupply, 'Process')
     [Net.ServicePointManager]::SecurityProtocol = $oldTls
     Set-Location -LiteralPath $oldLocation.Path
 }

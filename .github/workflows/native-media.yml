@@ -37,9 +37,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install native host tools
-        if: steps.native-cache.outputs.cache-hit != 'true'
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y nasm jq make pkg-config
       - name: Cache source-built Android tools
         id: native-cache
         uses: actions/cache@v4
@@ -48,6 +45,9 @@ jobs:
             android/app/src/main/jniLibs/${{ matrix.abi }}
             build/android-media/${{ matrix.abi }}/receipt
           key: android-media-ndk28.2-api24-${{ matrix.abi }}-${{ hashFiles('tool/build_android_media.sh', 'tool/media_sources.json') }}
+      - name: Install native host tools
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y nasm jq make pkg-config
       - name: Install pinned Android NDK
         if: steps.native-cache.outputs.cache-hit != 'true'
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"'

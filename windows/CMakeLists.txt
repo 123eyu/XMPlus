@@ -59,9 +59,46 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 add_subdirectory("runner")
 
 
-# Generated plugin build rules, which manage building the plugins and adding
-# them to the application.
-include(flutter/generated_plugins.cmake)
+# Keep the real media_kit plugin/API, replacing only its historical binary downloader.
+# The supplied DLL is built from tool/windows_native_sources.json, not the 2023 archive.
+if(NOT DEFINED ENV{XMPLUS_NATIVE_SUPPLY})
+  message(FATAL_ERROR "Build the native supply first and use tool/build_windows.ps1 -NativeSupply <directory>.")
+endif()
+file(TO_CMAKE_PATH "$ENV{XMPLUS_NATIVE_SUPPLY}" XMPLUS_NATIVE_SUPPLY)
+if(NOT EXISTS "${XMPLUS_NATIVE_SUPPLY}/runtime/libmpv-2.dll")
+  message(FATAL_ERROR "Native supply has no real libmpv-2.dll.")
+endif()
+set(MEDIA_WRAPPER "${FLUTTER_MANAGED_DIR}/ephemeral/.plugin_symlinks/media_kit_libs_windows_audio/windows")
+file(SHA256 "${MEDIA_WRAPPER}/CMakeLists.txt" MEDIA_WRAPPER_HASH)
+if(NOT MEDIA_WRAPPER_HASH STREQUAL "4e2174c6800b2757e3636a919ccda20f0275835c9db2a8abda456176167690f6")
+  message(FATAL_ERROR "Recheck the pinned media_kit wrapper before replacing its binary supplier.")
+endif()
+file(READ "${MEDIA_WRAPPER}/CMakeLists.txt" MEDIA_WRAPPER_CMAKE)
+string(FIND "${MEDIA_WRAPPER_CMAKE}" "set(PLUGIN_NAME" MEDIA_PLUGIN_START)
+if(MEDIA_PLUGIN_START LESS 0)
+  message(FATAL_ERROR "Missing media_kit plugin target definition.")
+endif()
+string(SUBSTRING "${MEDIA_WRAPPER_CMAKE}" ${MEDIA_PLUGIN_START} -1 MEDIA_PLUGIN_CMAKE)
+set(MEDIA_WRAPPER_COPY "${CMAKE_CURRENT_BINARY_DIR}/xmplus_media_kit")
+file(MAKE_DIRECTORY "${MEDIA_WRAPPER_COPY}")
+file(COPY "${MEDIA_WRAPPER}/include" "${MEDIA_WRAPPER}/media_kit_libs_windows_audio_plugin_c_api.cpp"
+  DESTINATION "${MEDIA_WRAPPER_COPY}")
+file(WRITE "${MEDIA_WRAPPER_COPY}/CMakeLists.txt"
+  "# Adapted media_kit MIT wrapper; original license in source materials.\ncmake_minimum_required(VERSION 3.14)\noption(MEDIA_KIT_LIBS_AVAILABLE \"media_kit libraries available\" ON)\nset(LIBMPV_SRC \"${XMPLUS_NATIVE_SUPPLY}/runtime\")\n${MEDIA_PLUGIN_CMAKE}")
+file(READ "${FLUTTER_MANAGED_DIR}/generated_plugins.cmake" GENERATED_PLUGINS)
+set(MEDIA_PLUGIN_HOOK [=[add_subdirectory(flutter/ephemeral/.plugin_symlinks/${plugin}/windows plugins/${plugin})]=])
+set(MEDIA_PLUGIN_REPLACEMENT [=[if(plugin STREQUAL "media_kit_libs_windows_audio")
+    add_subdirectory("${MEDIA_WRAPPER_COPY}" plugins/${plugin})
+  else()
+    add_subdirectory(flutter/ephemeral/.plugin_symlinks/${plugin}/windows plugins/${plugin})
+  endif()]=])
+string(FIND "${GENERATED_PLUGINS}" "${MEDIA_PLUGIN_HOOK}" MEDIA_PLUGIN_HOOK_START)
+if(MEDIA_PLUGIN_HOOK_START LESS 0)
+  message(FATAL_ERROR "Recheck generated Flutter plugin integration.")
+endif()
+string(REPLACE "${MEDIA_PLUGIN_HOOK}" "${MEDIA_PLUGIN_REPLACEMENT}" GENERATED_PLUGINS "${GENERATED_PLUGINS}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/xmplus_plugins.cmake" "${GENERATED_PLUGINS}")
+include("${CMAKE_CURRENT_BINARY_DIR}/xmplus_plugins.cmake")
 
 # Upstream 0fc1598ec155659ed7c2db3628693a24bd4e0d25 fixes Windows COM teardown.
 # ponytail: keep one process-wide compositor reference; remove after a hosted plugin includes that fix.
