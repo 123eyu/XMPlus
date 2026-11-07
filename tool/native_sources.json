@@ -28,12 +28,12 @@
     "notice": "Windows媒体库改由精确源码自产；构建收据、对应源码归档及重链接对象单独随源码包提供。旧2023二进制缺口保留为历史证据，不作为新供应包授权。",
     "upstreamEntries": [
       {
-        "component": "Flutter framework 3.47.5",
-        "url": "https://github.com/flutter/flutter/tree/6a19cca56475dbfba1478ee68d7bd0c2ef891da1"
+        "component": "Flutter framework 3.47.9",
+        "url": "https://github.com/flutter/flutter/tree/c197ca5199e9ee5661e865596c9c07294dfab51c"
       },
       {
         "component": "Flutter engine",
-        "url": "https://github.com/flutter/flutter/tree/af7e796e161ae0bb1ff0758c71a7105418bd9ded/engine/src/flutter"
+        "url": "https://github.com/flutter/flutter/tree/89c39edfdfae2949f6806e4a315c0c08522238b7/engine/src/flutter"
       },
       {
         "component": "PiliPlus adapted UI",
@@ -227,14 +227,14 @@
     },
     {
       "name": "Flutter framework and engine",
-      "version": "3.47.5",
-      "frameworkCommit": "6a19cca56475dbfba1478ee68d7bd0c2ef891da1",
-      "engineCommit": "af7e796e161ae0bb1ff0758c71a7105418bd9ded",
+      "version": "3.47.9",
+      "frameworkCommit": "c197ca5199e9ee5661e865596c9c07294dfab51c",
+      "engineCommit": "89c39edfdfae2949f6806e4a315c0c08522238b7",
       "license": "BSD-3-Clause plus third-party notices",
-      "binarySha256": "8bd7b61eee31aa436edb182db41624d1cd3b2688a7e03622320dbeae067b5251",
+      "binarySha256": "30494fb08f9f101a8fbe42568110aaa160efbd7341f3cfe877dc14214be3a233",
       "fullNotices": "licenses/native/licenses/Flutter-engine-third-party.txt",
-      "sourceStatus": "framework and exact monorepo engine source archives collected with DEPS; fetched third-party dependency trees are not included and no whole-engine reproducible-build claim is made",
-      "staleSdkSourceLink": "SDK license.windows_flutter.md links flutter/engine at engine commit; codeload returned 404. Exact commit is reachable in flutter/flutter monorepo and archive is collected."
+      "sourceStatus": "current framework and monorepo engine revisions identified; retained Flutter source archives and DEPS evidence describe the earlier SDK, not these revisions; current exact source archives and fetched third-party dependency trees have not been collected and no whole-engine reproducible-build claim is made",
+      "staleSdkSourceLink": "Historical SDK 3.47.5 license.windows_flutter.md linked flutter/engine at af7e796e161ae0bb1ff0758c71a7105418bd9ded; codeload returned 404 and that exact revision was collected from flutter/flutter monorepo. Current SDK binary notice still uses legacy flutter/engine links; the current monorepo source links above do not assert collection of current source archives."
     },
     {
       "name": "material_ui",
@@ -710,14 +710,14 @@
       "path": "licenses/native/licenses/Flutter-BSD.txt",
       "sha256": "a3a9fd82f800a47377f7d3f60c60a5c91cae0495be8f329031e1448ce0f5dab9",
       "size": 1544,
-      "source": "https://github.com/flutter/flutter/blob/6a19cca56475dbfba1478ee68d7bd0c2ef891da1/LICENSE",
+      "source": "https://github.com/flutter/flutter/blob/c197ca5199e9ee5661e865596c9c07294dfab51c/LICENSE",
       "role": "Flutter framework full license"
     },
     {
       "path": "licenses/native/licenses/Flutter-engine-third-party.txt",
       "sha256": "3c0040023a5789bf56d6bf41fd44f08b21758523d41f128fb7dd6beb398d1191",
       "size": 1269349,
-      "source": "Flutter SDK 3.47.5 sky_engine/license; engine af7e796e161ae0bb1ff0758c71a7105418bd9ded",
+      "source": "Flutter SDK 3.47.9 sky_engine/license; engine 89c39edfdfae2949f6806e4a315c0c08522238b7",
       "role": "full engine and third-party notices shipped by SDK"
     },
     {

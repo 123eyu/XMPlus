@@ -390,18 +390,64 @@ class _PosixFiles {
         Int32 Function(Pointer<Utf8>, Pointer<Utf8>),
         int Function(Pointer<Utf8>, Pointer<Utf8>)
       >('link');
+  // Lazy bindings used only by Android's no-overwrite branch. The public
+  // renameat2 symbol requires API 30, but syscall is available at minSdk 24.
+  static final _androidSyscall = _library
+      .lookupFunction<
+        Long Function(
+          Long,
+          VarArgs<(Int, Pointer<Utf8>, Int, Pointer<Utf8>, UnsignedInt)>,
+        ),
+        int Function(int, int, Pointer<Utf8>, int, Pointer<Utf8>, int)
+      >('syscall');
+  static final _androidErrno = _library
+      .lookupFunction<Pointer<Int> Function(), Pointer<Int> Function()>(
+        '__errno',
+      );
+
+  static void _androidRenameNoReplace(Pointer<Utf8> from, Pointer<Utf8> to) {
+    final number = switch (Abi.current()) {
+      Abi.androidArm => 382,
+      Abi.androidArm64 => 276,
+      Abi.androidX64 => 316,
+      _ => throw const XmlyException(
+        'atomic_commit_unsupported',
+        '当前 Android 架构不支持安全提交文件，请更换设备',
+      ),
+    };
+    // Resolve both bindings before the call so lookup cannot disturb errno.
+    final syscall = _androidSyscall;
+    final errno = _androidErrno;
+    // Android external-storage FUSE has no hardlink support. RENAME_NOREPLACE
+    // atomically refuses an existing target; never fall back to check + rename.
+    if (syscall(number, -100, from, -100, to, 1) == 0) return;
+    final error = errno().value;
+    final code = switch (error) {
+      17 => 'destination_exists', // EEXIST
+      18 => 'atomic_commit_cross_device', // EXDEV
+      38 || 22 || 95 => 'atomic_commit_unsupported', // ENOSYS/EINVAL/EOPNOTSUPP
+      1 || 13 => 'download_not_writable', // EPERM/EACCES
+      28 => 'disk_space', // ENOSPC
+      _ => 'atomic_commit',
+    };
+    throw XmlyException(code, '文件安全提交失败，源缓存已保留（errno=$error）');
+  }
 
   static void commit(String source, String target, {required bool overwrite}) {
     using((arena) {
       final from = source.toNativeUtf8(allocator: arena);
       final to = target.toNativeUtf8(allocator: arena);
-      // link is an atomic no-clobber commit, unlike POSIX rename. Both native
-      // operations refuse cross-volume moves instead of falling back to copy.
-      if ((overwrite ? _rename(from, to) : _link(from, to)) != 0) {
-        throw FileSystemException('无法原子提交音频，原文件与缓存已保留', target);
+      if (Platform.isAndroid && !overwrite) {
+        _androidRenameNoReplace(from, to);
+      } else {
+        // Other POSIX platforms retain link's atomic no-clobber behavior.
+        // Both operations refuse cross-volume moves without a copy fallback.
+        if ((overwrite ? _rename(from, to) : _link(from, to)) != 0) {
+          throw FileSystemException('无法原子提交音频，原文件与缓存已保留', target);
+        }
       }
     });
-    if (!overwrite) {
+    if (!overwrite && !Platform.isAndroid) {
       try {
         File(source).deleteSync();
       } on FileSystemException {

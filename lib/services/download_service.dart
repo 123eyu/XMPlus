@@ -1082,18 +1082,63 @@ class DownloadService {
         case 'login_expired':
           return '登录已失效，请重新登录';
         case 'download_root':
+        case 'download_not_writable':
           return '下载目录不可写，请重新选择';
+        case 'download_directory':
+          return '下载目录不存在或无效，请重新选择';
+        case 'disk_space':
+          return '下载空间不足，请释放空间或更换目录，源缓存已保留';
+        case 'disk_space_unavailable':
+        case 'disk_space_unsupported':
+          return '无法查询下载目录的可用空间，请更换目录后重试';
+        case 'invalid_space':
+          return '可用空间设置无效，请检查下载设置';
+        case 'destination_exists':
+          return '目标文件已存在，请选择覆盖或添加编号，源缓存已保留';
+        case 'atomic_commit_cross_device':
+          return '无法跨存储卷安全保存文件，请更换下载目录，源缓存已保留';
+        case 'atomic_commit_unsupported':
+          return '当前存储不支持安全保存文件，请更换下载目录或设备，源缓存已保留';
+        case 'atomic_commit':
+        case 'invalid_commit':
+          return '文件安全提交失败，源缓存已保留，请更换目录后重试';
         case 'integration_required':
           return '媒体处理服务未接入，不能重试处理';
         case 'media_tool_missing':
+        case 'media_tool':
           return Platform.isAndroid
               ? '随附 Android FFmpeg/FFprobe 无法使用，请重新安装完整安装包；任务、源缓存及已确认的听时记录保留'
               : '无法启动媒体工具，请检查路径';
+        case 'media_probe':
+          return '无法识别有效音轨或时长，源缓存已保留，请选择重新获取或其他格式';
+        case 'media_hash':
+        case 'media_validation':
+          return '音频校验失败，源缓存已保留，请选择其他格式后重试';
+        case 'media_stream_changed':
+          return '原始音频流校验失败，请选择其他格式，源缓存已保留';
+        case 'media_process':
+          return '媒体处理失败，源缓存已保留，请检查输出格式或媒体工具后重试';
+        case 'media_timeout':
+          return '媒体处理超时，源缓存已保留，请重试处理';
+        case 'media_output_limit':
+          return '媒体工具输出异常，源缓存已保留，请检查媒体工具后重试';
+        case 'media_original_unsupported':
+          return '此源格式不能原样写入标签，请选择 MP3、M4A 或 FLAC，源缓存已保留';
+        case 'media_format':
+        case 'media_bitrate':
+        case 'media_settings':
+        case 'media_tags':
+          return '音频格式、码率或标签设置无效，请检查媒体设置';
+        case 'media_local_file':
+          return '本地音频文件不可用，源缓存已保留，请检查目录或重新获取音频';
         case 'source_missing':
           return '本地源音频缺失或损坏，请选择重新获取';
         case 'invalid_duration':
           return '声音时长无效，不能预扣听时';
       }
+    }
+    if (error is FileSystemException) {
+      return '文件保存失败，源缓存已保留，请检查目录权限或更换目录';
     }
     return '下载失败，已保留任务及已确认的听时记录';
   }

@@ -38,6 +38,9 @@ class _GeetestDialogState extends State<GeetestDialog> {
   static const _fields = ['captcha_id', 'lot_number', 'pass_token',
     'gen_time', 'captcha_output'];
   final _nonce = _newNonce();
+  late final String _documentUrl = Platform.isAndroid
+    ? 'https://appassets.androidplatform.net/xmplus-captcha/$_nonce/index.html'
+    : 'about:blank';
   WebViewEnvironment? _environment;
   Directory? _profile;
   Timer? _timeout;
@@ -193,7 +196,7 @@ class _GeetestDialogState extends State<GeetestDialog> {
       if (!mounted || _finished || _error != null) return;
       controller.addJavaScriptHandler(handlerName: 'xmlyCaptcha', callback: (args) async {
         if (!_accepting || !mounted || _finished || args.length != 3 ||
-            args[0] != _nonce || (await controller.getUrl())?.toString() != 'about:blank') return null;
+            args[0] != _nonce || (await controller.getUrl())?.toString() != _documentUrl) return null;
         if (!mounted || !_accepting || _finished) return null;
         switch (args[1]) {
           case 'ready':
@@ -225,7 +228,11 @@ class _GeetestDialogState extends State<GeetestDialog> {
       });
       _accepting = true;
       _stage = '验证页面加载';
-      await controller.loadData(data: _html(), baseUrl: WebUri('about:blank'));
+      if (Platform.isAndroid) {
+        await controller.loadUrl(urlRequest: URLRequest(url: WebUri(_documentUrl)));
+      } else {
+        await controller.loadData(data: _html(), baseUrl: WebUri(_documentUrl));
+      }
     } catch (error) {
       _failStage(error);
     }
@@ -281,11 +288,24 @@ class _GeetestDialogState extends State<GeetestDialog> {
               useOnDownloadStart: true,
             ),
             onWebViewCreated: _created,
-            shouldOverrideUrlLoading: (_, action) async =>
-              action.request.url?.toString() == 'about:blank'
-                ? NavigationActionPolicy.ALLOW : NavigationActionPolicy.CANCEL,
+            shouldOverrideUrlLoading: (_, action) async {
+              final url = action.request.url?.toString();
+              return url == 'about:blank' || (Platform.isAndroid &&
+                  _accepting && !_finished && _error == null && url == _documentUrl)
+                ? NavigationActionPolicy.ALLOW : NavigationActionPolicy.CANCEL;
+            },
             shouldInterceptRequest: (_, request) async {
-              if (_allowedResource(request.url.uriValue)) return null;
+              // This challenge's main document is local, never fetched remotely.
+              if (Platform.isAndroid && request.isForMainFrame == true &&
+                  mounted && _accepting && !_finished && _error == null &&
+                  request.url.toString() == _documentUrl) {
+                return WebResourceResponse(statusCode: 200,
+                  reasonPhrase: 'OK', contentType: 'text/html',
+                  contentEncoding: 'utf-8', headers: const {'Cache-Control': 'no-store'},
+                  data: Uint8List.fromList(utf8.encode(_html())));
+              }
+              if (request.isForMainFrame != true &&
+                  _allowedResource(request.url.uriValue)) return null;
               return WebResourceResponse(statusCode: 403,
                 reasonPhrase: 'Forbidden', contentType: 'text/plain',
                 headers: const {}, data: Uint8List(0));
@@ -299,6 +319,12 @@ class _GeetestDialogState extends State<GeetestDialog> {
             },
             onReceivedError: (_, request, __) {
               if (request.isForMainFrame == true) _fail('安全验证加载失败，请关闭后重试。');
+            },
+            onReceivedHttpError: (controller, request, _) {
+              if (request.isForMainFrame == true) {
+                unawaited(controller.stopLoading());
+                _fail('安全验证页面加载失败，请关闭后重试。');
+              }
             },
           ),
     ),

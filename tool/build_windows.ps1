@@ -13,13 +13,14 @@ param(
     [string]$NugetPath,
     [string]$NativeSupply = 'build/windows-native',
     [string]$OutputDirectory = 'dist',
-    [string]$DevelopmentDirectory = 'build\corresponding-source'
+    [string]$DevelopmentDirectory = 'build\corresponding-source',
+    [string]$SdkRoot = $env:FLUTTER_ROOT
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$SdkRoot = 'C:\src\flutter'
+if (-not $SdkRoot) { $SdkRoot = Split-Path (Split-Path (Get-Command flutter.bat -ErrorAction Stop).Source) }
 $Flutter = Join-Path $SdkRoot 'bin\flutter.bat'
 $PackageName = 'XMPlus-1.0.0-windows-x64'
 $SourceName = 'XMPlus-1.0.0-source'
@@ -253,8 +254,8 @@ $blockers = New-Object 'System.Collections.Generic.List[string]'
 # Admission instead binds the generated payload to all exact sources, recipe and relink objects.
 if ($ReplaceLocalCandidate -and -not $LocalCandidate) { throw '-ReplaceLocalCandidate requires -LocalCandidate.' }
 $sdk = Read-Json (Join-Path $SdkRoot 'bin\cache\flutter.version.json')
-if ($sdk.frameworkVersion -ne '3.47.5' -or $sdk.dartSdkVersion -ne '3.13.4') {
-    throw 'Required SDK: Flutter 3.47.5 / Dart 3.13.4. The shared SDK will not be upgraded.'
+if ($sdk.frameworkVersion -ne '3.47.9' -or $sdk.dartSdkVersion -ne '3.13.7') {
+    throw 'Required SDK: Flutter 3.47.9 / Dart 3.13.7. Update the selected SDK before packaging.'
 }
 $pubspec = [IO.File]::ReadAllText((Join-Path $ProjectRoot 'pubspec.yaml'), [Text.Encoding]::UTF8)
 if ($pubspec -notmatch '(?m)^name:\s*xmly_flutter\s*$' -or $pubspec -notmatch '(?m)^version:\s*1\.0\.0\+1\s*$') {
@@ -375,13 +376,11 @@ try {
         Copy-File (Child-Path $ProjectRoot $artifact.path) $destination
         Assert-Hash $destination $artifact.sha256
     }
-    foreach ($name in @('Flutter-windows-binary-license.txt')) {
-        $relative = 'licenses/native/evidence/' + $name
-        $artifact = @($nativeManifest.artifacts | Where-Object { $_.path -eq $relative })
-        if ($artifact.Count -ne 1) { throw "Missing native copyright notice: $name" }
-        Assert-Hash (Child-Path $ProjectRoot $relative) $artifact[0].sha256
-        Copy-File (Child-Path $ProjectRoot $relative) (Join-Path $bundle ('licenses\native\licenses\' + $name))
-    }
+    $engineLicense = Join-Path $SdkRoot 'bin\cache\artifacts\engine\windows-x64-release\license.windows_flutter.md'
+    $engineLicenseHash = File-Hash $engineLicense
+    $bundledEngineLicense = Join-Path $bundle 'licenses\native\licenses\Flutter-windows-binary-license.txt'
+    Copy-File $engineLicense $bundledEngineLicense
+    Assert-Hash $bundledEngineLicense $engineLicenseHash
     # Gyan license/configuration files describe retired binaries, not this source build.
     $nativeSdk = @($nativeManifest.components | Where-Object { $_.name -eq 'WebView2Loader, WIL, nlohmann.json' })[0]
     $origins = [ordered]@{
@@ -437,10 +436,11 @@ try {
             'windows_native_build.py', 'windows_native_sources.json', 'media_sources.json')) {
             Copy-File (Join-Path $ProjectRoot ('tool\' + $name)) (Join-Path $appSource ('tool\' + $name))
         }
-        foreach ($relative in @('licenses/android/THIRD-PARTY-NOTICES.txt', 'licenses/media/THIRD-PARTY-NOTICES.txt',
-            'licenses/native/evidence/Flutter-windows-binary-license.txt')) {
+        foreach ($relative in @('licenses/android/THIRD-PARTY-NOTICES.txt', 'licenses/media/THIRD-PARTY-NOTICES.txt')) {
             Copy-File (Child-Path $ProjectRoot $relative) (Child-Path $appSource $relative)
         }
+        Copy-File $engineLicense (Join-Path $appSource 'licenses\native\licenses\Flutter-windows-binary-license.txt')
+        Assert-Hash (Join-Path $appSource 'licenses\native\licenses\Flutter-windows-binary-license.txt') $engineLicenseHash
         foreach ($artifact in $nativeLicenses) {
             Copy-File (Child-Path $ProjectRoot $artifact.path) (Child-Path $appSource $artifact.path)
         }

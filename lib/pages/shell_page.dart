@@ -146,7 +146,7 @@ class _ShellPageState extends State<ShellPage> {
             ],
           ),
           body: SafeArea(
-            bottom: false,
+            bottom: useRail,
             child: Row(
               children: [
                 if (useRail) ...[
