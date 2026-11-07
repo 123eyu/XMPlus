@@ -184,6 +184,12 @@ function File-Inventory([string]$Root) {
 function New-VerifiedZip([string]$Directory, [string]$ZipPath) {
     # Stream the runtime payload and use standard compact compression for bundled tools.
     $files = @(File-Inventory $Directory)
+    foreach ($file in $files) {
+        if ($file.path -match '(?i)\.(?:tar(?:\.[a-z0-9]+)?|zip|7z|nupkg|jks|keystore|pdb|obj|o|a|c|cc|cpp|h|hpp|py|ps1|sh)$' -or
+            $file.path -match '(?i)(^|/)(?:BUILD-MANIFEST|BUILD-RECEIPT|RELEASE-STATUS|IMPORTS)\.json$') {
+            throw "Development material must not enter the runtime ZIP: $($file.path)"
+        }
+    }
     $prefix = (Split-Path -Leaf $Directory) + '/'
     $zip = [IO.Compression.ZipFile]::Open($ZipPath, [IO.Compression.ZipArchiveMode]::Create)
     try {
@@ -397,8 +403,11 @@ try {
     $statusValue = 'redistribution-material-gates-cleared'
     if ($private) { $statusValue = 'local-verification-only' }
     $status = [ordered]@{
+        sourceMaterialsComplete = $true
+        redistributionReady = $false
+        distributionRequirement = 'Provide applicable corresponding-source access separately before public binary distribution; it is not bundled with this runtime package.'
         schemaVersion = 1; application = 'XMPlus'; version = '1.0.0+1'; package = $PackageName
-        status = $statusValue; redistributionReady = (-not $private -and $blockers.Count -eq 0)
+        status = $statusValue
         generatedAtUtc = [DateTime]::UtcNow.ToString('o'); blockers = @($blockers.ToArray())
         ffmpegReleaseCompliance = [ordered]@{ completeCorrespondingSource = $true; sourceBuild = $true }
         nativeDistributionReady = $true
@@ -479,7 +488,14 @@ try {
     Assert-ProjectClientsStopped
     Assert-Replacement $target $targetZip $targetSources
     $moves = @(@{ from = $bundle; to = $target }, @{ from = $stagedZip; to = $targetZip }, @{ from = $evidence; to = $targetEvidence })
-    if ($stagedSources) { $moves += @{ from = $stagedSources; to = $targetSources } }
+    if ($stagedSources) {
+        # Source watchers may hold directory handles; copy verified developer files
+        # instead of renaming the tree. This never enters the application output.
+        foreach ($file in File-Inventory $stagedSources) {
+            Copy-File (Child-Path $stagedSources $file.path) (Child-Path $targetSources $file.path)
+            Assert-Hash (Child-Path $targetSources $file.path) $file.sha256
+        }
+    }
     $backups = @()
     $installed = @()
     try {

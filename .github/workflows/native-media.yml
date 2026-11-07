@@ -86,11 +86,13 @@ jobs:
           echo "$RUNNER_TEMP/native-build-python/bin" >> "$GITHUB_PATH"
       - name: Build source-traceable Windows native supply
         run: bash tool/windows-native-build.sh build/windows-native
-      - name: Upload native runtime and complete source materials
+      - name: Upload native runtime only (no source or build objects)
         uses: actions/upload-artifact@v4
         with:
-          name: windows-native-supply
-          path: build/windows-native/windows-native-supply.zip
+          name: windows-native-runtime
+          path: |
+            build/windows-native/runtime/
+            build/windows-native/licenses/
           if-no-files-found: error
           retention-days: 14
       - name: Upload native build evidence
@@ -100,6 +102,7 @@ jobs:
           name: windows-native-evidence
           path: |
             build/windows-native/BUILD-RECEIPT.json
+            build/windows-native/IMPORTS.json
             build/windows-native/logs/
             build/windows-native/BUILD.log
           if-no-files-found: warn
