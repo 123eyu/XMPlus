@@ -17,7 +17,7 @@ by this recipe. The parent can use an already-authorized Linux CI environment.
 Inputs are immutable URL/SHA-256 locks:
 - tool/media_sources.json: FFmpeg9.0.2 and LAME3.100.
 - tool/windows_native_sources.json: exact mpv and libplacebo commits, FreeType,
-  FriBidi, HarfBuzz, libass, fast_float, zlib and LLVM/MinGW toolchain/runtime sources.
+  FriBidi, HarfBuzz, libass, fast_float, zlib, Vulkan-Headers and LLVM/MinGW toolchain/runtime sources.
 The complete source archives have been acquired, not merely linked. LLVM's large
 source archive is cached under build/windows-native-sources rather than committed
 to the application repository. CI downloads missing archives and verifies hashes.
