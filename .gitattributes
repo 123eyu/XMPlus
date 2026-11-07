@@ -1,0 +1,7 @@
+# Hash-locked native sources/notices must retain the exact collected bytes.
+licenses/** -text
+# The native build receipt compares these inputs across Linux and Windows.
+tool/*.sh text eol=lf
+tool/windows_native_build.py text eol=lf
+tool/media_sources.json text eol=lf
+tool/windows_native_sources.json text eol=lf
