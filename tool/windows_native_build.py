@@ -236,10 +236,11 @@ cpp_link_args = ['-static', '-static-libstdc++']
         if binary.suffix.lower() in ['.exe', '.dll']:
             result = subprocess.check_output([str(toolchain / 'bin/llvm-readobj'), '--coff-imports', str(binary)], env=env, text=True)
             imports[str(binary.relative_to(out))] = result
+            print(result, flush=True)
             allowed = {'kernel32.dll', 'user32.dll', 'advapi32.dll', 'ole32.dll', 'oleaut32.dll', 'uuid.dll',
                        'ws2_32.dll', 'secur32.dll', 'crypt32.dll', 'bcrypt.dll', 'shell32.dll', 'shlwapi.dll',
                        'gdi32.dll', 'winmm.dll', 'version.dll', 'avrt.dll', 'dwmapi.dll', 'imm32.dll',
-                       'uxtheme.dll', 'ucrtbase.dll', 'ntdll.dll', 'winhttp.dll', 'normaliz.dll', 'propsys.dll', 'dbghelp.dll'}
+                       'uxtheme.dll', 'ucrtbase.dll', 'ntdll.dll', 'winhttp.dll', 'normaliz.dll', 'propsys.dll', 'dbghelp.dll', 'shcore.dll'}
             for line in result.splitlines():
                 if line.strip().startswith('Name:'):
                     dependency = line.split(':', 1)[1].strip().lower()
