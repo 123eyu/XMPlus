@@ -47,8 +47,11 @@ The packager requires the receipt, rehashes every payload and source, compares t
 entire source closure and recipe to the current locks, and refuses old binaries.
 The real media-kit wrapper is compiled with its hash-pinned download section
 replaced in a generated build-directory copy; the global Pub cache is unchanged.
-Public packaging includes a separate application source ZIP with the full native
-source and relink materials. Local candidate mode does not bypass supply checks.
+Application output contains only the runtime bundle/ZIP, required licenses and
+origin notes. Complete source, relink materials and build evidence remain under
+the separate -DevelopmentDirectory (default build/corresponding-source), never
+inside dist. Source access for redistribution must be arranged separately.
+Local candidate mode does not bypass supply checks.
 
 MSVC CRT policy: do not redistribute msvcp140*/vcruntime140* DLLs. Users need the
 separately installed Microsoft Visual C++ v14 x64 Redistributable from Microsoft:

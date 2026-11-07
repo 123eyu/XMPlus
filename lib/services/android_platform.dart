@@ -3,14 +3,22 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart';
 
+import '../models/xmly_models.dart';
+
 /// Android platform operations that cannot use desktop command-line utilities.
 class AndroidPlatform {
   static const _channel = MethodChannel('teikengstudio.xmplus/platform');
 
   static Future<Map<String, String>> mediaToolPaths() async {
-    final values = await _channel.invokeMapMethod<String, String>(
-      'mediaToolPaths',
-    );
+    Map<String, String>? values;
+    try {
+      values = await _channel.invokeMapMethod<String, String>('mediaToolPaths');
+    } on PlatformException {
+      throw const XmlyException(
+        'media_tool_missing',
+        '随附 Android FFmpeg/FFprobe 缺失或不可执行，请重新安装完整安装包',
+      );
+    }
     final directory = values?['directory'];
     if (directory == null ||
         !p.isAbsolute(directory) ||

@@ -111,10 +111,10 @@ Native media and build materials
   This prerequisite link is not a grant of redistribution rights.
 
 Source archives, SDK packages, recipes and relink/build evidence remain separate
-development/source-distribution materials, not runtime payload. Windows public
-packaging emits a corresponding-source ZIP alongside the application ZIP and
-binds both to the verified native supply. Successful source compilation alone
-does not constitute functional playback or media-processing acceptance.
+development/source-distribution materials, not runtime payload. They are retained
+in a separate development directory, not inside or alongside the application ZIP.
+Any public distribution must separately provide the applicable source access;
+successful source compilation alone is not functional playback acceptance.
 
 
 Search endpoint documentation consulted:

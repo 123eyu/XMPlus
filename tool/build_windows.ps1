@@ -2,8 +2,8 @@
 <#
 Builds directly in the workspace; refuses to replace a running project client.
 Requires a verified source-built native supply, including in private candidate mode.
-Never launches XMPlus or changes the shared SDK. Public outputs include a separate
-source ZIP with exact native source archives and relinkable build objects.
+Never launches XMPlus or changes the shared SDK. Source/relink materials remain
+in a separate development directory; application output contains no source ZIP.
 -ReplaceLocalCandidate preserves the previous private bundle/ZIP as unique backups.
 #>
 [CmdletBinding()]
@@ -12,7 +12,8 @@ param(
     [switch]$ReplaceLocalCandidate,
     [string]$NugetPath,
     [string]$NativeSupply = 'build/windows-native',
-    [string]$OutputDirectory = 'dist'
+    [string]$OutputDirectory = 'dist',
+    [string]$DevelopmentDirectory = 'build\corresponding-source'
 )
 
 Set-StrictMode -Version Latest
@@ -155,10 +156,10 @@ function Assert-ProjectClientsStopped {
         }
     }
 }
-function Assert-Replacement([string]$Target, [string]$Zip, [string]$SourceZip) {
+function Assert-Replacement([string]$Target, [string]$Zip, [string]$SourceDirectory) {
     $hasTarget = Test-Path -LiteralPath $Target
     $hasZip = Test-Path -LiteralPath $Zip
-    if (Test-Path -LiteralPath $SourceZip) { throw "Existing source ZIP must be preserved: $SourceZip" }
+    if (Test-Path -LiteralPath $SourceDirectory) { throw "Existing development sources must be preserved: $SourceDirectory" }
     if (-not $hasTarget -and -not $hasZip) { return }
     if (-not $LocalCandidate -or -not $ReplaceLocalCandidate -or -not $hasTarget) {
         throw 'Output exists; only -LocalCandidate -ReplaceLocalCandidate may replace a recognized private candidate.'
@@ -257,9 +258,17 @@ if (-not [IO.Path]::IsPathRooted($OutputDirectory)) { $OutputDirectory = Join-Pa
 $dist = [IO.Path]::GetFullPath($OutputDirectory)
 $target = Join-Path $dist $PackageName
 $targetZip = $target + '.zip'
-$targetSourceZip = Join-Path $dist ($SourceName + '.zip')
+if (-not [IO.Path]::IsPathRooted($DevelopmentDirectory)) { $DevelopmentDirectory = Join-Path $ProjectRoot $DevelopmentDirectory }
+$development = [IO.Path]::GetFullPath($DevelopmentDirectory)
+if ($development.Equals($dist, [StringComparison]::OrdinalIgnoreCase) -or
+    $development.StartsWith($dist.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Development sources/evidence must be outside the application output directory.'
+}
+$targetSources = Join-Path $development $SourceName
+$targetEvidence = Join-Path $development ($PackageName + '-evidence')
+if (Test-Path -LiteralPath $targetEvidence) { throw "Existing development evidence must be preserved: $targetEvidence" }
 Assert-ProjectClientsStopped
-Assert-Replacement $target $targetZip $targetSourceZip
+Assert-Replacement $target $targetZip $targetSources
 
 $stage = Join-Path $ProjectRoot ('build\xmplus-package-' + [Guid]::NewGuid().ToString('N'))
 $source = $ProjectRoot
@@ -372,7 +381,7 @@ try {
     $origins = [ordered]@{
         schemaVersion = 1
         application = 'XMPlus 1.0.0+1'
-        notice = 'Hash-locked source-built Windows media payload. Exact source archives, build recipe, patches (none), generated configuration and relinkable objects accompany the separate source archive. Microsoft CRT DLLs are not redistributed.'
+        notice = 'Hash-locked source-built Windows media payload. Exact source archives, recipe and relink objects remain separate development materials, never inside the application package. Microsoft CRT DLLs are not redistributed.'
         flutter = [ordered]@{ version = $sdk.frameworkVersion; frameworkCommit = $sdk.frameworkRevision; engineCommit = $sdk.engineRevision; url = 'https://github.com/flutter/flutter' }
         upstreamEntries = $nativeManifest.aboutSourceEntry.upstreamEntries
         packages = @($nativeManifest.packages | Select-Object name, version, url, archiveSha256)
@@ -394,7 +403,7 @@ try {
         ffmpegReleaseCompliance = [ordered]@{ completeCorrespondingSource = $true; sourceBuild = $true }
         nativeDistributionReady = $true
         functionalValidation = 'Packaging verifies tool identities/hashes, not playback. Real Windows media_kit playback and all media processing formats/remux/cover/hash require parent acceptance.'
-        sourceArchive = $null
+        sourceMaterials = $null
     }
     if ($private) {
         [IO.File]::WriteAllText((Join-Path $bundle 'SOURCE-MATERIALS-INCOMPLETE.txt'),
@@ -403,7 +412,7 @@ try {
             ($blockers -join "`r`n") + "`r`nSee licenses/SOURCES.json for version and origin references; source materials are maintained separately.`r`n", $Utf8)
     }
 
-    $stagedSourceZip = $null
+    $stagedSources = $null
     if (-not $private) {
         # App sources plus explicitly admitted third-party sources; never account data.
         $appSource = Join-Path $stage $SourceName
@@ -444,31 +453,33 @@ try {
         Copy-Tree (Join-Path $NativeSupply 'licenses') (Join-Path $appSource 'native-sources\licenses') 'runtime'
         Copy-File (Join-Path $NativeSupply 'BUILD-RECEIPT.json') (Join-Path $appSource 'native-sources\BUILD-RECEIPT.json')
         Copy-File (Join-Path $NativeSupply 'IMPORTS.json') (Join-Path $appSource 'native-sources\IMPORTS.json')
-        $stagedSourceZip = Join-Path $stage ($SourceName + '.zip')
-        New-VerifiedZip $appSource $stagedSourceZip
-        $status.sourceArchive = [ordered]@{ file = ($SourceName + '.zip'); sha256 = (File-Hash $stagedSourceZip) }
+        $stagedSources = $appSource
+        $status.sourceMaterials = [ordered]@{ directory = $SourceName; location = 'separate development directory'; includedInRuntime = $false }
     }
-    Write-Json (Join-Path $bundle 'RELEASE-STATUS.json') $status
+    $evidence = Join-Path $stage 'package-evidence'
+    Ensure-Directory $evidence
+    Write-Json (Join-Path $evidence 'RELEASE-STATUS.json') $status
     $manifest = [ordered]@{
         schemaVersion = 1; application = 'XMPlus'; version = '1.0.0+1'; buildMode = 'release'; target = 'windows-x64'
         flutterVersion = $sdk.frameworkVersion; dartVersion = $sdk.dartSdkVersion
         frameworkRevision = $sdk.frameworkRevision; engineRevision = $sdk.engineRevision
         engineSha256 = $engineHash; pubspecLockSha256 = $lockHash; ffmpegExecutableSha256 = $nativeFFmpegHash
         nativeBuildReceiptSha256 = File-Hash (Join-Path $NativeSupply 'BUILD-RECEIPT.json')
-        fileHashScope = 'Every payload file except BUILD-MANIFEST.json itself; ZIP creation also hashes and verifies the manifest.'
+        fileHashScope = 'Every runtime payload file; the manifest itself stays in the separate development directory.'
         files = @(File-Inventory $bundle)
     }
-    Write-Json (Join-Path $bundle 'BUILD-MANIFEST.json') $manifest
+    Write-Json (Join-Path $evidence 'BUILD-MANIFEST.json') $manifest
     $stagedZip = Join-Path $stage ($PackageName + '.zip')
     New-VerifiedZip $bundle $stagedZip
     $zipHash = File-Hash $stagedZip
 
-    # Both new artifacts are complete and verified before an existing candidate moves.
+    # Verify the runtime ZIP before installing it; development material is separate.
     Ensure-Directory $dist
+    Ensure-Directory $development
     Assert-ProjectClientsStopped
-    Assert-Replacement $target $targetZip $targetSourceZip
-    $moves = @(@{ from = $bundle; to = $target }, @{ from = $stagedZip; to = $targetZip })
-    if ($stagedSourceZip) { $moves += @{ from = $stagedSourceZip; to = $targetSourceZip } }
+    Assert-Replacement $target $targetZip $targetSources
+    $moves = @(@{ from = $bundle; to = $target }, @{ from = $stagedZip; to = $targetZip }, @{ from = $evidence; to = $targetEvidence })
+    if ($stagedSources) { $moves += @{ from = $stagedSources; to = $targetSources } }
     $backups = @()
     $installed = @()
     try {
@@ -495,6 +506,7 @@ try {
     Write-Host "Bundle: $target"
     Write-Host "ZIP: $targetZip"
     Write-Host "ZIP SHA-256: $zipHash"
+    Write-Host "Development materials (not runtime): $development"
     Write-Host "Status: $statusValue"
     Write-Host "Workspace build: $release"
     Write-Host "Packaging staging retained: $stage"
