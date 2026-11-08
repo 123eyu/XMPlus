@@ -14,33 +14,44 @@ import 'package:path/path.dart' as p;
 
 /// A new private profile per challenge; never receives application credentials.
 class GeetestDialog extends StatefulWidget {
-  const GeetestDialog({required this.captchaId,
-    required this.dataDirectory, super.key});
+  const GeetestDialog({
+    required this.captchaId,
+    required this.dataDirectory,
+    super.key,
+  });
 
   final String captchaId;
   final String dataDirectory;
 
-  static Future<Map<String, dynamic>?> show(BuildContext context,
-      {required String captchaId, required String dataDirectory}) =>
-      showDialog<Map<String, dynamic>>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => GeetestDialog(captchaId: captchaId,
-          dataDirectory: dataDirectory),
-      );
+  static Future<Map<String, dynamic>?> show(
+    BuildContext context, {
+    required String captchaId,
+    required String dataDirectory,
+  }) => showDialog<Map<String, dynamic>>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) =>
+        GeetestDialog(captchaId: captchaId, dataDirectory: dataDirectory),
+  );
 
   @override
   State<GeetestDialog> createState() => _GeetestDialogState();
 }
 
 class _GeetestDialogState extends State<GeetestDialog> {
-  static const _installer = 'https://developer.microsoft.com/microsoft-edge/webview2/';
-  static const _fields = ['captcha_id', 'lot_number', 'pass_token',
-    'gen_time', 'captcha_output'];
+  static const _installer =
+      'https://developer.microsoft.com/microsoft-edge/webview2/';
+  static const _fields = [
+    'captcha_id',
+    'lot_number',
+    'pass_token',
+    'gen_time',
+    'captcha_output',
+  ];
   final _nonce = _newNonce();
   late final String _documentUrl = Platform.isAndroid
-    ? 'https://appassets.androidplatform.net/xmplus-captcha/$_nonce/index.html'
-    : 'about:blank';
+      ? 'https://appassets.androidplatform.net/xmplus-captcha/$_nonce/index.html'
+      : 'about:blank';
   WebViewEnvironment? _environment;
   Directory? _profile;
   Timer? _timeout;
@@ -81,7 +92,8 @@ class _GeetestDialogState extends State<GeetestDialog> {
           return;
         }
         _stage = '验证资料目录';
-        final base = await Directory(p.join(widget.dataDirectory, 'captcha')).create(recursive: true);
+        final base = await Directory(p.join(widget.dataDirectory, 'captcha'))
+            .create(recursive: true);
         final profile = await base.createTemp('session-');
         _profile = profile;
         _stage = 'WebView2 环境创建';
@@ -104,8 +116,10 @@ class _GeetestDialogState extends State<GeetestDialog> {
       }
       if (!mounted) return;
       setState(() => _ready = true);
-      _timeout = Timer(const Duration(seconds: 45),
-        () => _fail('安全验证加载超时，请关闭后重试，或使用登录信息导入。'));
+      _timeout = Timer(
+        const Duration(seconds: 45),
+        () => _fail('安全验证加载超时，请关闭后重试，或使用登录信息导入。'),
+      );
     } catch (error) {
       _failStage(error);
     }
@@ -118,16 +132,22 @@ class _GeetestDialogState extends State<GeetestDialog> {
   }
 
   void _failStage(Object error) {
-    final code = error is PlatformException && RegExp(r'^-?[0-9]{1,12}$').hasMatch(error.code)
-      ? '（错误码 ${error.code}）' : '';
+    final code =
+        error is PlatformException &&
+            RegExp(r'^-?[0-9]{1,12}$').hasMatch(error.code)
+        ? '（错误码 ${error.code}）'
+        : '';
     _fail('$_stage失败$code。请关闭后重试，或返回 Cookie 登录。');
   }
 
   static Future<void> _deleteProfile(Directory profile) async {
     // WebView2 may still hold the directory briefly; it contains only this
     // challenge's isolated private profile, never an account credential store.
-    try { if (await profile.exists()) await profile.delete(recursive: true); }
-    on FileSystemException { /* The runtime still owns its temporary profile. */ }
+    try {
+      if (await profile.exists()) await profile.delete(recursive: true);
+    } on FileSystemException {
+      /* The runtime still owns its temporary profile. */
+    }
   }
 
   @override
@@ -137,16 +157,25 @@ class _GeetestDialogState extends State<GeetestDialog> {
     _timeout?.cancel();
     final environment = _environment, profile = _profile;
     unawaited(() async {
-      try { await environment?.dispose(); } catch (_) { /* Already disposed. */ }
+      try {
+        await environment?.dispose();
+      } catch (_) {
+        /* Already disposed. */
+      }
       if (profile != null) await _deleteProfile(profile);
     }());
     super.dispose();
   }
 
-  bool _allowedResource(Uri uri) => uri.scheme == 'https' &&
-      uri.userInfo.isEmpty && uri.port == 443 &&
-      ['geetest.com', 'geevisit.com', 'gsensebot.com'].any(
-        (host) => uri.host == host || uri.host.endsWith('.$host'));
+  bool _allowedResource(Uri uri) =>
+      uri.scheme == 'https' &&
+      uri.userInfo.isEmpty &&
+      uri.port == 443 &&
+      [
+        'geetest.com',
+        'geevisit.com',
+        'gsensebot.com',
+      ].any((host) => uri.host == host || uri.host.endsWith('.$host'));
 
   String _html() {
     final id = jsonEncode(widget.captchaId), nonce = jsonEncode(_nonce);
@@ -189,47 +218,64 @@ class _GeetestDialogState extends State<GeetestDialog> {
       if (Platform.isWindows) {
         _stage = '下载安全策略初始化';
         final installed = await MethodChannel(
-          'com.pichillilorenzo/flutter_inappwebview_${controller.getViewId()}')
-          .invokeMethod<bool>('xmplusDenyDownloads', const <String, dynamic>{});
-        if (installed != true) throw StateError('Native download guard unavailable');
+          'com.pichillilorenzo/flutter_inappwebview_${controller.getViewId()}',
+        ).invokeMethod<bool>('xmplusDenyDownloads', const <String, dynamic>{});
+        if (installed != true)
+          throw StateError('Native download guard unavailable');
       }
       if (!mounted || _finished || _error != null) return;
-      controller.addJavaScriptHandler(handlerName: 'xmlyCaptcha', callback: (args) async {
-        if (!_accepting || !mounted || _finished || args.length != 3 ||
-            args[0] != _nonce || (await controller.getUrl())?.toString() != _documentUrl) return null;
-        if (!mounted || !_accepting || _finished) return null;
-        switch (args[1]) {
-          case 'ready':
-            _timeout?.cancel();
-            break;
-          case 'success':
-            final raw = args[2];
-            if (raw is! Map || raw.length != _fields.length ||
-                _fields.any((key) => raw[key] is! String ||
-                  !RegExp(r'^[\x21-\x7e]{1,8192}$').hasMatch(raw[key] as String)) ||
-                raw['captcha_id'] != widget.captchaId) {
-              _fail('安全验证结果无效，请关闭后重新验证。');
-              return null;
-            }
-            _finished = true;
-            _accepting = false;
-            Navigator.of(context).pop({for (final key in _fields) key: raw[key]});
-            break;
-          case 'error':
-            _fail('安全验证未完成，请关闭后重试，或使用登录信息导入。');
-            break;
-          case 'close':
-            _finished = true;
-            _accepting = false;
-            Navigator.of(context).pop();
-            break;
-        }
-        return null;
-      });
+      controller.addJavaScriptHandler(
+        handlerName: 'xmlyCaptcha',
+        callback: (args) async {
+          if (!_accepting ||
+              !mounted ||
+              _finished ||
+              args.length != 3 ||
+              args[0] != _nonce ||
+              (await controller.getUrl())?.toString() != _documentUrl)
+            return null;
+          if (!mounted || !_accepting || _finished) return null;
+          switch (args[1]) {
+            case 'ready':
+              _timeout?.cancel();
+              break;
+            case 'success':
+              final raw = args[2];
+              if (raw is! Map ||
+                  raw.length != _fields.length ||
+                  _fields.any(
+                    (key) =>
+                        raw[key] is! String ||
+                        !RegExp(r'^[\x21-\x7e]{1,8192}$')
+                            .hasMatch(raw[key] as String),
+                  ) ||
+                  raw['captcha_id'] != widget.captchaId) {
+                _fail('安全验证结果无效，请关闭后重新验证。');
+                return null;
+              }
+              _finished = true;
+              _accepting = false;
+              Navigator.of(context)
+                  .pop({for (final key in _fields) key: raw[key]});
+              break;
+            case 'error':
+              _fail('安全验证未完成，请关闭后重试，或使用登录信息导入。');
+              break;
+            case 'close':
+              _finished = true;
+              _accepting = false;
+              Navigator.of(context).pop();
+              break;
+          }
+          return null;
+        },
+      );
       _accepting = true;
       _stage = '验证页面加载';
       if (Platform.isAndroid) {
-        await controller.loadUrl(urlRequest: URLRequest(url: WebUri(_documentUrl)));
+        await controller.loadUrl(
+          urlRequest: URLRequest(url: WebUri(_documentUrl)),
+        );
       } else {
         await controller.loadData(data: _html(), baseUrl: WebUri(_documentUrl));
       }
@@ -248,90 +294,128 @@ class _GeetestDialogState extends State<GeetestDialog> {
 
   @override
   Widget build(BuildContext context) => PopScope(
-    onPopInvokedWithResult: (didPop, _) { if (didPop) _invalidate(); },
-    child: AlertDialog(
-    title: const Text('安全验证'),
-    content: SizedBox(
-      width: 440,
-      height: 440,
-      child: _error != null
-        ? SingleChildScrollView(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(_error!),
-              if (Platform.isWindows && _runtimeMissing) ...[
-                const SizedBox(height: 16),
-                TextButton.icon(onPressed: _openInstaller,
-                  icon: const Icon(Icons.open_in_new),
-                  label: const Text('微软 WebView2 下载页')),
-              ],
-              const SizedBox(height: 16),
-              const Text('关闭此窗口后，仍可选择“导入登录信息”。'),
-            ],
-          ))
-        : !_ready ? const Center(child: CircularProgressIndicator())
-        : InAppWebView(
-            webViewEnvironment: _environment,
-            initialSettings: InAppWebViewSettings(
-              incognito: true, javaScriptEnabled: true,
-              isInspectable: false, disableContextMenu: true,
-              useShouldOverrideUrlLoading: true,
-              useShouldInterceptRequest: true,
-              supportMultipleWindows: false,
-              javaScriptCanOpenWindowsAutomatically: false,
-              allowFileAccess: false, allowContentAccess: false,
-              allowFileAccessFromFileURLs: false,
-              allowUniversalAccessFromFileURLs: false,
-              thirdPartyCookiesEnabled: false,
-              geolocationEnabled: false, saveFormData: false,
-              mediaPlaybackRequiresUserGesture: true,
-              useOnDownloadStart: true,
-            ),
-            onWebViewCreated: _created,
-            shouldOverrideUrlLoading: (_, action) async {
-              final url = action.request.url?.toString();
-              return url == 'about:blank' || (Platform.isAndroid &&
-                  _accepting && !_finished && _error == null && url == _documentUrl)
-                ? NavigationActionPolicy.ALLOW : NavigationActionPolicy.CANCEL;
-            },
-            shouldInterceptRequest: (_, request) async {
-              // This challenge's main document is local, never fetched remotely.
-              if (Platform.isAndroid && request.isForMainFrame == true &&
-                  mounted && _accepting && !_finished && _error == null &&
-                  request.url.toString() == _documentUrl) {
-                return WebResourceResponse(statusCode: 200,
-                  reasonPhrase: 'OK', contentType: 'text/html',
-                  contentEncoding: 'utf-8', headers: const {'Cache-Control': 'no-store'},
-                  data: Uint8List.fromList(utf8.encode(_html())));
-              }
-              if (request.isForMainFrame != true &&
-                  _allowedResource(request.url.uriValue)) return null;
-              return WebResourceResponse(statusCode: 403,
-                reasonPhrase: 'Forbidden', contentType: 'text/plain',
-                headers: const {}, data: Uint8List(0));
-            },
-            onCreateWindow: (_, __) async => false,
-            onPermissionRequest: (_, request) async => PermissionResponse(
-              resources: request.resources, action: PermissionResponseAction.DENY),
-            onDownloadStartRequest: (controller, _) {
-              unawaited(controller.stopLoading());
-              _fail('安全验证不允许下载文件。');
-            },
-            onReceivedError: (_, request, __) {
-              if (request.isForMainFrame == true) _fail('安全验证加载失败，请关闭后重试。');
-            },
-            onReceivedHttpError: (controller, request, _) {
-              if (request.isForMainFrame == true) {
-                unawaited(controller.stopLoading());
-                _fail('安全验证页面加载失败，请关闭后重试。');
-              }
-            },
-          ),
-    ),
-    actions: [TextButton(onPressed: () {
-      _invalidate();
-      Navigator.of(context).pop();
+    onPopInvokedWithResult: (didPop, _) {
+      if (didPop) _invalidate();
     },
-      child: const Text('关闭'))],
-  ));
+    child: AlertDialog(
+      insetPadding: const EdgeInsets.all(12),
+      contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      title: const Text('安全验证', maxLines: 1, overflow: TextOverflow.ellipsis),
+      content: SizedBox(
+        width: 440,
+        height: min(440.0, MediaQuery.sizeOf(context).height * 0.6),
+        child: _error != null
+            ? SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_error!),
+                    if (Platform.isWindows && _runtimeMissing) ...[
+                      const SizedBox(height: 16),
+                      TextButton.icon(
+                        onPressed: _openInstaller,
+                        icon: const Icon(Icons.open_in_new),
+                        label: const Text('微软 WebView2 下载页'),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    const Text('关闭此窗口后，仍可选择“导入登录信息”。'),
+                  ],
+                ),
+              )
+            : !_ready
+            ? const Center(child: CircularProgressIndicator())
+            : InAppWebView(
+                webViewEnvironment: _environment,
+                initialSettings: InAppWebViewSettings(
+                  incognito: true,
+                  javaScriptEnabled: true,
+                  isInspectable: false,
+                  disableContextMenu: true,
+                  useShouldOverrideUrlLoading: true,
+                  useShouldInterceptRequest: true,
+                  supportMultipleWindows: false,
+                  javaScriptCanOpenWindowsAutomatically: false,
+                  allowFileAccess: false,
+                  allowContentAccess: false,
+                  allowFileAccessFromFileURLs: false,
+                  allowUniversalAccessFromFileURLs: false,
+                  thirdPartyCookiesEnabled: false,
+                  geolocationEnabled: false,
+                  saveFormData: false,
+                  mediaPlaybackRequiresUserGesture: true,
+                  useOnDownloadStart: true,
+                ),
+                onWebViewCreated: _created,
+                shouldOverrideUrlLoading: (_, action) async {
+                  final url = action.request.url?.toString();
+                  return url == 'about:blank' ||
+                          (Platform.isAndroid &&
+                              _accepting &&
+                              !_finished &&
+                              _error == null &&
+                              url == _documentUrl)
+                      ? NavigationActionPolicy.ALLOW
+                      : NavigationActionPolicy.CANCEL;
+                },
+                shouldInterceptRequest: (_, request) async {
+                  // This challenge's main document is local, never fetched remotely.
+                  if (Platform.isAndroid &&
+                      request.isForMainFrame == true &&
+                      mounted &&
+                      _accepting &&
+                      !_finished &&
+                      _error == null &&
+                      request.url.toString() == _documentUrl) {
+                    return WebResourceResponse(
+                      statusCode: 200,
+                      reasonPhrase: 'OK',
+                      contentType: 'text/html',
+                      contentEncoding: 'utf-8',
+                      headers: const {'Cache-Control': 'no-store'},
+                      data: Uint8List.fromList(utf8.encode(_html())),
+                    );
+                  }
+                  if (request.isForMainFrame != true &&
+                      _allowedResource(request.url.uriValue))
+                    return null;
+                  return WebResourceResponse(
+                    statusCode: 403,
+                    reasonPhrase: 'Forbidden',
+                    contentType: 'text/plain',
+                    headers: const {},
+                    data: Uint8List(0),
+                  );
+                },
+                onCreateWindow: (_, __) async => false,
+                onPermissionRequest: (_, request) async => PermissionResponse(
+                  resources: request.resources,
+                  action: PermissionResponseAction.DENY,
+                ),
+                onDownloadStartRequest: (controller, _) {
+                  unawaited(controller.stopLoading());
+                  _fail('安全验证不允许下载文件。');
+                },
+                onReceivedError: (_, request, __) {
+                  if (request.isForMainFrame == true) _fail('安全验证加载失败，请关闭后重试。');
+                },
+                onReceivedHttpError: (controller, request, _) {
+                  if (request.isForMainFrame == true) {
+                    unawaited(controller.stopLoading());
+                    _fail('安全验证页面加载失败，请关闭后重试。');
+                  }
+                },
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            _invalidate();
+            Navigator.of(context).pop();
+          },
+          child: const Text('关闭'),
+        ),
+      ],
+    ),
+  );
 }

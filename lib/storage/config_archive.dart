@@ -577,6 +577,8 @@ class ConfigArchive {
       if (value.containsKey('themeMode') &&
           !['system', 'light', 'dark'].contains(value['themeMode']))
         throw const FormatException();
+      if (value.containsKey('oledBlack') && value['oledBlack'] is! bool)
+        throw const FormatException();
       if (value.containsKey('seedColor') &&
           (value['seedColor'] is! int ||
               (value['seedColor'] as int) < 0 ||

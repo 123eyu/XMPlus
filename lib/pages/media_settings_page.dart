@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import '../common/widgets/adaptive_text.dart';
 import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
 import '../services/media_processor.dart';
@@ -197,10 +198,13 @@ class _MediaSettingsPageState extends State<MediaSettingsPage> {
             key: ValueKey('${name.toLowerCase()}Path'),
             controller: controller,
             enabled: !_busy,
+            minLines: 1,
+            maxLines: 3,
             validator: _pathError,
             decoration: InputDecoration(
               labelText: '$name 路径',
               hintText: '留空使用随附工具',
+              errorMaxLines: 3,
             ),
             onChanged: (_) => setState(() {
               _error = null;
@@ -221,130 +225,141 @@ class _MediaSettingsPageState extends State<MediaSettingsPage> {
   @override
   Widget build(BuildContext context) => Form(
     key: _form,
-    child: ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Text('媒体处理', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 16),
-        if (_busy) const LinearProgressIndicator(),
-        if (_error != null)
-          Text(
-            _error!,
-            key: const ValueKey('mediaError'),
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
+    child: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: ListView(
+          padding: EdgeInsets.all(
+            MediaQuery.sizeOf(context).width < 320 ? 8 : 16,
           ),
-        if (_status != null) Text(_status!, key: const ValueKey('mediaStatus')),
-        DropdownButtonFormField<String>(
-          key: ValueKey('format:$_format'),
-          initialValue: _format,
-          decoration: const InputDecoration(labelText: '输出格式'),
-          items: _formats.entries
-              .map(
-                (entry) => DropdownMenuItem(
-                  value: entry.key,
-                  child: Text(entry.value),
-                ),
-              )
-              .toList(),
-          onChanged: _busy
-              ? null
-              : (value) {
-                  if (value != null)
-                    setState(() {
-                      _format = value;
-                      _status = null;
-                    });
-                },
-        ),
-        if (const {'mp3', 'm4a', 'm4b'}.contains(_format)) ...[
-          const SizedBox(height: 16),
-          DropdownButtonFormField<int>(
-            key: ValueKey('bitrate:$_bitrate'),
-            initialValue: _bitrate,
-            decoration: const InputDecoration(labelText: '码率'),
-            items: _bitrates
-                .map(
-                  (value) => DropdownMenuItem(
-                    value: value,
-                    child: Text('$value kbps'),
-                  ),
-                )
-                .toList(),
-            onChanged: _busy
-                ? null
-                : (value) {
-                    if (value != null)
-                      setState(() {
-                        _bitrate = value;
-                        _status = null;
-                      });
-                  },
-          ),
-        ],
-        const SizedBox(height: 16),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('写入标签'),
-          value: _tags,
-          onChanged: _busy
-              ? null
-              : (value) => setState(() {
-                  _tags = value;
-                  _status = null;
-                }),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('嵌入封面'),
-          value: _cover,
-          onChanged: _busy
-              ? null
-              : (value) => setState(() {
-                  _cover = value;
-                  _status = null;
-                }),
-        ),
-        if (Platform.isAndroid)
-          const Padding(
-            padding: EdgeInsets.only(top: 16),
-            child: Text('Android 使用安装包随附的 FFmpeg / FFprobe，无需设置桌面工具路径。'),
-          )
-        else ...[
-          _toolField('FFmpeg', _ffmpeg),
-          _toolField('FFprobe', _ffprobe),
-        ],
-        const SizedBox(height: 16),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: OutlinedButton(
-            key: const ValueKey('checkMediaTools'),
-            onPressed: _busy ? null : _checkTools,
-            child: const Text('检查工具版本'),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 8,
           children: [
-            FilledButton(
-              key: const ValueKey('saveMedia'),
-              onPressed: _busy ? null : _save,
-              child: const Text('保存'),
-            ),
-            TextButton(
-              onPressed: _busy
+            AdaptiveText('媒体处理', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 16),
+            if (_busy) const LinearProgressIndicator(),
+            if (_error != null)
+              Text(
+                _error!,
+                key: const ValueKey('mediaError'),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            if (_status != null)
+              Text(_status!, key: const ValueKey('mediaStatus')),
+            DropdownButtonFormField<String>(
+              key: ValueKey('format:$_format'),
+              initialValue: _format,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: '输出格式'),
+              items: _formats.entries
+                  .map(
+                    (entry) => DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    ),
+                  )
+                  .toList(),
+              onChanged: _busy
                   ? null
-                  : () => setState(() {
-                      _form.currentState!.reset();
-                      _reload();
-                      _error = null;
+                  : (value) {
+                      if (value != null)
+                        setState(() {
+                          _format = value;
+                          _status = null;
+                        });
+                    },
+            ),
+            if (const {'mp3', 'm4a', 'm4b'}.contains(_format)) ...[
+              const SizedBox(height: 16),
+              DropdownButtonFormField<int>(
+                key: ValueKey('bitrate:$_bitrate'),
+                initialValue: _bitrate,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: '码率'),
+                items: _bitrates
+                    .map(
+                      (value) => DropdownMenuItem(
+                        value: value,
+                        child: Text('$value kbps'),
+                      ),
+                    )
+                    .toList(),
+                onChanged: _busy
+                    ? null
+                    : (value) {
+                        if (value != null)
+                          setState(() {
+                            _bitrate = value;
+                            _status = null;
+                          });
+                      },
+              ),
+            ],
+            const SizedBox(height: 16),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('写入标签'),
+              value: _tags,
+              onChanged: _busy
+                  ? null
+                  : (value) => setState(() {
+                      _tags = value;
                       _status = null;
                     }),
-              child: const Text('取消'),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('嵌入封面'),
+              value: _cover,
+              onChanged: _busy
+                  ? null
+                  : (value) => setState(() {
+                      _cover = value;
+                      _status = null;
+                    }),
+            ),
+            if (Platform.isAndroid)
+              const Padding(
+                padding: EdgeInsets.only(top: 16),
+                child: Text('Android 使用安装包随附的 FFmpeg / FFprobe，无需设置桌面工具路径。'),
+              )
+            else ...[
+              _toolField('FFmpeg', _ffmpeg),
+              _toolField('FFprobe', _ffprobe),
+            ],
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton(
+                key: const ValueKey('checkMediaTools'),
+                onPressed: _busy ? null : _checkTools,
+                child: const Text('检查工具版本'),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton(
+                  key: const ValueKey('saveMedia'),
+                  onPressed: _busy ? null : _save,
+                  child: const Text('保存'),
+                ),
+                TextButton(
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() {
+                          _form.currentState!.reset();
+                          _reload();
+                          _error = null;
+                          _status = null;
+                        }),
+                  child: const Text('取消'),
+                ),
+              ],
             ),
           ],
         ),
-      ],
+      ),
     ),
   );
 }
@@ -454,73 +469,85 @@ class _AlbumTagsPageState extends State<AlbumTagsPage> {
   Widget build(BuildContext context) => PopScope(
     canPop: !_saving,
     child: Scaffold(
-      appBar: AppBar(title: Text(widget.albumTitle)),
+      appBar: AppBar(title: AdaptiveText(widget.albumTitle)),
       body: Form(
         key: _form,
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            if (_saving) const LinearProgressIndicator(),
-            if (_error != null)
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: ListView(
+              padding: EdgeInsets.all(
+                MediaQuery.sizeOf(context).width < 320 ? 8 : 16,
               ),
-            for (final entry in _fields.entries)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: TextFormField(
-                  key: ValueKey('albumTag:${entry.key}'),
-                  controller: _controllers[entry.key],
-                  enabled: !_saving,
-                  minLines: 1,
-                  maxLines: entry.key == 'description' ? 5 : 1,
-                  decoration: InputDecoration(
-                    labelText: entry.value,
-                    helperText: _overridden.contains(entry.key)
-                        ? '已覆盖'
-                        : '使用原标签',
-                    suffixIcon: IconButton(
-                      tooltip: '重置${entry.value}',
-                      onPressed: _saving
-                          ? null
-                          : () => setState(() => _reset(entry.key)),
-                      icon: const Icon(Icons.restart_alt),
+              children: [
+                if (_saving) const LinearProgressIndicator(),
+                if (_error != null)
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
                     ),
                   ),
-                  validator: (value) =>
-                      (value ?? '').contains('\u0000') ? '不能包含空字符' : null,
-                  onChanged: (_) => setState(() {
-                    _overridden.add(entry.key);
-                    _changed.add(entry.key);
-                  }),
-                ),
-              ),
-            Wrap(
-              spacing: 8,
-              children: [
-                FilledButton(
-                  key: const ValueKey('saveAlbumTags'),
-                  onPressed: _saving ? null : _save,
-                  child: const Text('保存'),
-                ),
-                TextButton(
-                  onPressed: _saving ? null : () => Navigator.of(context).pop(),
-                  child: const Text('取消'),
-                ),
-                TextButton(
-                  onPressed: _saving
-                      ? null
-                      : () => setState(() {
-                          for (final key in _fields.keys) {
-                            _reset(key);
-                          }
-                        }),
-                  child: const Text('全部重置'),
+                for (final entry in _fields.entries)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: TextFormField(
+                      key: ValueKey('albumTag:${entry.key}'),
+                      controller: _controllers[entry.key],
+                      enabled: !_saving,
+                      minLines: 1,
+                      maxLines: entry.key == 'description' ? 5 : 1,
+                      decoration: InputDecoration(
+                        labelText: entry.value,
+                        helperText: _overridden.contains(entry.key)
+                            ? '已覆盖'
+                            : '使用原标签',
+                        suffixIcon: IconButton(
+                          tooltip: '重置${entry.value}',
+                          onPressed: _saving
+                              ? null
+                              : () => setState(() => _reset(entry.key)),
+                          icon: const Icon(Icons.restart_alt),
+                        ),
+                      ),
+                      validator: (value) =>
+                          (value ?? '').contains('\u0000') ? '不能包含空字符' : null,
+                      onChanged: (_) => setState(() {
+                        _overridden.add(entry.key);
+                        _changed.add(entry.key);
+                      }),
+                    ),
+                  ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilledButton(
+                      key: const ValueKey('saveAlbumTags'),
+                      onPressed: _saving ? null : _save,
+                      child: const Text('保存'),
+                    ),
+                    TextButton(
+                      onPressed: _saving
+                          ? null
+                          : () => Navigator.of(context).pop(),
+                      child: const Text('取消'),
+                    ),
+                    TextButton(
+                      onPressed: _saving
+                          ? null
+                          : () => setState(() {
+                              for (final key in _fields.keys) {
+                                _reset(key);
+                              }
+                            }),
+                      child: const Text('全部重置'),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     ),

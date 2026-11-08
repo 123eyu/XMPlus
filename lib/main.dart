@@ -18,10 +18,11 @@ Future<void> main(List<String> arguments) async {
       'PiliPlus': 'windows/LICENSE.PiliPlus',
       'Android 原生音频组件': 'licenses/android/THIRD-PARTY-NOTICES.txt',
       'FFmpeg / FFprobe 与 LAME': 'licenses/media/THIRD-PARTY-NOTICES.txt',
+      'HarmonyOS Sans': 'licenses/fonts/HarmonyOS_Sans_SC_LICENSE.txt',
     }.entries) {
       yield LicenseEntryWithLineBreaks([
         entry.key,
-      ], await rootBundle.loadString(entry.value));
+      ], (await rootBundle.loadString(entry.value)).replaceAll('\u0000', ''));
     }
   });
   if (!kIsWeb &&
@@ -29,7 +30,7 @@ Future<void> main(List<String> arguments) async {
           defaultTargetPlatform == TargetPlatform.macOS ||
           defaultTargetPlatform == TargetPlatform.linux)) {
     await windowManager.ensureInitialized();
-    await windowManager.setMinimumSize(const Size(800, 600));
+    await windowManager.setMinimumSize(const Size(320, 320));
   }
   runApp(StartupPage(arguments: arguments));
 }

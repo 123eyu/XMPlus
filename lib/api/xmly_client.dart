@@ -948,6 +948,13 @@ class XmlyClient {
                 ? null
                 : DateTime.fromMillisecondsSinceEpoch(expiry as int),
           );
+          Track? authorizedTrack;
+          bool? requiresReward;
+          if (row['authorizedTrack'] is Map && row['requiresReward'] is bool) {
+            authorizedTrack = Track.fromJson(xmlyMap(row['authorizedTrack']));
+            if (authorizedTrack.number != number) throw const FormatException();
+            requiresReward = row['requiresReward'] as bool;
+          }
           if (deadline == null || deadline.isAfter(now)) {
             entries[key] = _CachedAudioUrl(
               number,
@@ -955,6 +962,8 @@ class XmlyClient {
               uri,
               deadline,
               verified: true,
+              authorizedTrack: authorizedTrack,
+              requiresReward: requiresReward,
             );
           }
         }
@@ -1032,6 +1041,12 @@ class XmlyClient {
                 'quality': entry.quality,
                 'uri': entry.uri.toString(),
                 'deadline': entry.deadline?.millisecondsSinceEpoch,
+                if (entry.authorizedTrack != null &&
+                    entry.requiresReward != null)
+                  'authorizedTrack': entry.authorizedTrack!.toJson(),
+                if (entry.authorizedTrack != null &&
+                    entry.requiresReward != null)
+                  'requiresReward': entry.requiresReward,
               },
         ],
       }),
@@ -1074,6 +1089,7 @@ class XmlyClient {
   Future<ResolvedAudio> resolve(
     String trackId, {
     bool force = false,
+    bool preferCached = false,
     String? quality,
   }) => _resolveLock.synchronized(() async {
     if (_closed)
@@ -1088,6 +1104,51 @@ class XmlyClient {
     await _urlCacheReady;
     if (_closed)
       throw const XmlyException('client_closed', '连接已关闭', definitive: true);
+    if (preferCached &&
+        !force &&
+        !_expired &&
+        (credentials == null || accountAvailable) &&
+        epoch == _urlEpoch) {
+      for (final candidateQuality
+          in requestedQuality == 'auto' ? _qualities : [requestedQuality]) {
+        final key = _urlKey(number, candidateQuality);
+        final entry = _urls[key];
+        if (entry == null ||
+            !entry.verified ||
+            entry.authorizedTrack == null ||
+            entry.requiresReward == null ||
+            (entry.deadline != null &&
+                !entry.deadline!.isAfter(DateTime.now())))
+          continue;
+        final track = entry.authorizedTrack!;
+        if ((credentials == null && entry.requiresReward!) ||
+            (!entry.requiresReward! &&
+                track.isPaid != false &&
+                track.isAuthorized != true))
+          continue;
+        if (entry.requiresReward!) {
+          _requireAccount();
+          final quota = await queryQuota();
+          if (!quota.newDevice && quota.remainingSeconds <= 0)
+            throw const XmlyException(
+              'insufficient_quota',
+              '听时不足，请前往官方 App 获取听时',
+              definitive: true,
+            );
+        }
+        // Revocation/expiry while awaiting quota must win over this lease.
+        if (_closed ||
+            _expired ||
+            (credentials != null && !accountAvailable) ||
+            epoch != _urlEpoch ||
+            !identical(_urls[key], entry) ||
+            (entry.deadline != null &&
+                !entry.deadline!.isAfter(DateTime.now())))
+          break;
+        _remember(track);
+        return _resolvedAudio(entry, track, entry.requiresReward!);
+      }
+    }
     var info = await _info(number);
     _matchingId(info, number);
     Quota? reward;
@@ -1183,12 +1244,29 @@ class XmlyClient {
     }
     final track = Track.fromApi(info);
     _remember(track);
+    if (!_closed &&
+        !_expired &&
+        epoch == _urlEpoch &&
+        identical(_urls[key], entry)) {
+      entry.authorizedTrack = track;
+      entry.requiresReward = reward != null;
+      if (entry.verified) _saveUrlCache();
+    }
+    return _resolvedAudio(entry, track, reward != null);
+  });
+
+  ResolvedAudio _resolvedAudio(
+    _CachedAudioUrl entry,
+    Track track,
+    bool requiresReward,
+  ) {
+    final key = _urlKey(entry.number, entry.quality);
     return ResolvedAudio(
       uri: entry.uri,
       expiresAt: entry.deadline,
-      requiresReward: reward != null,
+      requiresReward: requiresReward,
       track: track,
-      actualQuality: chosen,
+      actualQuality: entry.quality,
       accountIdentity: identity,
       cacheFinalUri: (finalUri) {
         final validated = mediaUri(finalUri.toString());
@@ -1211,7 +1289,8 @@ class XmlyClient {
         _invalidateLease(key, entry);
       },
     );
-  });
+  }
+
   void _invalidateLease(String key, _CachedAudioUrl entry) {
     if (_closed || !identical(_urls[key], entry)) return;
     _urlEpoch++;
@@ -1261,12 +1340,16 @@ class _CachedAudioUrl {
   DateTime? deadline;
   final String number, quality;
   bool verified;
+  Track? authorizedTrack;
+  bool? requiresReward;
   _CachedAudioUrl(
     this.number,
     this.quality,
     this.uri,
     this.deadline, {
     this.verified = false,
+    this.authorizedTrack,
+    this.requiresReward,
   });
 }
 

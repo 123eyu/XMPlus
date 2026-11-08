@@ -11,6 +11,7 @@ import '../api/xmly_rewards.dart';
 import '../storage/app_storage.dart';
 import '../storage/credential_store.dart';
 import 'account_service.dart';
+import 'album_cache.dart';
 import 'auto_download_service.dart';
 import 'usage_ledger.dart';
 import '../models/xmly_models.dart';
@@ -23,6 +24,7 @@ class AppRuntime extends ChangeNotifier {
     anonymous = XmlyClient(
       urlCacheDirectory: p.join(storage.directory, 'audio-url-cache'),
     );
+    albumCache = AlbumCache(p.join(storage.directory, 'album-cache'));
     accounts = AccountService(
       storage: storage,
       secrets: secrets,
@@ -102,6 +104,7 @@ class AppRuntime extends ChangeNotifier {
   final AppStorage storage;
   final CredentialStore secrets;
   late final XmlyClient anonymous;
+  late final AlbumCache albumCache;
   late final AccountService accounts;
   late final UsageLedger ledger;
   late final MediaPipeline pipeline;
@@ -116,6 +119,8 @@ class AppRuntime extends ChangeNotifier {
   final List<Future<void> Function()> pauseHandlers = [];
   StreamSubscription<void>? _automaticChanges;
   final List<Future<void> Function()> settlementHandlers = [];
+  final Map<String, DownloadState> _cachedDownloadStates = {};
+  bool _restoringDownloads = false;
   bool closing = false;
   String? lifecycleError;
   Timer? _rewardTimer;
@@ -126,13 +131,51 @@ class AppRuntime extends ChangeNotifier {
     await anonymous.flushUrlCache();
     await accounts.load();
     await ledger.load();
+    await albumCache.load();
+    albumCache.addListener(_albumCacheChanged);
     await downloads.load();
+    for (final task in downloads.tasks) {
+      _cachedDownloadStates[task.id] = task.state;
+    }
     await player.load();
     _playerChanges = player.changes.listen((_) => notifyListeners());
-    _downloadChanges = downloads.changes.listen((_) => notifyListeners());
+    _downloadChanges = downloads.changes.listen((_) {
+      _refreshDownloadedAlbums();
+      notifyListeners();
+    });
     _automaticChanges = autoDownloads.changes.listen((_) => notifyListeners());
     unawaited(autoDownloads.scanAll());
     _configureRewards();
+  }
+
+  void _albumCacheChanged() => notifyListeners();
+
+  void _refreshDownloadedAlbums() {
+    if (closing || _closed) return;
+    for (final task in downloads.tasks) {
+      final previous = _cachedDownloadStates[task.id];
+      _cachedDownloadStates[task.id] = task.state;
+      if (_restoringDownloads ||
+          task.track.albumId.isEmpty ||
+          (previous != null &&
+              !(task.state == DownloadState.queued && previous != task.state) &&
+              !(task.state == DownloadState.completed &&
+                  previous != task.state))) {
+        continue;
+      }
+      try {
+        final originalClient = task.accountIdentity == 'anonymous'
+            ? anonymous
+            : accounts.clientFor(task.accountIdentity);
+        unawaited(
+          albumCache
+              .refresh(task.track.albumId, originalClient)
+              .catchError((Object _) {}),
+        );
+      } catch (_) {
+        // Optional public metadata never changes media admission or its result.
+      }
+    }
   }
 
   void changed() {
@@ -248,8 +291,14 @@ class AppRuntime extends ChangeNotifier {
   }
 
   Future<void> reloadAfterRestore() async {
+    _restoringDownloads = true;
     try {
       await downloads.reload();
+      _cachedDownloadStates
+        ..clear()
+        ..addEntries(
+          downloads.tasks.map((task) => MapEntry(task.id, task.state)),
+        );
       await ledger.load();
       await player.reload();
       lifecycleError = null;
@@ -259,6 +308,8 @@ class AppRuntime extends ChangeNotifier {
       lifecycleError = '恢复内容已保存，但任务加载未完成；原资料目录已保留';
       notifyListeners();
       rethrow;
+    } finally {
+      _restoringDownloads = false;
     }
   }
 
@@ -344,6 +395,8 @@ class AppRuntime extends ChangeNotifier {
     try {
       await quiesce();
       await settle();
+      await albumCache.close();
+      albumCache.removeListener(_albumCacheChanged);
       await accounts.close();
       await player.close(quiesced: true);
       await _playerChanges?.cancel();

@@ -14,6 +14,7 @@ import 'common/theme.dart';
 import 'common/widgets/scroll_behavior.dart';
 import 'pages/shell_page.dart';
 import 'pages/download_page.dart';
+import 'pages/player_panel.dart';
 import 'services/app_runtime.dart';
 
 class MyApp extends StatefulWidget {
@@ -28,6 +29,7 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> with WindowListener {
   late final _appearance = AppAppearance(widget.runtime.storage);
   final _navigator = GlobalKey<NavigatorState>();
+  final _playerRoutes = _PlayerRouteObserver();
   bool _closeRequested = false;
 
   @override
@@ -105,6 +107,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
     widget.runtime.confirmDownload = null;
     widget.runtime.requestExit = null;
     _appearance.dispose();
+    _playerRoutes.dispose();
     super.dispose();
   }
 
@@ -115,14 +118,17 @@ class _MyAppState extends State<MyApp> with WindowListener {
       builder: (context, _) => GetMaterialApp(
         title: 'XMPlus',
         navigatorKey: _navigator,
+        navigatorObservers: [_playerRoutes],
         debugShowCheckedModeBanner: false,
         theme: getThemeData(
           seedColor: _appearance.seedColor,
           brightness: Brightness.light,
+          oledBlack: _appearance.oledBlack,
         ),
         darkTheme: getThemeData(
           seedColor: _appearance.seedColor,
           brightness: Brightness.dark,
+          oledBlack: _appearance.oledBlack,
         ),
         themeMode: _appearance.themeMode,
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
@@ -131,9 +137,41 @@ class _MyAppState extends State<MyApp> with WindowListener {
         supportedLocales: const [Locale('zh', 'CN'), Locale('en', 'US')],
         scrollBehavior: const CustomScrollBehavior(),
         builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context)
-              .copyWith(textScaler: TextScaler.linear(_appearance.textScale)),
-          child: child!,
+          data: MediaQuery.of(context).copyWith(
+            textScaler: AppTextScaler(
+              MediaQuery.textScalerOf(context),
+              _appearance.textScale,
+            ),
+          ),
+          child: Overlay.wrap(
+            child: ListenableBuilder(
+              listenable: _playerRoutes,
+              child: child,
+              builder: (context, child) => Column(
+                children: [
+                  Expanded(child: child!),
+                  if (_playerRoutes.current?.settings.name !=
+                      PlayerPanel.routeName)
+                    SafeArea(
+                      top: false,
+                      child: ExcludeFocus(
+                        excluding: _playerRoutes.current is PopupRoute,
+                        child: ExcludeSemantics(
+                          excluding: _playerRoutes.current is PopupRoute,
+                          child: AbsorbPointer(
+                            absorbing: _playerRoutes.current is PopupRoute,
+                            child: PlayerPanel(
+                              runtime: widget.runtime,
+                              navigatorKey: _navigator,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
         ),
         home: PopScope(
           canPop: !Platform.isAndroid,
@@ -144,5 +182,41 @@ class _MyAppState extends State<MyApp> with WindowListener {
         ),
       ),
     );
+  }
+}
+
+class _PlayerRouteObserver extends NavigatorObserver with ChangeNotifier {
+  Route<dynamic>? current;
+  bool _disposed = false;
+
+  void _changed(Route<dynamic>? route) {
+    current = route;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_disposed) notifyListeners();
+    });
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _changed(route);
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _changed(previousRoute);
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    if (identical(current, oldRoute)) _changed(newRoute);
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (identical(current, route)) _changed(previousRoute);
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

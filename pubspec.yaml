@@ -41,3 +41,13 @@ flutter:
     - windows/LICENSE.PiliPlus
     - licenses/android/THIRD-PARTY-NOTICES.txt
     - licenses/media/THIRD-PARTY-NOTICES.txt
+    - licenses/fonts/HarmonyOS_Sans_SC_LICENSE.txt
+  fonts:
+    - family: HarmonyOS Sans SC
+      fonts:
+        - asset: assets/fonts/HarmonyOS_Sans_SC_Regular.ttf
+          weight: 400
+        - asset: assets/fonts/HarmonyOS_Sans_SC_Medium.ttf
+          weight: 500
+        - asset: assets/fonts/HarmonyOS_Sans_SC_Bold.ttf
+          weight: 700

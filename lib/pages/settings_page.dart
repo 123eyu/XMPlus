@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:path/path.dart' as p;
 
 import '../common/theme.dart';
+import '../common/widgets/adaptive_text.dart';
 import '../services/app_runtime.dart';
 import '../services/update_service.dart';
 import 'account_page.dart';
@@ -111,7 +112,7 @@ class _SettingsPageState extends State<SettingsPage> {
       Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (context) => Scaffold(
-            appBar: AppBar(title: Text(title)),
+            appBar: AppBar(title: AdaptiveText(title)),
             body: SafeArea(child: _detail(section)),
           ),
         ),
@@ -127,7 +128,11 @@ class _SettingsPageState extends State<SettingsPage> {
         for (final item in _items)
           ListTile(
             leading: Icon(item.icon),
-            title: Text(item.title),
+            title: Text(
+              item.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
             selected: wide && item.section == _section,
             selectedTileColor: theme.colorScheme.onInverseSurface,
             trailing: !wide ? const Icon(Icons.chevron_right) : null,
@@ -141,17 +146,21 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 720) return _list(false);
+        final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
+        if (constraints.maxWidth < 840 ||
+            constraints.maxWidth < 240 + 560 * textScale) {
+          return _list(false);
+        }
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(flex: 4, child: _list(true)),
+            SizedBox(width: 240, child: _list(true)),
             VerticalDivider(
               width: 1,
               color: Theme.of(context).colorScheme.outline
                   .withValues(alpha: 0.1),
             ),
-            Expanded(flex: 6, child: _detail(_section)),
+            Expanded(child: _detail(_section)),
           ],
         );
       },
@@ -180,7 +189,7 @@ class _AppearanceSettings extends StatelessWidget {
       builder: (context, _) => ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text('外观', style: Theme.of(context).textTheme.titleLarge),
+          AdaptiveText('外观', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           if (appearance.error != null)
             Text(
@@ -190,20 +199,37 @@ class _AppearanceSettings extends StatelessWidget {
           const SizedBox(height: 24),
           _SettingsCard(
             title: '主题',
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final option in const [
-                  (label: '跟随系统', mode: ThemeMode.system),
-                  (label: '浅色', mode: ThemeMode.light),
-                  (label: '深色', mode: ThemeMode.dark),
-                ])
-                  ChoiceChip(
-                    label: Text(option.label),
-                    selected: appearance.themeMode == option.mode,
-                    onSelected: (_) => appearance.themeMode = option.mode,
-                  ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final option in const [
+                      (label: '跟随系统', mode: ThemeMode.system),
+                      (label: '浅色', mode: ThemeMode.light),
+                      (label: '深色', mode: ThemeMode.dark),
+                    ])
+                      ChoiceChip(
+                        label: Text(
+                          option.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        selected: appearance.themeMode == option.mode,
+                        onSelected: (_) => appearance.themeMode = option.mode,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('OLED 纯黑'),
+                  subtitle: const Text('仅深色主题生效，主背景使用纯黑色'),
+                  value: appearance.oledBlack,
+                  onChanged: (value) => appearance.oledBlack = value,
+                ),
               ],
             ),
           ),
@@ -216,7 +242,11 @@ class _AppearanceSettings extends StatelessWidget {
               children: [
                 for (final option in _colors)
                   ChoiceChip(
-                    label: Text(option.label),
+                    label: Text(
+                      option.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     avatar: CircleAvatar(
                       backgroundColor: option.color,
                       radius: 8,
@@ -244,6 +274,8 @@ class _AppearanceSettings extends StatelessWidget {
                   onChanged: (value) => appearance.textScale = value,
                 ),
                 const Text('文字预览 0123456789'),
+                const SizedBox(height: 8),
+                const Text('在系统字号基础上调整，仍保留系统无障碍文字缩放。'),
               ],
             ),
           ),
@@ -267,7 +299,7 @@ class _SettingsCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            AdaptiveText(title, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 12),
             child,
           ],
@@ -308,11 +340,16 @@ class _AboutSettings extends StatelessWidget {
             children: [
               Image.asset('assets/branding/xmplus.png', width: 64, height: 64),
               const SizedBox(width: 12),
-              Text('XMPlus', style: Theme.of(context).textTheme.titleLarge),
+              Expanded(
+                child: AdaptiveText(
+                  'XMPlus',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(updates.versionLabel),
+          AdaptiveText(updates.versionLabel),
           const SizedBox(height: 16),
           _SettingsCard(
             title: '应用更新',
@@ -342,13 +379,18 @@ class _AboutSettings extends StatelessWidget {
                       : () => updates.check(context, manual: true),
                 ),
                 if (updates.ignoredVersion != null)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text('已忽略 ${updates.ignoredVersion}'),
-                    trailing: TextButton(
-                      onPressed: updates.clearIgnoredVersion,
-                      child: const Text('恢复提醒'),
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      AdaptiveText('已忽略 ${updates.ignoredVersion}'),
+                      Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: TextButton(
+                          onPressed: updates.clearIgnoredVersion,
+                          child: const Text('恢复提醒'),
+                        ),
+                      ),
+                    ],
                   ),
                 if (updates.error != null)
                   Padding(
@@ -429,6 +471,8 @@ class _AboutSettings extends StatelessWidget {
                 SelectableText('d9e9626f1a3f89cd9ca85e18f61aaba02634e12a'),
                 SizedBox(height: 16),
                 Text('原喜马拉雅组件来自 XIAOYA Nano，采用 AGPL-3.0-or-later。'),
+                SizedBox(height: 8),
+                Text('本应用使用 HarmonyOS Sans 字体，版权归华为终端有限公司所有。完整字体许可见“查看许可”。'),
                 SizedBox(height: 8),
                 Text(
                   '应用与第三方许可证见“查看许可”，对应源码和构建来源见项目仓库；桌面包另附 LICENSE、NOTICE 和 licenses。',
