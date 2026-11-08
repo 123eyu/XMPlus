@@ -13,25 +13,35 @@ import '../services/auto_download_service.dart';
 import '../services/android_platform.dart';
 import 'catalogue_page.dart';
 
-Future<void> requestDownloads(
+Future<({String identity, bool polling})?> _chooseDownloadAccount(
   BuildContext context,
   AppRuntime runtime,
-  List<Track> tracks,
 ) async {
-  var identity = runtime.accounts.primaryAccountId ?? 'anonymous';
+  final primary = runtime.accounts.primaryAccountId ?? 'anonymous';
   final accountIds = runtime.accounts.accountIds;
-  if (accountIds.isNotEmpty) {
-    final selected = await showDialog<String>(
-      context: context,
-      builder: (context) => SimpleDialog(
+  var polling =
+      ((runtime.storage.state['settings'] as Map)['download']
+          as Map?)?['polling'] !=
+      false;
+  if (accountIds.isEmpty) return (identity: 'anonymous', polling: false);
+  final selected = await showDialog<String>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) => SimpleDialog(
         title: const Text('下载账号'),
         children: [
+          SwitchListTile(
+            title: const Text('轮询'),
+            subtitle: const Text('请求失败时尝试下一个账号；扣时结果不明时停止'),
+            value: polling,
+            onChanged: (value) => setState(() => polling = value),
+          ),
           for (final id in accountIds)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, id),
               child: Text(
                 '账号 ${(runtime.storage.state['accounts'] as Map)[id]['uid']}'
-                '${id == identity ? ' · 主账号' : ''}',
+                '${id == primary ? ' · 主账号' : ''}',
               ),
             ),
           SimpleDialogOption(
@@ -40,13 +50,47 @@ Future<void> requestDownloads(
           ),
         ],
       ),
-    );
-    if (selected == null) return;
-    identity = selected;
-  }
+    ),
+  );
+  if (selected == null) return null;
+  await runtime.storage.transaction((state) {
+    final settings = state['settings'] as Map;
+    final download =
+        settings.putIfAbsent('download', () => <String, dynamic>{}) as Map;
+    download['polling'] = polling;
+  });
+  return (identity: selected, polling: selected != 'anonymous' && polling);
+}
+
+Future<void> requestDownloads(
+  BuildContext context,
+  AppRuntime runtime,
+  List<Track> tracks,
+) async {
+  final account = await _chooseDownloadAccount(context, runtime);
+  if (account == null || !context.mounted) return;
   final batch = await runtime.prepareDownloads(
     tracks,
-    accountIdentity: identity,
+    accountIdentity: account.identity,
+    polling: account.polling,
+  );
+  if (!context.mounted) return;
+  if (await confirmDownloadBatch(context, batch)) {
+    await runtime.downloads.enqueue(batch, confirmed: true);
+  }
+}
+
+Future<void> requestAlbumDownloads(
+  BuildContext context,
+  AppRuntime runtime,
+  String albumId,
+) async {
+  final account = await _chooseDownloadAccount(context, runtime);
+  if (account == null || !context.mounted) return;
+  final batch = await runtime.prepareAlbumDownloads(
+    albumId,
+    accountIdentity: account.identity,
+    polling: account.polling,
   );
   if (!context.mounted) return;
   if (await confirmDownloadBatch(context, batch)) {
@@ -87,6 +131,7 @@ Future<bool> deleteDownloadedAudio(
   await runtime.player.stopTaskReference(task.id);
   final file = File(path);
   if (await file.exists()) await file.delete();
+  await runtime.downloads.markAudioDeleted(task.id);
   return true;
 }
 
@@ -143,7 +188,7 @@ Future<bool> confirmDownloadBatch(
   BuildContext context,
   DownloadBatch batch,
 ) async {
-  if (batch.items.isEmpty) {
+  if (batch.items.isEmpty && batch.albumId == null) {
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('所选声音已在下载列表中')));
     return false;
@@ -153,7 +198,7 @@ Future<bool> confirmDownloadBatch(
         builder: (context) => AlertDialog(
           scrollable: true,
           title: Text(
-            '下载 ${batch.items.length} 集',
+            batch.albumId == null ? '下载 ${batch.items.length} 集' : '下载整个专辑',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -163,10 +208,19 @@ Future<bool> confirmDownloadBatch(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (batch.albumId != null) ...[
+                  Text(
+                    '共 ${batch.albumTotalCount ?? "未知"} 集，首批 ${batch.items.length} 集。'
+                    '当前页处理结束后再请求下一页，单集失败不影响其余声音。',
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('后续每页继续按正常规则逐集扣时；已下载声音自动跳过，可随时暂停。'),
+                  const SizedBox(height: 8),
+                ],
                 Text(
                   batch.totalSeconds == 0
-                      ? '本批无需扣除奖励听时'
-                      : '本批扣除 ${batch.totalSeconds} 秒\n当前余额 ${batch.balance ?? "未知"} 秒',
+                      ? '本批预览无需扣除奖励听时'
+                      : '本批预计扣除 ${batch.totalSeconds} 秒（按实际使用的账号逐集扣除）',
                 ),
                 if (batch.totalSeconds > 0) ...[
                   const SizedBox(height: 8),
@@ -189,7 +243,10 @@ Future<bool> confirmDownloadBatch(
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          subtitle: Text('${item.seconds} 秒'),
+                          subtitle: Text(
+                            item.error ??
+                                '${item.accountIdentity != batch.accountIdentity ? "已切换账号 · " : ""}${item.seconds} 秒',
+                          ),
                         );
                       },
                     ),
@@ -307,15 +364,10 @@ class _DownloadPageState extends State<DownloadPage> {
   }
 
   Future<void> _retry(DownloadTask task) async {
-    if (task.state == DownloadState.completed) {
-      try {
-        await _service.retry(task.id);
-        return;
-      } on XmlyException catch (error) {
-        if (error.code != 'confirmation_required') rethrow;
-        task = _service.task(task.id);
-      }
-    }
+    task = _service.task(task.id);
+    if (task.state != DownloadState.failed &&
+        task.state != DownloadState.paused)
+      return;
     if (task.processingFailed) {
       await _service.retry(task.id);
       return;
@@ -597,7 +649,12 @@ class _DownloadPageState extends State<DownloadPage> {
     await _refreshAvailability(_service.tasks);
   }
 
-  Widget _albumCard(String albumId, List<DownloadTask> tasks, bool compact) {
+  Widget _albumCard(
+    String albumId,
+    List<DownloadTask> tasks,
+    bool compact, {
+    required bool downloaded,
+  }) {
     final cached = albumId.isEmpty ? null : widget.runtime.albumCache[albumId];
     final album = cached?.album;
     final total = album?.total ?? 0;
@@ -629,12 +686,13 @@ class _DownloadPageState extends State<DownloadPage> {
         : tasks.first.track.album.isNotEmpty
         ? tasks.first.track.album
         : '专辑 $albumId';
-    final expanded = _expandedAlbums.contains(albumId);
+    final expansionKey = '${downloaded ? 'downloaded' : 'tasks'}:$albumId';
+    final expanded = _expandedAlbums.contains(expansionKey);
     void toggle() => setState(() {
       if (expanded) {
-        _expandedAlbums.remove(albumId);
+        _expandedAlbums.remove(expansionKey);
       } else {
-        _expandedAlbums.add(albumId);
+        _expandedAlbums.add(expansionKey);
       }
     });
     return Card(
@@ -652,6 +710,7 @@ class _DownloadPageState extends State<DownloadPage> {
                     uri: album?.coverUrl ?? tasks.first.track.coverUrl,
                     localPath: cached?.coverPath,
                     size: 52,
+                    downloaded: downloaded && completed > 0,
                   ),
             title: Text(
               title,
@@ -662,13 +721,14 @@ class _DownloadPageState extends State<DownloadPage> {
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  '$completed / ${total > 0 ? total : "总集数未知"} 集已下载',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                ),
-                if (total > 0)
+                if (downloaded)
+                  Text(
+                    '$completed / ${total > 0 ? total : "总集数未知"} 集已下载',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
+                if (downloaded && total > 0)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: LinearProgressIndicator(
@@ -687,16 +747,212 @@ class _DownloadPageState extends State<DownloadPage> {
                 ? toggle
                 : () => _run(() => _openAlbum(albumId)),
             trailing: IconButton(
-              tooltip: expanded ? '收起下载任务与操作' : '下载任务与操作',
+              tooltip: expanded ? '收起声音与操作' : '展开声音与操作',
               icon: Icon(expanded ? Icons.expand_less : Icons.expand_more),
               onPressed: toggle,
             ),
           ),
           if (expanded) ...[
             const Divider(height: 1),
-            for (final task in tasks) _taskCard(task, compact),
+            SizedBox(
+              height: (tasks.length * (downloaded ? 80.0 : 260.0))
+                  .clamp(80.0, 400.0)
+                  .toDouble(),
+              child: ListView.builder(
+                primary: false,
+                itemCount: tasks.length,
+                itemBuilder: (_, index) => downloaded
+                    ? _downloadedTrack(tasks[index], compact)
+                    : _taskCard(tasks[index], compact),
+              ),
+            ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _downloadedTrack(DownloadTask task, bool compact) {
+    final available = _available[task.id] == true;
+    return ListTile(
+      leading: compact
+          ? null
+          : CoverImage(
+              uri: task.track.coverUrl,
+              localPath:
+                  widget.runtime.albumCache[task.track.albumId]?.coverPath,
+              downloaded: available,
+              size: 44,
+            ),
+      title: AdaptiveText(task.track.title),
+      subtitle: Text(
+        _available.containsKey(task.id)
+            ? (available ? '已下载' : '音频文件已不存在')
+            : '正在检查本地文件',
+      ),
+      onTap: available
+          ? () => _run(() => widget.runtime.player.playLocal(task.id))
+          : null,
+      trailing: PopupMenuButton<String>(
+        tooltip: '已下载声音操作',
+        onSelected: (action) => _run(() async {
+          switch (action) {
+            case 'play':
+              await widget.runtime.player.playLocal(task.id);
+            case 'open':
+              await _open(task);
+            case 'delete':
+              await _delete(task);
+          }
+        }),
+        itemBuilder: (_) => [
+          if (available) const PopupMenuItem(value: 'play', child: Text('播放')),
+          const PopupMenuItem(value: 'open', child: Text('打开目录')),
+          if (available)
+            const PopupMenuItem(value: 'delete', child: Text('删除音频')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _cancelAlbum(String id) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('取消整专辑下载？'),
+        content: const Text('停止后续分页；已创建的任务、缓存和扣时记录保留，不自动退款。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('返回'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('取消专辑任务'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await _service.cancelAlbum(id);
+  }
+
+  Widget _albumList({required bool downloaded}) {
+    final compact = MediaQuery.sizeOf(context).width < 320;
+    final groups = <String, List<DownloadTask>>{};
+    for (final task in _service.tasks) {
+      if ((task.state == DownloadState.completed) != downloaded ||
+          task.state == DownloadState.cancelled)
+        continue;
+      groups.putIfAbsent(task.track.albumId, () => []).add(task);
+    }
+    final albums = groups.entries.toList();
+    final jobs = _service.albumJobs
+        .where((job) => job.state != 'completed' && job.state != 'cancelled')
+        .toList();
+    return Scrollbar(
+      child: ListView.builder(
+        key: PageStorageKey(
+          downloaded ? 'downloaded-albums' : 'download-tasks',
+        ),
+        itemCount: albums.length + 1,
+        itemBuilder: (context, index) {
+          if (index > 0) {
+            final group = albums[index - 1];
+            return _albumCard(
+              group.key,
+              group.value,
+              compact,
+              downloaded: downloaded,
+            );
+          }
+          return Padding(
+            padding: EdgeInsets.all(compact ? 8 : 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (!downloaded) ...[
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => _run(widget.runtime.pauseAllDownloads),
+                        icon: const Icon(Icons.pause),
+                        label: const Text('全部暂停'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _run(_service.resumeAll),
+                        icon: const Icon(Icons.download),
+                        label: const Text('全部继续'),
+                      ),
+                    ],
+                  ),
+                  for (final job in jobs)
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            AdaptiveText('${job.title} · 整专辑下载'),
+                            Text('第 ${job.page} 页 · ${job.total} 集'),
+                            if (job.error != null) Text(job.error!),
+                            Wrap(
+                              spacing: 8,
+                              children: [
+                                if (job.state == 'queued' ||
+                                    job.state == 'running')
+                                  TextButton(
+                                    onPressed: () =>
+                                        _run(() => _service.pauseAlbum(job.id)),
+                                    child: const Text('暂停专辑'),
+                                  )
+                                else
+                                  TextButton(
+                                    onPressed: () => _run(
+                                      () => _service.resumeAlbum(job.id),
+                                    ),
+                                    child: Text(
+                                      job.state == 'failed' ? '重试专辑' : '继续专辑',
+                                    ),
+                                  ),
+                                TextButton(
+                                  onPressed: () =>
+                                      _run(() => _cancelAlbum(job.id)),
+                                  child: const Text('取消专辑任务'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+                for (final error in [
+                  if (_error != null) _error!,
+                  if (!downloaded) ..._autoDownloads.errors,
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      error,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                if (albums.isEmpty && (downloaded || jobs.isEmpty))
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text(downloaded ? '暂无已下载内容' : '暂无下载任务'),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -704,75 +960,32 @@ class _DownloadPageState extends State<DownloadPage> {
   @override
   Widget build(BuildContext context) => StreamBuilder<void>(
     stream: _autoDownloads.changes,
-    builder: (context, _) {
-      final compact = MediaQuery.sizeOf(context).width < 320;
-      final groups = <String, List<DownloadTask>>{};
-      for (final task in _service.tasks) {
-        groups.putIfAbsent(task.track.albumId, () => []).add(task);
-      }
-      final albums = groups.entries.toList();
-      return Center(
+    builder: (context, _) => DefaultTabController(
+      length: 2,
+      child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
-          child: Scrollbar(
-            child: ListView.builder(
-              itemCount: albums.length + 1,
-              itemBuilder: (context, index) {
-                if (index > 0) {
-                  final group = albums[index - 1];
-                  return _albumCard(group.key, group.value, compact);
-                }
-                return Padding(
-                  padding: EdgeInsets.all(compact ? 8 : 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        spacing: 12,
-                        runSpacing: 8,
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: () =>
-                                _run(widget.runtime.pauseAllDownloads),
-                            icon: const Icon(Icons.pause),
-                            label: const Text('全部暂停'),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: () => _run(_service.resumeAll),
-                            icon: const Icon(Icons.download),
-                            label: const Text('全部继续'),
-                          ),
-                        ],
-                      ),
-                      for (final error in [
-                        if (_error != null) _error!,
-                        ..._autoDownloads.errors,
-                      ])
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            error,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                          ),
-                        ),
-                      if (albums.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 24),
-                          child: Center(child: Text('暂无下载')),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
+          child: Column(
+            children: [
+              const TabBar(
+                tabs: [
+                  Tab(text: '下载任务'),
+                  Tab(text: '已下载'),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    _albumList(downloaded: false),
+                    _albumList(downloaded: true),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-      );
-    },
+      ),
+    ),
   );
 
   Widget _taskCard(DownloadTask task, bool compact) {
@@ -804,9 +1017,6 @@ class _DownloadPageState extends State<DownloadPage> {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
             ),
-            if (task.state == DownloadState.completed &&
-                (task.finalPath == null || _available[task.id] == false))
-              const Text('音频文件已不存在，可重试下载'),
             if (task.error != null)
               Text(
                 task.error!,
@@ -839,13 +1049,6 @@ class _DownloadPageState extends State<DownloadPage> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                if (task.state == DownloadState.completed &&
-                    _available[task.id] == true)
-                  TextButton(
-                    onPressed: () =>
-                        _run(() => widget.runtime.player.playTrack(task.track)),
-                    child: const Text('播放'),
-                  ),
                 if (task.active)
                   TextButton(
                     onPressed: () =>
@@ -861,10 +1064,7 @@ class _DownloadPageState extends State<DownloadPage> {
                           : '继续',
                     ),
                   ),
-                if (task.state == DownloadState.failed ||
-                    task.state == DownloadState.awaitingDebit ||
-                    task.state == DownloadState.completed ||
-                    task.state == DownloadState.cancelled)
+                if (task.state == DownloadState.failed)
                   TextButton(
                     onPressed: () => _run(() => _retry(task)),
                     child: Text(
@@ -906,27 +1106,6 @@ class _DownloadPageState extends State<DownloadPage> {
                   onPressed: () => _run(() => _open(task)),
                   child: const Text('打开目录'),
                 ),
-                if (task.accountIdentity != 'anonymous' &&
-                    task.track.albumId.isNotEmpty)
-                  TextButton(
-                    onPressed: () => _run(
-                      () => setAlbumAutoDownload(
-                        context,
-                        _autoDownloads,
-                        task.accountIdentity,
-                        task.track.albumId,
-                        task.track.album,
-                      ),
-                    ),
-                    child: Text(
-                      _autoDownloads.enabled(
-                            task.accountIdentity,
-                            task.track.albumId,
-                          )
-                          ? '关闭自动下载新声音'
-                          : '自动下载新声音',
-                    ),
-                  ),
                 if (task.finalPath != null)
                   TextButton(
                     onPressed: () => _run(() => _delete(task)),

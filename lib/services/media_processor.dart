@@ -12,6 +12,9 @@ import '../models/xmly_models.dart';
 import 'download_paths.dart';
 import 'android_platform.dart';
 
+import 'request_diagnostics.dart';
+import 'network_retry.dart';
+
 class MediaResult {
   MediaResult({
     required this.path,
@@ -731,84 +734,151 @@ class MediaProcessor {
     String directory,
     Future<void> Function()? checkpoint,
   ) async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10);
-    client.findProxy = (_) => 'DIRECT';
-    client.connectionFactory = (uri, proxyHost, proxyPort) async {
-      final addresses = await _safeCoverUri(uri);
-      return uri.scheme == 'https'
-          ? SecureSocket.startConnect(addresses.first, uri.port)
-          : Socket.startConnect(addresses.first, uri.port);
-    };
-    final deadline = DateTime.now().add(const Duration(seconds: 30));
-    Future<T> wait<T>(Future<T> future) async {
-      while (true) {
-        await checkpoint?.call();
-        final left = deadline.difference(DateTime.now());
-        if (left <= Duration.zero) throw TimeoutException('Cover timeout');
-        final outcome = await Future.any<Object?>([
-          future.then<Object?>((value) => (value,)),
-          Future<void>.delayed(const Duration(milliseconds: 100))
-              .then<Object?>((_) => null),
-        ]);
-        if (outcome != null) return (outcome as (T,)).$1;
-      }
-    }
-
-    try {
-      var uri = initial;
-      for (var redirects = 0; redirects <= 5; redirects++) {
-        await wait(_safeCoverUri(uri));
-        final request = await wait(client.getUrl(uri));
-        request.followRedirects = false;
-        final response = await wait(request.close());
-        if (const {301, 302, 303, 307, 308}.contains(response.statusCode)) {
-          final location = response.headers.value(HttpHeaders.locationHeader);
-          if (location == null || redirects == 5)
-            throw const HttpException('Invalid cover redirect');
-          uri = uri.resolve(location);
-          continue;
-        }
-        if (response.statusCode != 200 ||
-            response.contentLength > 5 * 1024 * 1024) {
-          throw const HttpException('Invalid cover response');
-        }
-        final bytes = <int>[];
-        final iterator = StreamIterator(response);
-        try {
-          while (await wait(iterator.moveNext())) {
-            if (bytes.length + iterator.current.length > 5 * 1024 * 1024)
-              throw const HttpException('Cover too large');
-            bytes.addAll(iterator.current);
+    for (var attempt = 0; ; attempt++) {
+      await checkpoint?.call();
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 10);
+      client.findProxy = (_) => 'DIRECT';
+      client.connectionFactory = (uri, proxyHost, proxyPort) async {
+        final addresses = await _safeCoverUri(uri);
+        return uri.scheme == 'https'
+            ? SecureSocket.startConnect(addresses.first, uri.port)
+            : Socket.startConnect(addresses.first, uri.port);
+      };
+      // Retry-After is outside this per-attempt redirect/body deadline.
+      final deadline = DateTime.now().add(const Duration(seconds: 30));
+      Future<T> wait<T>(Future<T> future) async {
+        final pending = future.then<Object>(
+          (value) => (value,),
+          onError: (Object error, StackTrace stack) => (error, stack),
+        );
+        while (true) {
+          await checkpoint?.call();
+          final left = deadline.difference(DateTime.now());
+          if (left <= Duration.zero) throw TimeoutException('Cover timeout');
+          final outcome = await Future.any<Object?>([
+            pending,
+            Future<void>.delayed(
+              left < const Duration(milliseconds: 100)
+                  ? left
+                  : const Duration(milliseconds: 100),
+            ).then<Object?>((_) => null),
+          ]);
+          if (outcome case (Object error, StackTrace stack)) {
+            Error.throwWithStackTrace(error, stack);
           }
-        } finally {
-          await iterator.cancel();
+          if (outcome != null) return (outcome as (T,)).$1;
         }
-        final png =
-            bytes.length >= 8 &&
-            const [
-              137,
-              80,
-              78,
-              71,
-              13,
-              10,
-              26,
-              10,
-            ].asMap().entries.every((entry) => bytes[entry.key] == entry.value);
-        final jpeg =
-            bytes.length >= 3 &&
-            bytes[0] == 255 &&
-            bytes[1] == 216 &&
-            bytes[2] == 255;
-        if (!png && !jpeg) throw const FormatException('Invalid cover image');
-        final file = File(p.join(directory, png ? 'cover.png' : 'cover.jpg'));
-        await file.writeAsBytes(bytes, flush: true);
-        return file.path;
       }
-      throw const HttpException('Cover redirect limit');
-    } finally {
-      client.close(force: true);
+
+      RequestDiagnostic? diagnostic;
+      HttpClientResponse? response;
+      var definitive = false;
+      Duration? delay;
+      try {
+        var uri = initial;
+        for (var redirects = 0; redirects <= 5; redirects++) {
+          response = null;
+          diagnostic = null;
+          final bytes = <int>[];
+          diagnostic = RequestDiagnostic(
+            account: '公共嵌入封面（无账号）',
+            method: 'GET',
+            url: '$uri',
+          )..responseBytes = (() => bytes);
+          await wait(_safeCoverUri(uri));
+          response = null;
+          final request = await wait(client.getUrl(uri));
+          request.followRedirects = false;
+          request.headers.forEach((name, values) {
+            diagnostic!.requestHeaders[name] = List<String>.of(values);
+          });
+          final current = await wait(request.close());
+          response = current;
+          diagnostic
+            ..status = current.statusCode
+            ..completeness = '响应体接收中；失败时保留全部已接收字节';
+          current.headers.forEach((name, values) {
+            diagnostic!.responseHeaders[name] = List<String>.of(values);
+          });
+          final redirect = const {
+            301,
+            302,
+            303,
+            307,
+            308,
+          }.contains(current.statusCode);
+          final location = current.headers.value(HttpHeaders.locationHeader);
+          if (redirect && location != null && redirects < 5) {
+            await current.listen((_) {}).cancel();
+            uri = uri.resolve(location);
+            continue;
+          }
+          const limit = 5 * 1024 * 1024;
+          if (current.contentLength > limit) {
+            definitive = true;
+            diagnostic.completeness = '未读取响应体：Content-Length 超过 5 MiB 安全上限';
+            throw const HttpException('Cover too large');
+          }
+          final iterator = StreamIterator(current);
+          try {
+            while (await wait(iterator.moveNext())) {
+              final room = limit - bytes.length;
+              if (iterator.current.length > room) {
+                bytes.addAll(iterator.current.take(room));
+                definitive = true;
+                diagnostic.completeness = '响应体超过 5 MiB 安全上限；已捕获上限内全部字节';
+                throw const HttpException('Cover too large');
+              }
+              bytes.addAll(iterator.current);
+            }
+          } finally {
+            await iterator.cancel();
+          }
+          diagnostic.completeness = '完整响应体';
+          if (redirect || current.statusCode != 200) {
+            definitive = redirect || !retryableStatus(current.statusCode);
+            throw HttpException(
+              'Invalid cover response: HTTP ${current.statusCode}',
+            );
+          }
+          definitive = true;
+          final png =
+              bytes.length >= 8 &&
+              const [137, 80, 78, 71, 13, 10, 26, 10].asMap().entries.every(
+                (entry) => bytes[entry.key] == entry.value,
+              );
+          final jpeg =
+              bytes.length >= 3 &&
+              bytes[0] == 255 &&
+              bytes[1] == 216 &&
+              bytes[2] == 255;
+          if (!png && !jpeg) throw const FormatException('Invalid cover image');
+          await checkpoint?.call();
+          final file = File(p.join(directory, png ? 'cover.png' : 'cover.jpg'));
+          await file.writeAsBytes(bytes, flush: true);
+          return file.path;
+        }
+        throw const FormatException('Cover redirect limit');
+      } catch (error) {
+        if (retryableTransport(error)) diagnostic?.transportError = '$error';
+        await diagnostic?.fail(error);
+        if (definitive ||
+            attempt == 4 ||
+            error is FormatException ||
+            error is TlsException ||
+            error is _MediaCancelled ||
+            !(retryableStatus(response?.statusCode) ||
+                retryableTransport(error)))
+          rethrow;
+        delay = retryDelay(
+          attempt,
+          response?.headers.value(HttpHeaders.retryAfterHeader),
+        );
+      } finally {
+        client.close(force: true);
+      }
+      await waitToRetry(delay, checkpoint: checkpoint);
     }
   }
 
@@ -818,7 +888,7 @@ class MediaProcessor {
         uri.userInfo.isNotEmpty ||
         (uri.hasPort && uri.port != 80 && uri.port != 443) ||
         uri.toString().length > 16384)
-      throw const HttpException('Invalid cover URL');
+      throw const FormatException('Invalid cover URL');
     final addresses = await InternetAddress.lookup(uri.host)
         .timeout(const Duration(seconds: 10));
     if (addresses.isEmpty ||
@@ -844,7 +914,7 @@ class MediaProcessor {
           return (bytes[0] & 0xe0) !=
               0x20; // Only global IPv6 unicast, never mapped IPv4.
         }))
-      throw const HttpException('Non-public cover URL');
+      throw const FormatException('Non-public cover URL');
     return addresses;
   }
 

@@ -9,7 +9,7 @@ import 'xmly_client.dart';
 
 class XmlyHistory {
   XmlyHistory(this.client, {DateTime Function()? clock})
-      : _clock = clock ?? DateTime.now;
+    : _clock = clock ?? DateTime.now;
   final XmlyClient client;
   final DateTime Function() _clock;
   static const _material =
@@ -17,15 +17,20 @@ class XmlyHistory {
 
   static String signature(Map<String, String> params) {
     final keys = params.keys.toList()..sort();
-    final text = '${keys.map((key) => '$key=${params[key]}&').join()}$_material';
+    final text =
+        '${keys.map((key) => '$key=${params[key]}&').join()}$_material';
     // Native PLAY performs ASCII lowercasing, not Unicode case folding.
-    final asciiLower = String.fromCharCodes(text.codeUnits.map(
-        (c) => c >= 65 && c <= 90 ? c + 32 : c));
+    final asciiLower = String.fromCharCodes(
+      text.codeUnits.map((c) => c >= 65 && c <= 90 ? c + 32 : c),
+    );
     return md5.convert(utf8.encode(asciiLower)).toString();
   }
 
-  static int _integer(Object? value, [int fallback = 0]) =>
-      value is int ? value : value is String ? int.tryParse(value) ?? fallback : fallback;
+  static int _integer(Object? value, [int fallback = 0]) => value is int
+      ? value
+      : value is String
+      ? int.tryParse(value) ?? fallback
+      : fallback;
 
   static String _id(String value) {
     final match = RegExp(r'^(?:xmly:)?([1-9][0-9]{0,18})$').firstMatch(value);
@@ -36,9 +41,11 @@ class XmlyHistory {
   Map<String, String> _context() {
     final context = client.context();
     if (!RegExp(r'^[1-9][0-9]*$').hasMatch(context['uid'] ?? '') ||
-        (context['token'] ?? '').isEmpty || context['device'] != 'android' ||
+        (context['token'] ?? '').isEmpty ||
+        context['device'] != 'android' ||
         (context['deviceId'] ?? '').isEmpty ||
-        (context['version'] ?? '').isEmpty || (context['channel'] ?? '').isEmpty ||
+        (context['version'] ?? '').isEmpty ||
+        (context['channel'] ?? '').isEmpty ||
         context['impl'] != 'com.ximalaya.ting.lite') {
       throw XmlyException('auth_required', '历史同步需要有效的极速版登录态');
     }
@@ -46,18 +53,29 @@ class XmlyHistory {
   }
 
   static Map<String, dynamic>? normalize(Object? raw) {
-    if (raw is! Map || ![1, 9].contains(_integer(raw['type'])) ||
-        _integer(raw['deleteTime']) > 0) return null;
+    if (raw is! Map ||
+        ![1, 9].contains(_integer(raw['type'])) ||
+        _integer(raw['deleteTime']) > 0)
+      return null;
     String track, album;
-    try { track = _id('${raw['childId']}'); album = _id('${raw['itemId']}'); }
-    on ArgumentError { return null; }
+    try {
+      track = _id('${raw['childId']}');
+      album = _id('${raw['itemId']}');
+    } on ArgumentError {
+      return null;
+    }
     final duration = _integer(raw['length']).clamp(0, 2147483647);
     var position = _integer(raw['breakSecond']).clamp(0, 2147483647);
     if (duration > 0) position = position.clamp(0, duration);
-    final cover = Album.fromApi({'albumId': album, 'cover_url': raw['itemCoverUrl']}).coverUrl;
+    final cover = Album.fromApi({
+      'albumId': album,
+      'cover_url': raw['itemCoverUrl'],
+    }).coverUrl;
     return {
-      'track_id': 'xmly:$track', 'album_id': album,
-      'position': position.toDouble(), 'duration': duration.toDouble(),
+      'track_id': 'xmly:$track',
+      'album_id': album,
+      'position': position.toDouble(),
+      'duration': duration.toDouble(),
       'title': '${raw['childTitle'] ?? ''}',
       'album_title': '${raw['itemTitle'] ?? ''}',
       if (cover != null) 'cover_url': cover.toString(),
@@ -68,7 +86,11 @@ class XmlyHistory {
   static Map<String, dynamic> _data(Map<String, dynamic> response) {
     Object? data = response['data'];
     if (data is String) {
-      try { data = jsonDecode(data); } on FormatException { data = null; }
+      try {
+        data = jsonDecode(data);
+      } on FormatException {
+        data = null;
+      }
     }
     if (data is! Map<String, dynamic>) {
       throw XmlyException('invalid_response', '历史记录格式无效');
@@ -82,11 +104,18 @@ class XmlyHistory {
     final items = <String, Map<String, dynamic>>{};
     final pages = <String>{};
     for (var page = 1; page <= 50; page++) {
-      final response = await client.request('GET', XmlyClient.mobile,
-          '/nyx/v1/history/query/android', query: {
-            'pageId': '$page', 'pageSize': '100', 'syncPoint': '0',
-            'timeStamp': '${_clock().millisecondsSinceEpoch}', 'uid': context['uid'],
-          });
+      final response = await client.request(
+        'GET',
+        XmlyClient.mobile,
+        '/nyx/v1/history/query/android',
+        query: {
+          'pageId': '$page',
+          'pageSize': '100',
+          'syncPoint': '0',
+          'timeStamp': '${_clock().millisecondsSinceEpoch}',
+          'uid': context['uid'],
+        },
+      );
       if (identity != client.cacheIdentity) {
         throw XmlyException('account_changed', '查询期间账号已变更，请重试');
       }
@@ -104,13 +133,16 @@ class XmlyHistory {
         if (item == null) continue;
         final id = item['track_id'] as String;
         if (!items.containsKey(id) ||
-            (item['updated_at'] as double) > (items[id]!['updated_at'] as double)) {
+            (item['updated_at'] as double) >
+                (items[id]!['updated_at'] as double)) {
           items[id] = item;
         }
       }
       if (!more) {
-        return items.values.toList()..sort((a, b) =>
-            (b['updated_at'] as double).compareTo(a['updated_at'] as double));
+        return items.values.toList()..sort(
+          (a, b) =>
+              (b['updated_at'] as double).compareTo(a['updated_at'] as double),
+        );
       }
       if (raw.isEmpty) throw XmlyException('invalid_response', '历史分页未返回记录');
     }
@@ -124,50 +156,84 @@ class XmlyHistory {
     final items = await records();
     return {
       'items': items.skip((page - 1) * pageSize).take(pageSize).toList(),
-      'page': page, 'page_size': pageSize, 'total': items.length,
+      'page': page,
+      'page_size': pageSize,
+      'total': items.length,
     };
   }
 
-  Future<Map<String, dynamic>?> progress({String albumId = '', String trackId = ''}) async {
+  Future<Map<String, dynamic>?> progress({
+    String albumId = '',
+    String trackId = '',
+  }) async {
     final album = albumId.isEmpty ? '' : _id(albumId);
     final track = trackId.isEmpty ? '' : 'xmly:${_id(trackId)}';
     if (album.isEmpty && track.isEmpty) throw ArgumentError('请指定声音或专辑');
     for (final item in await records()) {
       if ((album.isEmpty || item['album_id'] == album) &&
-          (track.isEmpty || item['track_id'] == track)) return item;
+          (track.isEmpty || item['track_id'] == track))
+        return item;
     }
     return null;
   }
 
-  /// Explicit write only; transport sends this absolute history record once.
-  Future<void> sync(Track track, double position, int startedAtMs, int endedAtMs) async {
+  /// Explicit write only; retries reuse the same absolute history snapshot.
+  Future<void> sync(
+    Track track,
+    double position,
+    int startedAtMs,
+    int endedAtMs,
+  ) async {
     if (!track.id.startsWith('xmly:')) throw ArgumentError('只能同步喜马拉雅声音');
     final id = _id(track.id);
-    final album = _id(track.albumId.isNotEmpty ? track.albumId :
-        '${track.raw['album_id'] ?? track.raw['albumId'] ?? ''}');
-    if (!position.isFinite || position < 0 || position > 2147483647 ||
-        startedAtMs <= 0 || startedAtMs > endedAtMs || endedAtMs > 2115354119000) {
+    final album = _id(
+      track.albumId.isNotEmpty
+          ? track.albumId
+          : '${track.raw['album_id'] ?? track.raw['albumId'] ?? ''}',
+    );
+    if (!position.isFinite ||
+        position < 0 ||
+        position > 2147483647 ||
+        startedAtMs <= 0 ||
+        startedAtMs > endedAtMs ||
+        endedAtMs > 2115354119000) {
       throw ArgumentError('播放进度或收听起止时间无效');
     }
     if (track.duration.isFinite && track.duration > 0) {
       position = position.clamp(0, track.duration);
     }
     if (endedAtMs == startedAtMs) {
-      endedAtMs = _clock().millisecondsSinceEpoch.clamp(startedAtMs, 2115354119000);
+      endedAtMs = _clock().millisecondsSinceEpoch.clamp(
+        startedAtMs,
+        2115354119000,
+      );
     }
     final direction = track.raw['direction'] ?? 0;
     if (direction is! int || (direction != 0 && direction != 1)) {
       throw ArgumentError('专辑播放顺序无效');
     }
-    final params = <String, String>{'mergeRecords': jsonEncode([{
-      'endedAt': '$endedAtMs', 'startedAt': '$startedAtMs', 'type': '1',
-      'itemId': album, 'childId': id, 'breakSecond': '${position.truncate()}',
-      'direction': direction,
-    }])};
+    final params = <String, String>{
+      'mergeRecords': jsonEncode([
+        {
+          'endedAt': '$endedAtMs',
+          'startedAt': '$startedAtMs',
+          'type': '1',
+          'itemId': album,
+          'childId': id,
+          'breakSecond': '${position.truncate()}',
+          'direction': direction,
+        },
+      ]),
+    };
     params['signature'] = signature({...params, ..._context()});
     final identity = client.cacheIdentity;
-    final response = await client.request('POST', XmlyClient.collector,
-        '/nyx/v1/history/merge/android', data: params, form: true);
+    final response = await client.request(
+      'POST',
+      XmlyClient.collector,
+      '/nyx/v1/history/merge/android',
+      data: params,
+      form: true,
+    );
     if (identity != client.cacheIdentity) {
       throw XmlyException('account_changed', '同步期间账号已变更');
     }

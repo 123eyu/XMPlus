@@ -11,7 +11,11 @@ import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
 import '../services/download_service.dart';
 import 'download_page.dart'
-    show deleteDownloadedAudio, requestDownloads, setAlbumAutoDownload;
+    show
+        deleteDownloadedAudio,
+        requestAlbumDownloads,
+        requestDownloads,
+        setAlbumAutoDownload;
 import 'media_settings_page.dart';
 import 'playback_settings_page.dart';
 
@@ -255,6 +259,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   final _selected = <String, Track>{};
   final _fileChecks = <String, Future<DownloadTask?>>{};
   List<DownloadTask> _observedDownloads = [];
+  Set<String> _downloaded = {};
   Object? _observedCache;
   Album? _album;
   List<Track> _visible = [];
@@ -270,6 +275,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   void initState() {
     super.initState();
     widget.runtime.addListener(_runtimeChanged);
+    _downloaded = _completedTrackIds();
     _restoreCache();
     _loadPage(1);
     _scanUpdates();
@@ -293,6 +299,8 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           !identical(cached, _observedCache)) {
         _observedDownloads = downloads;
         _observedCache = cached;
+        _downloaded = _completedTrackIds();
+        _selected.removeWhere((id, _) => _downloaded.contains(id));
         _fileChecks.clear();
         if (_cachedView) _showCached(_page);
       }
@@ -370,8 +378,13 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     return null;
   }
 
+  Set<String> _completedTrackIds() => {
+    for (final task in widget.runtime.downloads.tasks)
+      if (task.state == DownloadState.completed) task.track.id,
+  };
+
   void _select(Track track, bool selected) {
-    if (selected) {
+    if (selected && !_downloaded.contains(track.id)) {
       _selected[track.id] = track;
     } else {
       _selected.remove(track.id);
@@ -524,13 +537,19 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       _error = null;
     });
     try {
-      final tracks = all
-          ? await _all()
-          : _range.text.trim().isNotEmpty
+      if (all) {
+        await requestAlbumDownloads(context, widget.runtime, widget.albumId);
+        return;
+      }
+      final requested = _range.text.trim().isNotEmpty
           ? XmlyCatalogue.selectRange(await _all(), _range.text)
           : _selected.values.toList();
+      final downloaded = _completedTrackIds();
+      final tracks = requested
+          .where((track) => !downloaded.contains(track.id))
+          .toList();
       if (tracks.isEmpty)
-        throw const XmlyException('empty_selection', '请先选择声音或填写集数范围');
+        throw const XmlyException('empty_selection', '请选择未下载的声音或填写集数范围');
       if (!mounted) return;
       await requestDownloads(context, widget.runtime, tracks);
     } catch (error) {
@@ -575,7 +594,8 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       case 'queue':
         await widget.runtime.player.addToQueue(track);
       case 'download':
-        await requestDownloads(context, widget.runtime, [track]);
+        if (!_completedTrackIds().contains(track.id))
+          await requestDownloads(context, widget.runtime, [track]);
       case 'delete':
         final task = await _localDownload(track);
         if (mounted &&
@@ -602,10 +622,10 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       itemBuilder: (_) => [
         const PopupMenuItem(value: 'play', child: Text('播放')),
         const PopupMenuItem(value: 'queue', child: Text('加入播放队列')),
-        if (snapshot.data == null)
-          const PopupMenuItem(value: 'download', child: Text('下载'))
-        else
-          const PopupMenuItem(value: 'delete', child: Text('删除已下载文件')),
+        if (snapshot.data != null)
+          const PopupMenuItem(value: 'delete', child: Text('删除已下载文件'))
+        else if (!_downloaded.contains(track.id))
+          const PopupMenuItem(value: 'download', child: Text('下载')),
         PopupMenuItem(
           value: 'favorite',
           child: Text(_favorite(track) ? '取消收藏' : '收藏'),
@@ -728,6 +748,14 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                                         .albumCache[widget.albumId]
                                         ?.coverPath,
                                     size: 88,
+                                    downloaded: widget.runtime.downloads.tasks
+                                        .any(
+                                          (task) =>
+                                              task.track.albumId ==
+                                                  widget.albumId &&
+                                              task.state ==
+                                                  DownloadState.completed,
+                                        ),
                                   ),
                                 if (!compact) const SizedBox(width: 12),
                                 Expanded(
@@ -827,6 +855,23 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                             runSpacing: 8,
                             children: [
                               OutlinedButton.icon(
+                                onPressed: () => setState(() {
+                                  if (_selectionMode) {
+                                    _clearSelection();
+                                  } else {
+                                    _selectionMode = true;
+                                  }
+                                }),
+                                icon: Icon(
+                                  _selectionMode
+                                      ? Icons.close
+                                      : Icons.checklist,
+                                ),
+                                label: Text(
+                                  _selectionMode ? '退出下载模式' : '进入下载模式',
+                                ),
+                              ),
+                              OutlinedButton.icon(
                                 onPressed: canDownload
                                     ? () => _download(all: true)
                                     : null,
@@ -857,13 +902,11 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                                   child: Text('下载所选 (${_selected.length})'),
                                 ),
                                 TextButton(
-                                  onPressed: () => setState(
-                                    () => _selected.addEntries(
-                                      _visible.map(
-                                        (track) => MapEntry(track.id, track),
-                                      ),
-                                    ),
-                                  ),
+                                  onPressed: () => setState(() {
+                                    for (final track in _visible) {
+                                      _select(track, true);
+                                    }
+                                  }),
                                   child: const Text('选择本页'),
                                 ),
                                 TextButton(
@@ -892,37 +935,45 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                     itemCount: _visible.length,
                     itemBuilder: (_, index) {
                       final track = _visible[index];
+                      final downloaded = _downloaded.contains(track.id);
                       return ListTile(
                         leading: _selectionMode
                             ? Checkbox(
                                 value: _selected.containsKey(track.id),
-                                onChanged: (value) => setState(
-                                  () => _select(track, value == true),
-                                ),
+                                onChanged: downloaded
+                                    ? null
+                                    : (value) => setState(
+                                        () => _select(track, value == true),
+                                      ),
                               )
                             : (compact
                                   ? null
                                   : CoverImage(
                                       uri: track.coverUrl ?? album?.coverUrl,
+                                      downloaded: downloaded,
                                       localPath: widget
                                           .runtime
                                           .albumCache[widget.albumId]
                                           ?.coverPath,
                                     )),
                         title: AdaptiveText(track.title),
-                        subtitle: Text(_duration(track.duration)),
+                        subtitle: Text(
+                          '${_duration(track.duration)}${downloaded ? ' · 已下载' : ''}',
+                        ),
                         trailing: _menu(track),
                         onLongPress: () => setState(() {
                           _selectionMode = true;
-                          _selected[track.id] = track;
+                          _select(track, true);
                         }),
                         onTap: _selectionMode
-                            ? () => setState(
-                                () => _select(
-                                  track,
-                                  !_selected.containsKey(track.id),
-                                ),
-                              )
+                            ? downloaded
+                                  ? null
+                                  : () => setState(
+                                      () => _select(
+                                        track,
+                                        !_selected.containsKey(track.id),
+                                      ),
+                                    )
                             : () => unawaited(
                                 _play(track).catchError((error) {
                                   if (mounted)
@@ -956,40 +1007,67 @@ class CoverImage extends StatelessWidget {
     required this.uri,
     this.localPath,
     this.size = 52,
+    this.downloaded = false,
     super.key,
   });
   final String? localPath;
   final Uri? uri;
   final double size;
+  final bool downloaded;
   @override
   Widget build(BuildContext context) {
     if (MediaQuery.sizeOf(context).width < 320) return const SizedBox.shrink();
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: ColoredBox(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: localPath != null
-              ? Image.file(
-                  File(localPath!),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const Icon(Icons.album_outlined),
-                )
-              : uri == null
-              ? const Icon(Icons.album_outlined)
-              : Image.network(
-                  uri.toString(),
-                  fit: BoxFit.cover,
-                  frameBuilder: (_, child, frame, synchronous) =>
-                      frame != null || synchronous
-                      ? child
-                      : const Icon(Icons.album_outlined),
-                  errorBuilder: (_, _, _) => const Icon(Icons.album_outlined),
-                ),
+    return Stack(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: ColoredBox(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: localPath != null
+                  ? Image.file(
+                      File(localPath!),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) =>
+                          const Icon(Icons.album_outlined),
+                    )
+                  : uri == null
+                  ? const Icon(Icons.album_outlined)
+                  : Image.network(
+                      uri.toString(),
+                      fit: BoxFit.cover,
+                      frameBuilder: (_, child, frame, synchronous) =>
+                          frame != null || synchronous
+                          ? child
+                          : const Icon(Icons.album_outlined),
+                      errorBuilder: (_, _, _) =>
+                          const Icon(Icons.album_outlined),
+                    ),
+            ),
+          ),
         ),
-      ),
+        if (downloaded)
+          Positioned(
+            right: 2,
+            bottom: 2,
+            child: Tooltip(
+              message: '已下载',
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Theme.of(context).colorScheme.surface,
+                ),
+                child: Icon(
+                  Icons.check_circle,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

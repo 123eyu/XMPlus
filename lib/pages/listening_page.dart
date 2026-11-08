@@ -8,7 +8,6 @@ import '../common/widgets/adaptive_text.dart';
 import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
 import 'catalogue_page.dart';
-import 'download_page.dart';
 import 'library_page.dart';
 import 'player_panel.dart';
 
@@ -369,20 +368,16 @@ class _ListeningPageState extends State<ListeningPage> {
         ],
       ),
       onTap: _acting ? null : play,
-      trailing: PopupMenuButton<String>(
-        tooltip: '声音操作',
-        enabled: !_acting,
-        onSelected: (value) {
-          if (value == 'album') _openAlbum(track.albumId);
-          if (value == 'download')
-            unawaited(_act(() => widget.onDownload([track])));
-        },
-        itemBuilder: (_) => [
-          if (track.albumId.isNotEmpty)
-            const PopupMenuItem(value: 'album', child: Text('查看专辑')),
-          const PopupMenuItem(value: 'download', child: Text('下载')),
-        ],
-      ),
+      trailing: track.albumId.isEmpty
+          ? null
+          : PopupMenuButton<String>(
+              tooltip: '声音操作',
+              enabled: !_acting,
+              onSelected: (_) => _openAlbum(track.albumId),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'album', child: Text('查看专辑')),
+              ],
+            ),
     );
   }
 
@@ -572,7 +567,7 @@ class _ListeningPageState extends State<ListeningPage> {
 
   @override
   Widget build(BuildContext context) => DefaultTabController(
-    length: 4,
+    length: 3,
     child: Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 960),
@@ -631,7 +626,6 @@ class _ListeningPageState extends State<ListeningPage> {
                   Tab(text: '听更新'),
                   Tab(text: '订阅'),
                   Tab(text: '历史'),
-                  Tab(text: '下载'),
                 ],
               ),
             ),
@@ -639,12 +633,7 @@ class _ListeningPageState extends State<ListeningPage> {
               const SliverToBoxAdapter(child: LinearProgressIndicator()),
           ],
           body: TabBarView(
-            children: [
-              _updatesTab(),
-              _subscriptionsTab(),
-              _historyTab(),
-              DownloadPage(runtime: _runtime),
-            ],
+            children: [_updatesTab(), _subscriptionsTab(), _historyTab()],
           ),
         ),
       ),

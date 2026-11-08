@@ -9,10 +9,18 @@ import '../storage/app_storage.dart';
 enum DebitState { prepared, submitting, confirmed, uncertain, rejected }
 
 class DownloadReceipt {
-  const DownloadReceipt({required this.operationId, required this.accountIdentity,
-    required this.trackId, required this.taskId, required this.seconds,
-    required this.balanceBefore, this.balanceAfter, required this.createdAt,
-    required this.state, this.historical = false});
+  const DownloadReceipt({
+    required this.operationId,
+    required this.accountIdentity,
+    required this.trackId,
+    required this.taskId,
+    required this.seconds,
+    required this.balanceBefore,
+    this.balanceAfter,
+    required this.createdAt,
+    required this.state,
+    this.historical = false,
+  });
 
   final String operationId, accountIdentity, trackId, taskId;
   final int seconds, balanceBefore;
@@ -22,43 +30,68 @@ class DownloadReceipt {
   final bool historical;
 
   factory DownloadReceipt.fromJson(Map<String, dynamic> value) {
-    final historical = value['historical'] == true || value['state'] == 'historical';
-    final state = value['state'] == 'historical' ? DebitState.confirmed : DebitState.values
-        .where((item) => item.name == value['state']).firstOrNull;
+    final historical =
+        value['historical'] == true || value['state'] == 'historical';
+    final state = value['state'] == 'historical'
+        ? DebitState.confirmed
+        : DebitState.values
+              .where((item) => item.name == value['state'])
+              .firstOrNull;
     if (state == null ||
-        ['operationId', 'accountIdentity', 'trackId', 'taskId'].any((key) =>
-          value[key] is! String || (value[key] as String).isEmpty) ||
-        value['seconds'] is! int || (value['seconds'] as int) < 1 ||
+        ['operationId', 'accountIdentity', 'trackId', 'taskId'].any(
+          (key) => value[key] is! String || (value[key] as String).isEmpty,
+        ) ||
+        value['seconds'] is! int ||
+        (value['seconds'] as int) < 1 ||
         (value['seconds'] as int) > UsageLedger.maxSeconds ||
-        value['balanceBefore'] is! int || (value['balanceBefore'] as int) < 0 ||
-        (value['balanceAfter'] != null && (value['balanceAfter'] is! int ||
-          (value['balanceAfter'] as int) < 0)) || value['createdAt'] is! int) {
+        value['balanceBefore'] is! int ||
+        (value['balanceBefore'] as int) < 0 ||
+        (value['balanceAfter'] != null &&
+            (value['balanceAfter'] is! int ||
+                (value['balanceAfter'] as int) < 0)) ||
+        value['createdAt'] is! int) {
       throw const XmlyException('invalid_ledger', '扣时记录损坏，请保留资料并恢复备份');
     }
-    return DownloadReceipt(operationId: value['operationId'] as String,
+    return DownloadReceipt(
+      operationId: value['operationId'] as String,
       accountIdentity: value['accountIdentity'] as String,
       trackId: 'xmly:${xmlyIdentifier(value['trackId'] as String)}',
-      taskId: value['taskId'] as String, seconds: value['seconds'] as int,
+      taskId: value['taskId'] as String,
+      seconds: value['seconds'] as int,
       balanceBefore: value['balanceBefore'] as int,
       balanceAfter: value['balanceAfter'] as int?,
       createdAt: DateTime.fromMillisecondsSinceEpoch(value['createdAt'] as int),
-      state: state, historical: historical);
+      state: state,
+      historical: historical,
+    );
   }
 
-  Map<String, dynamic> toJson() => {'operationId': operationId,
-    'accountIdentity': accountIdentity, 'trackId': trackId, 'taskId': taskId,
-    'seconds': seconds, 'balanceBefore': balanceBefore, 'balanceAfter': balanceAfter,
+  Map<String, dynamic> toJson() => {
+    'operationId': operationId,
+    'accountIdentity': accountIdentity,
+    'trackId': trackId,
+    'taskId': taskId,
+    'seconds': seconds,
+    'balanceBefore': balanceBefore,
+    'balanceAfter': balanceAfter,
     'createdAt': createdAt.millisecondsSinceEpoch,
-    'state': historical && state == DebitState.confirmed ? 'historical' : state.name,
-    if (historical) ...{'historical': true, 'downloadExempt': false}};
+    'state': historical && state == DebitState.confirmed
+        ? 'historical'
+        : state.name,
+    if (historical) ...{'historical': true, 'downloadExempt': false},
+  };
 }
 
 /// One account mutex covers online debt and download prepayments. A local UUID
 /// identifies the journal entry only: the server has no idempotency key.
 class UsageLedger {
-  UsageLedger({required this.storage, required this.clientFor,
-    Duration Function()? monotonic, DateTime Function()? clock})
-      : _monotonic = monotonic ?? _elapsedClock(), _clock = clock ?? DateTime.now;
+  UsageLedger({
+    required this.storage,
+    required this.clientFor,
+    Duration Function()? monotonic,
+    DateTime Function()? clock,
+  }) : _monotonic = monotonic ?? _elapsedClock(),
+       _clock = clock ?? DateTime.now;
 
   static const maxSeconds = 2147483647;
   static const reportFactor = 1.0;
@@ -87,48 +120,59 @@ class UsageLedger {
       throw const XmlyException('invalid_ledger', '听时记录损坏，请保留资料');
     }
     final result = ledger as Map<String, dynamic>? ?? const <String, dynamic>{};
-    if ((result['usage_uncertain'] != null && result['usage_uncertain'] is! bool) ||
+    if ((result['usage_uncertain'] != null &&
+            result['usage_uncertain'] is! bool) ||
         (result['usage_pending'] != null && result['usage_pending'] is! Map)) {
       throw const XmlyException('invalid_ledger', '待核对听时记录无效，请保留资料');
     }
     return result;
   }
 
-  Future<void> _write(String identity, void Function(Map<String, dynamic>) update) =>
-      storage.transaction((state) {
-        final account = (state['accounts'] as Map)[identity];
-        if (account is! Map) {
-          throw const XmlyException('missing_account', '请先登录原账号');
-        }
-        final ledger = account.putIfAbsent('ledger', () => <String, dynamic>{});
-        if (ledger is! Map<String, dynamic>) {
-          throw const XmlyException('invalid_ledger', '听时记录损坏，请保留资料');
-        }
-        update(ledger);
-      });
+  Future<void> _write(
+    String identity,
+    void Function(Map<String, dynamic>) update,
+  ) => storage.transaction((state) {
+    final account = (state['accounts'] as Map)[identity];
+    if (account is! Map) {
+      throw const XmlyException('missing_account', '请先登录原账号');
+    }
+    final ledger = account.putIfAbsent('ledger', () => <String, dynamic>{});
+    if (ledger is! Map<String, dynamic>) {
+      throw const XmlyException('invalid_ledger', '听时记录损坏，请保留资料');
+    }
+    update(ledger);
+  });
 
   List<DownloadReceipt> receipts(String identity) {
     final items = _ledger(identity)['receipts'] ?? const [];
     if (items is! List) {
       throw const XmlyException('invalid_ledger', '扣时记录损坏，请保留资料');
     }
-    return List.unmodifiable(items.map((item) {
-      if (item is! Map) {
-        throw const XmlyException('invalid_ledger', '扣时记录损坏，请保留资料');
-      }
-      final receipt = DownloadReceipt.fromJson(Map<String, dynamic>.from(item));
-      if (receipt.accountIdentity != identity) {
-        throw const XmlyException('invalid_ledger', '扣时记录与账号不符');
-      }
-      return receipt;
-    }));
+    return List.unmodifiable(
+      items.map((item) {
+        if (item is! Map) {
+          throw const XmlyException('invalid_ledger', '扣时记录损坏，请保留资料');
+        }
+        final receipt = DownloadReceipt.fromJson(
+          Map<String, dynamic>.from(item),
+        );
+        if (receipt.accountIdentity != identity) {
+          throw const XmlyException('invalid_ledger', '扣时记录与账号不符');
+        }
+        return receipt;
+      }),
+    );
   }
 
   bool isBlocked(String identity) {
     final ledger = _ledger(identity);
-    return ledger['usage_uncertain'] == true || ledger['usage_pending'] != null ||
-        receipts(identity).any((item) => item.state == DebitState.submitting ||
-          item.state == DebitState.uncertain);
+    return ledger['usage_uncertain'] == true ||
+        ledger['usage_pending'] != null ||
+        receipts(identity).any(
+          (item) =>
+              item.state == DebitState.submitting ||
+              item.state == DebitState.uncertain,
+        );
   }
 
   void _guard(String identity) {
@@ -138,12 +182,15 @@ class UsageLedger {
     }
   }
 
-  static const _uncertain = XmlyException('usage_uncertain',
-    '上次扣时结果未知，请先到官方 App 核对并确认是否已扣');
+  static const _uncertain = XmlyException(
+    'usage_uncertain',
+    '上次扣时结果未知，请先到官方 App 核对并确认是否已扣',
+  );
 
   /// Local recovery only; no POST, query, or automatic replay on startup.
   Future<void> load() async {
-    for (final identity in (storage.state['accounts'] as Map).keys.cast<String>().toList()) {
+    for (final identity
+        in (storage.state['accounts'] as Map).keys.cast<String>().toList()) {
       await _lock(identity).synchronized(() => _recover(identity));
     }
   }
@@ -153,10 +200,13 @@ class UsageLedger {
     final entries = receipts(identity);
     final pending = ledger['usage_pending'];
     final recoverPending = pending is Map && pending['state'] == 'submitting';
-    if (!recoverPending && !entries.any((item) => item.state == DebitState.submitting)) return;
+    if (!recoverPending &&
+        !entries.any((item) => item.state == DebitState.submitting))
+      return;
     await _write(identity, (next) {
       for (final entry in next['receipts'] as List? ?? const []) {
-        if (entry is Map && entry['state'] == 'submitting') entry['state'] = 'uncertain';
+        if (entry is Map && entry['state'] == 'submitting')
+          entry['state'] = 'uncertain';
       }
       if (recoverPending) {
         (next['usage_pending'] as Map)['state'] = 'uncertain';
@@ -165,17 +215,24 @@ class UsageLedger {
     });
   }
 
-  Future<Quota> queryQuota(String identity) => _lock(identity).synchronized(() async {
-    final client = clientFor(identity);
-    if (client.identity != identity) {
-      throw const XmlyException('account_mismatch', '请使用原账号核对听时');
-    }
-    return client.queryQuota();
-  });
+  Future<Quota> queryQuota(String identity) =>
+      _lock(identity).synchronized(() async {
+        final client = clientFor(identity);
+        if (client.identity != identity) {
+          throw const XmlyException('account_mismatch', '请使用原账号核对听时');
+        }
+        return client.queryQuota();
+      });
 
-  Future<DownloadReceipt?> prepay({required String identity, required String taskId,
-    required ResolvedAudio audio, required bool userConfirmed,
-    int? expectedSeconds, int? expectedBalance}) => _lock(identity).synchronized(() async {
+  Future<DownloadReceipt?> prepay({
+    required String identity,
+    required String taskId,
+    required ResolvedAudio audio,
+    required bool userConfirmed,
+    int? expectedSeconds,
+    int? expectedBalance,
+    Future<void> Function(Duration delay)? wait,
+  }) => _lock(identity).synchronized(() async {
     if (!audio.requiresReward) return null;
     if (audio.accountIdentity != identity || taskId.trim().isEmpty) {
       throw const XmlyException('account_mismatch', '声音授权与下载账号不符');
@@ -187,7 +244,8 @@ class UsageLedger {
       if (receipt.trackId != audio.track.id) {
         throw const XmlyException('task_mismatch', '原任务与声音不符');
       }
-      if (receipt.state == DebitState.confirmed && !receipt.historical) return receipt;
+      if (receipt.state == DebitState.confirmed && !receipt.historical)
+        return receipt;
     }
     final duration = audio.track.duration;
     if (!duration.isFinite || duration <= 0 || duration > maxSeconds) {
@@ -200,20 +258,70 @@ class UsageLedger {
     await _settleLocked(identity);
     final quota = await clientFor(identity).queryQuota();
     if ((expectedSeconds != null && expectedSeconds != seconds) ||
-        (expectedBalance != null && expectedBalance != quota.remainingSeconds)) {
+        (expectedBalance != null &&
+            expectedBalance != quota.remainingSeconds)) {
       throw const XmlyException('confirmation_changed', '时长或余额已改变，请重新确认');
     }
     if (quota.remainingSeconds < seconds) throw _insufficient;
-    final operation = DownloadReceipt(operationId: const Uuid().v4(),
-      accountIdentity: identity, trackId: audio.track.id, taskId: taskId,
-      seconds: seconds, balanceBefore: quota.remainingSeconds,
-      createdAt: _clock(), state: DebitState.submitting).toJson();
-    await _submit(identity, operation, online: false);
-    return receipts(identity).singleWhere((item) => item.operationId == operation['operationId']);
+    for (var attempt = 0; ; attempt++) {
+      final operation = DownloadReceipt(
+        operationId: const Uuid().v4(),
+        accountIdentity: identity,
+        trackId: audio.track.id,
+        taskId: taskId,
+        seconds: seconds,
+        balanceBefore: quota.remainingSeconds,
+        createdAt: _clock(),
+        state: DebitState.submitting,
+      ).toJson();
+      try {
+        await _submit(identity, operation, online: false);
+        return receipts(
+          identity,
+        ).singleWhere((item) => item.operationId == operation['operationId']);
+      } on XmlyException catch (error) {
+        final rejected = receipts(identity).any(
+          (receipt) =>
+              receipt.operationId == operation['operationId'] &&
+              receipt.state == DebitState.rejected,
+        );
+        if (!rejected ||
+            !error.definitive ||
+            attempt >= 4 ||
+            const {
+              'invalid_duration',
+              'invalid_ledger',
+              'login_expired',
+              'login_required',
+              'account_mismatch',
+              'invalid_endpoint',
+              'insufficient_quota',
+              'rate_limited',
+            }.contains(error.code))
+          rethrow;
+        final backoff = Duration(seconds: 1 << attempt);
+        final delay = (error.retryAfter ?? Duration.zero) > backoff
+            ? error.retryAfter!
+            : backoff;
+        if (wait != null) {
+          await wait(delay);
+        } else {
+          await Future<void>.delayed(delay);
+        }
+        _guard(identity);
+        final refreshed = await clientFor(identity).queryQuota();
+        if (refreshed.remainingSeconds != quota.remainingSeconds) {
+          throw const XmlyException('confirmation_changed', '重试前余额已变化，请重新确认');
+        }
+      }
+    }
   });
 
-  static const _insufficient = XmlyException('insufficient_quota',
-    '听时不足，请前往官方 App 获取听时', definitive: true);
+  static const _insufficient = XmlyException(
+    'insufficient_quota',
+    '听时不足，请前往官方 App 获取听时',
+    definitive: true,
+  );
 
   double debt(String identity) {
     final value = _ledger(identity)['usage_seconds'] ?? 0.0;
@@ -224,9 +332,13 @@ class UsageLedger {
   }
 
   /// Starts paused. Only actual playback state events may enable metering.
-  Future<void> startWatch({required String identity, required String trackId,
-    required bool requiresReward, bool prepaid = false, double speed = 1}) =>
-      _watchChanges.synchronized(() async {
+  Future<void> startWatch({
+    required String identity,
+    required String trackId,
+    required bool requiresReward,
+    bool prepaid = false,
+    double speed = 1,
+  }) => _watchChanges.synchronized(() async {
     _validSpeed(speed);
     final normalized = 'xmly:${xmlyIdentifier(trackId)}';
     await _stopWatch();
@@ -248,8 +360,11 @@ class UsageLedger {
 
   /// No position argument: seeking can never produce billable seconds.
   /// Feed actual state periodically as well as on player state/rate changes.
-  Future<void> observe({required bool playing, required bool buffering,
-    double? speed}) => _watchChanges.synchronized(() async {
+  Future<void> observe({
+    required bool playing,
+    required bool buffering,
+    double? speed,
+  }) => _watchChanges.synchronized(() async {
     if (speed != null) _validSpeed(speed);
     final watch = _watch;
     if (watch == null) return;
@@ -261,7 +376,8 @@ class UsageLedger {
       }
       watch.playing = playing && !buffering;
       if (speed != null) watch.speed = speed;
-      if (!playing || _monotonic() - watch.settledAt >= const Duration(seconds: 120)) {
+      if (!playing ||
+          _monotonic() - watch.settledAt >= const Duration(seconds: 120)) {
         // Pause settles; a periodic settlement must preserve actual playing state.
         await _settleLocked(watch.identity, pause: !playing);
       }
@@ -272,7 +388,9 @@ class UsageLedger {
     final watch = _watch;
     if (watch == null || watch.identity != identity) return;
     final now = _monotonic();
-    final elapsed = now > watch.sampledAt ? (now - watch.sampledAt).inMicroseconds / 1000000 : 0.0;
+    final elapsed = now > watch.sampledAt
+        ? (now - watch.sampledAt).inMicroseconds / 1000000
+        : 0.0;
     watch.unsaved += watch.playing ? elapsed * watch.speed * reportFactor : 0;
     watch.sampledAt = now;
     if (watch.unsaved == 0) return;
@@ -286,6 +404,7 @@ class UsageLedger {
       rethrow;
     }
   }
+
   /// Restore pauses producers first; preserve unknown journals without sending.
   Future<void> captureForRestore() => _watchChanges.synchronized(() async {
     final watch = _watch;
@@ -298,14 +417,15 @@ class UsageLedger {
     });
   });
 
-
   /// Callers pause the player before this account-switch/exit boundary.
   Future<void> settle([String? identity]) async {
     if (identity != null) {
       await _lock(identity).synchronized(() => _settleLocked(identity));
       return;
     }
-    final identities = (storage.state['accounts'] as Map).keys.cast<String>().toList();
+    final identities = (storage.state['accounts'] as Map).keys
+        .cast<String>()
+        .toList();
     for (final id in identities) {
       await _lock(id).synchronized(() => _settleLocked(id));
     }
@@ -316,17 +436,26 @@ class UsageLedger {
     await _sample(identity);
     final watch = _watch;
     if (pause && watch?.identity == identity) watch!.playing = false;
-    if (!isBlocked(identity) && debt(identity) < 1 && watch?.identity != identity) return;
+    if (!isBlocked(identity) &&
+        debt(identity) < 1 &&
+        watch?.identity != identity)
+      return;
     _guard(identity);
     var seconds = debt(identity).floor();
     while (seconds > 0) {
       final amount = seconds > maxSeconds ? maxSeconds : seconds;
       final quota = await clientFor(identity).queryQuota();
       if (quota.remainingSeconds < amount) throw _insufficient;
-      final operation = <String, dynamic>{'operationId': const Uuid().v4(),
-        'accountIdentity': identity, 'trackId': watch?.identity == identity ? watch!.trackId : '',
-        'seconds': amount, 'balanceBefore': quota.remainingSeconds, 'balanceAfter': null,
-        'createdAt': _clock().millisecondsSinceEpoch, 'state': 'submitting'};
+      final operation = <String, dynamic>{
+        'operationId': const Uuid().v4(),
+        'accountIdentity': identity,
+        'trackId': watch?.identity == identity ? watch!.trackId : '',
+        'seconds': amount,
+        'balanceBefore': quota.remainingSeconds,
+        'balanceAfter': null,
+        'createdAt': _clock().millisecondsSinceEpoch,
+        'state': 'submitting',
+      };
       await _submit(identity, operation, online: true);
       seconds = debt(identity).floor();
     }
@@ -338,28 +467,40 @@ class UsageLedger {
   Future<void> _stopWatch() async {
     final watch = _watch;
     if (watch == null) return;
-    await _lock(watch.identity).synchronized(() => _settleLocked(watch.identity));
+    await _lock(watch.identity)
+        .synchronized(() => _settleLocked(watch.identity));
     _watch = null;
   }
 
-  Future<void> _submit(String identity, Map<String, dynamic> operation,
-      {required bool online}) async {
+  Future<void> _submit(
+    String identity,
+    Map<String, dynamic> operation, {
+    required bool online,
+  }) async {
     // A failed journal commit returns before even constructing a report request.
     await _write(identity, (ledger) {
       if (online) {
         ledger['usage_pending'] = operation;
         ledger['usage_uncertain'] = true;
       } else {
-        (ledger.putIfAbsent('receipts', () => <dynamic>[]) as List).add(operation);
+        (ledger.putIfAbsent('receipts', () => <dynamic>[]) as List).add(
+          operation,
+        );
       }
     });
     final Quota result;
     try {
-      result = await clientFor(identity).debitSeconds(operation['seconds'] as int);
+      result = await clientFor(identity)
+          .debitSeconds(operation['seconds'] as int);
     } catch (error) {
       if (error is XmlyException && error.definitive) {
         try {
-          await _finish(identity, operation, online: online, state: DebitState.rejected);
+          await _finish(
+            identity,
+            operation,
+            online: online,
+            state: DebitState.rejected,
+          );
         } catch (_) {
           await _markUncertain(identity, operation, online: online);
           throw _uncertain;
@@ -370,12 +511,18 @@ class UsageLedger {
       throw _uncertain;
     }
     operation['balanceAfter'] = result.remainingSeconds;
-    if ((operation['balanceBefore'] as int) - result.remainingSeconds != operation['seconds']) {
+    if ((operation['balanceBefore'] as int) - result.remainingSeconds !=
+        operation['seconds']) {
       await _markUncertain(identity, operation, online: online);
       throw _uncertain;
     }
     try {
-      await _finish(identity, operation, online: online, state: DebitState.confirmed);
+      await _finish(
+        identity,
+        operation,
+        online: online,
+        state: DebitState.confirmed,
+      );
     } catch (_) {
       // Durable submitting remains authoritative even when disk stays unavailable.
       await _markUncertain(identity, operation, online: online);
@@ -383,25 +530,36 @@ class UsageLedger {
     }
   }
 
-  Future<void> _finish(String identity, Map<String, dynamic> operation,
-      {required bool online, required DebitState state}) => _write(identity, (ledger) {
+  Future<void> _finish(
+    String identity,
+    Map<String, dynamic> operation, {
+    required bool online,
+    required DebitState state,
+  }) => _write(identity, (ledger) {
     if (online) {
       if (state == DebitState.confirmed) {
         final current = ledger['usage_seconds'] as num;
-        ledger['usage_seconds'] = (current - (operation['seconds'] as int)).clamp(0, double.infinity);
+        ledger['usage_seconds'] = (current - (operation['seconds'] as int))
+            .clamp(0, double.infinity);
       }
       ledger.remove('usage_pending');
       ledger['usage_uncertain'] = false;
     } else {
       final entries = ledger['receipts'] as List;
-      final index = entries.indexWhere((item) => (item as Map)['operationId'] == operation['operationId']);
-      if (index < 0) throw const XmlyException('invalid_ledger', '扣时记录丢失，请保留资料');
+      final index = entries.indexWhere(
+        (item) => (item as Map)['operationId'] == operation['operationId'],
+      );
+      if (index < 0)
+        throw const XmlyException('invalid_ledger', '扣时记录丢失，请保留资料');
       entries[index] = {...operation, 'state': state.name};
     }
   });
 
-  Future<void> _markUncertain(String identity, Map<String, dynamic> operation,
-      {required bool online}) async {
+  Future<void> _markUncertain(
+    String identity,
+    Map<String, dynamic> operation, {
+    required bool online,
+  }) async {
     if (_watch?.identity == identity) _watch!.playing = false;
     try {
       await _write(identity, (ledger) {
@@ -411,7 +569,9 @@ class UsageLedger {
           ledger['usage_uncertain'] = true;
         } else {
           final entries = ledger['receipts'] as List;
-          final index = entries.indexWhere((item) => (item as Map)['operationId'] == operation['operationId']);
+          final index = entries.indexWhere(
+            (item) => (item as Map)['operationId'] == operation['operationId'],
+          );
           if (index >= 0) entries[index] = pending;
         }
       });
@@ -422,8 +582,11 @@ class UsageLedger {
 
   /// [wasDebited] is an explicit human decision, never inferred from a balance.
   /// A negative decision permits the next explicit operation, not an auto-retry.
-  Future<void> reconcile(String identity, String operationId,
-      {required bool wasDebited}) => _lock(identity).synchronized(() async {
+  Future<void> reconcile(
+    String identity,
+    String operationId, {
+    required bool wasDebited,
+  }) => _lock(identity).synchronized(() async {
     await _recover(identity);
     final ledger = _ledger(identity);
     final pending = ledger['usage_pending'];
@@ -436,18 +599,24 @@ class UsageLedger {
         if (receipt.operationId == operationId) operation = receipt.toJson();
       }
     }
-    if (operation == null || operation['accountIdentity'] != identity ||
+    if (operation == null ||
+        operation['accountIdentity'] != identity ||
         !['uncertain', 'submitting'].contains(operation['state'])) {
       throw const XmlyException('no_uncertain_operation', '没有这笔需要人工核对的扣时');
     }
-    if (operation['seconds'] is! int || (operation['seconds'] as int) < 1 ||
+    if (operation['seconds'] is! int ||
+        (operation['seconds'] as int) < 1 ||
         (online && (operation['seconds'] as int) > debt(identity))) {
       throw const XmlyException('invalid_ledger', '待核对扣时记录无效，请保留资料');
     }
     // Refresh for the reconciliation screen, but never attribute its changes.
     await queryClient(identity).queryQuota();
-    await _finish(identity, operation, online: online,
-      state: wasDebited ? DebitState.confirmed : DebitState.rejected);
+    await _finish(
+      identity,
+      operation,
+      online: online,
+      state: wasDebited ? DebitState.confirmed : DebitState.rejected,
+    );
   });
 
   XmlyClient queryClient(String identity) {
@@ -461,7 +630,7 @@ class UsageLedger {
 
 class _Listening {
   _Listening(this.identity, this.trackId, this.speed, this.sampledAt)
-      : settledAt = sampledAt;
+    : settledAt = sampledAt;
   final String identity, trackId;
   double speed;
   Duration sampledAt, settledAt;

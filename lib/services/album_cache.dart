@@ -12,6 +12,8 @@ import 'package:uuid/uuid.dart';
 
 import '../api/xmly_client.dart';
 import '../models/xmly_models.dart';
+import 'request_diagnostics.dart';
+import 'network_retry.dart';
 
 /// Public catalogue observations only; never playback or download authority.
 class CachedAlbum {
@@ -39,6 +41,7 @@ class AlbumCache extends ChangeNotifier {
   final Set<Future<void>> _pending = {};
   bool _loaded = false, _closing = false;
   Future<void>? _closeFuture;
+  final _closed = Completer<void>();
 
   CachedAlbum? operator [](String albumId) => _albums[xmlyIdentifier(albumId)];
 
@@ -442,59 +445,128 @@ class AlbumCache extends ChangeNotifier {
     }
   }
 
-  static Future<Uint8List> _fetchCover(Uri initial) async {
-    // Deliberately isolated from XmlyClient: no cookies, identity or auth headers.
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10);
-    client.findProxy = (_) => 'DIRECT';
-    client.connectionFactory = (uri, proxyHost, proxyPort) async {
-      final addresses = await _safeCoverUri(uri);
-      return uri.scheme == 'https'
-          ? SecureSocket.startConnect(addresses.first, uri.port)
-          : Socket.startConnect(addresses.first, uri.port);
-    };
-    final deadline = DateTime.now().add(const Duration(seconds: 30));
-    Future<T> wait<T>(Future<T> future) {
-      final left = deadline.difference(DateTime.now());
-      if (left <= Duration.zero) throw TimeoutException('Cover timeout');
-      return future.timeout(left);
-    }
-
-    try {
-      var uri = initial;
-      for (var redirects = 0; redirects <= 5; redirects++) {
-        await wait(_safeCoverUri(uri));
-        final request = await wait(client.getUrl(uri));
-        request.followRedirects = false;
-        final response = await wait(request.close());
-        if (const {301, 302, 303, 307, 308}.contains(response.statusCode)) {
-          final location = response.headers.value(HttpHeaders.locationHeader);
-          if (location == null || redirects == 5)
-            throw const HttpException('Invalid cover redirect');
-          uri = uri.resolve(location);
-          continue;
-        }
-        if (response.statusCode != 200 ||
-            response.contentLength > _maxCoverBytes)
-          throw const HttpException('Invalid cover response');
-        final bytes = BytesBuilder(copy: false);
-        final iterator = StreamIterator(response);
-        try {
-          while (await wait(iterator.moveNext())) {
-            if (bytes.length + iterator.current.length > _maxCoverBytes)
-              throw const HttpException('Cover too large');
-            bytes.add(iterator.current);
-          }
-        } finally {
-          await iterator.cancel();
-        }
-        final image = bytes.takeBytes();
-        await wait(_validateImage(image));
-        return image;
+  Future<Uint8List> _fetchCover(Uri initial) async {
+    for (var attempt = 0; ; attempt++) {
+      _checkOpen();
+      // Isolated from XmlyClient: no cookies, identity or auth headers.
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 10);
+      client.findProxy = (_) => 'DIRECT';
+      client.connectionFactory = (uri, proxyHost, proxyPort) async {
+        final addresses = await _safeCoverUri(uri);
+        return uri.scheme == 'https'
+            ? SecureSocket.startConnect(addresses.first, uri.port)
+            : Socket.startConnect(addresses.first, uri.port);
+      };
+      // Redirects share a 30-second budget; each retry gets a fresh budget.
+      final deadline = DateTime.now().add(const Duration(seconds: 30));
+      Future<T> wait<T>(Future<T> future) {
+        _checkOpen();
+        final left = deadline.difference(DateTime.now());
+        if (left <= Duration.zero) throw TimeoutException('Cover timeout');
+        return Future.any<T>([
+          future.timeout(left),
+          _closed.future.then<T>(
+            (_) => throw StateError('Album cache is closed'),
+          ),
+        ]);
       }
-      throw const HttpException('Cover redirect limit');
-    } finally {
-      client.close(force: true);
+
+      RequestDiagnostic? diagnostic;
+      HttpClientResponse? response;
+      var definitive = false;
+      Duration? delay;
+      try {
+        var uri = initial;
+        for (var redirects = 0; redirects <= 5; redirects++) {
+          response = null;
+          diagnostic = null;
+          final bytes = BytesBuilder(copy: false);
+          diagnostic = RequestDiagnostic(
+            account: '公共专辑封面（无账号）',
+            method: 'GET',
+            url: '$uri',
+          )..responseBytes = bytes.toBytes;
+          await wait(_safeCoverUri(uri));
+          response = null;
+          final request = await wait(client.getUrl(uri));
+          request.followRedirects = false;
+          request.headers.forEach((name, values) {
+            diagnostic!.requestHeaders[name] = List<String>.of(values);
+          });
+          final current = await wait(request.close());
+          response = current;
+          diagnostic
+            ..status = current.statusCode
+            ..completeness = '响应体接收中；失败时保留全部已接收字节';
+          current.headers.forEach((name, values) {
+            diagnostic!.responseHeaders[name] = List<String>.of(values);
+          });
+          final redirect = const {
+            301,
+            302,
+            303,
+            307,
+            308,
+          }.contains(current.statusCode);
+          final location = current.headers.value(HttpHeaders.locationHeader);
+          if (redirect && location != null && redirects < 5) {
+            await current.listen((_) {}).cancel();
+            uri = uri.resolve(location);
+            continue;
+          }
+          if (current.contentLength > _maxCoverBytes) {
+            definitive = true;
+            diagnostic.completeness = '未读取响应体：Content-Length 超过 5 MiB 安全上限';
+            throw const HttpException('Cover too large');
+          }
+          final iterator = StreamIterator(current);
+          try {
+            while (await wait(iterator.moveNext())) {
+              final room = _maxCoverBytes - bytes.length;
+              if (iterator.current.length > room) {
+                bytes.add(iterator.current.sublist(0, room));
+                definitive = true;
+                diagnostic.completeness = '响应体超过 5 MiB 安全上限；已捕获上限内全部字节';
+                throw const HttpException('Cover too large');
+              }
+              bytes.add(iterator.current);
+            }
+          } finally {
+            await iterator.cancel();
+          }
+          diagnostic.completeness = '完整响应体';
+          if (redirect || current.statusCode != 200) {
+            definitive = redirect || !retryableStatus(current.statusCode);
+            throw HttpException(
+              'Invalid cover response: HTTP ${current.statusCode}',
+            );
+          }
+          final image = bytes.toBytes();
+          definitive = true;
+          await wait(_validateImage(image));
+          return image;
+        }
+        throw const FormatException('Cover redirect limit');
+      } catch (error) {
+        if (retryableTransport(error)) diagnostic?.transportError = '$error';
+        await diagnostic?.fail(error);
+        if (_closing ||
+            definitive ||
+            attempt == 4 ||
+            error is FormatException ||
+            error is TlsException ||
+            !(retryableStatus(response?.statusCode) ||
+                retryableTransport(error)))
+          rethrow;
+        delay = retryDelay(
+          attempt,
+          response?.headers.value(HttpHeaders.retryAfterHeader),
+        );
+      } finally {
+        client.close(force: true);
+      }
+      await waitToRetry(delay, closed: _closed.future);
     }
   }
 
@@ -505,7 +577,7 @@ class AlbumCache extends ChangeNotifier {
         uri.userInfo.isNotEmpty ||
         (uri.hasPort && uri.port != 80 && uri.port != 443) ||
         uri.toString().length > 16384)
-      throw const HttpException('Invalid cover URL');
+      throw const FormatException('Invalid cover URL');
     final addresses = await InternetAddress.lookup(uri.host)
         .timeout(const Duration(seconds: 10));
     if (addresses.isEmpty ||
@@ -530,12 +602,13 @@ class AlbumCache extends ChangeNotifier {
           }
           return (bytes[0] & 0xe0) != 0x20;
         }))
-      throw const HttpException('Non-public cover URL');
+      throw const FormatException('Non-public cover URL');
     return addresses;
   }
 
   Future<void> close() => _closeFuture ??= () async {
     _closing = true;
+    _closed.complete();
     await Future.wait(
       _pending.toList().map(
         (future) => future.then<void>(

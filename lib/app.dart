@@ -16,6 +16,7 @@ import 'pages/shell_page.dart';
 import 'pages/download_page.dart';
 import 'pages/player_panel.dart';
 import 'services/app_runtime.dart';
+import 'services/request_diagnostics.dart';
 
 class MyApp extends StatefulWidget {
   const MyApp({required this.runtime, super.key});
@@ -31,10 +32,14 @@ class _MyAppState extends State<MyApp> with WindowListener {
   final _navigator = GlobalKey<NavigatorState>();
   final _playerRoutes = _PlayerRouteObserver();
   bool _closeRequested = false;
+  bool _diagnosticsOpen = false;
 
   @override
   void initState() {
     super.initState();
+    unawaited(
+      RequestDiagnostics.instance.configure(widget.runtime.storage.directory),
+    );
     widget.runtime.confirmDownload = (batch) async {
       final context = _navigator.currentContext;
       return context == null ? false : confirmDownloadBatch(context, batch);
@@ -99,6 +104,21 @@ class _MyAppState extends State<MyApp> with WindowListener {
     }
   }
 
+  Future<void> _showRequestFailures() async {
+    if (_diagnosticsOpen || !mounted) return;
+    final context = _navigator.currentContext;
+    if (context == null) return;
+    _diagnosticsOpen = true;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => const _RequestFailureDialog(),
+      );
+    } finally {
+      _diagnosticsOpen = false;
+    }
+  }
+
   @override
   void dispose() {
     if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
@@ -151,6 +171,44 @@ class _MyAppState extends State<MyApp> with WindowListener {
                 child: child,
                 builder: (context, child) => Column(
                   children: [
+                    StreamBuilder<void>(
+                      stream: RequestDiagnostics.instance.changes,
+                      builder: (context, _) {
+                        final diagnostics = RequestDiagnostics.instance;
+                        if (diagnostics.entries.isEmpty &&
+                            diagnostics.persistenceError == null) {
+                          return const SizedBox.shrink();
+                        }
+                        return Material(
+                          color: Theme.of(context).colorScheme.errorContainer,
+                          child: SafeArea(
+                            bottom: false,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.error_outline),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      '请求失败记录：${diagnostics.entries.length} 条'
+                                      '${diagnostics.persistenceError == null ? '' : '；本地日志保存失败，请复制保留'}',
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: _showRequestFailures,
+                                    child: const Text('详情 / 复制'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                     Expanded(child: child!),
                     if (_playerRoutes.current?.settings.name !=
                         PlayerPanel.routeName)
@@ -221,5 +279,113 @@ class _PlayerRouteObserver extends NavigatorObserver with ChangeNotifier {
   void dispose() {
     _disposed = true;
     super.dispose();
+  }
+}
+
+class _RequestFailureDialog extends StatefulWidget {
+  const _RequestFailureDialog();
+  @override
+  State<_RequestFailureDialog> createState() => _RequestFailureDialogState();
+}
+
+class _RequestFailureDialogState extends State<_RequestFailureDialog> {
+  RequestFailure? _selected;
+  String? _copiedPath;
+
+  @override
+  Widget build(BuildContext context) {
+    final diagnostics = RequestDiagnostics.instance;
+    return StreamBuilder<void>(
+      stream: diagnostics.changes,
+      builder: (context, _) {
+        final entries = diagnostics.entries;
+        final selected = _selected ?? (entries.isEmpty ? null : entries.last);
+        return AlertDialog(
+          title: Text('请求失败详情（${entries.length} 条）'),
+          content: SizedBox(
+            width: 900,
+            height: MediaQuery.sizeOf(context).height * .65,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('仅保存在本机。完整日志可能包含 Cookie、令牌、账号和签名等敏感信息；复制或分享前请自行核对。'),
+                const SizedBox(height: 8),
+                SelectableText('日志目录：${diagnostics.directory ?? '尚未初始化'}'),
+                if (diagnostics.persistenceError != null)
+                  SelectableText(
+                    '保存失败：${diagnostics.persistenceError}（当前会话内容仍可复制）',
+                  ),
+                if (selected != null) ...[
+                  DropdownButton<RequestFailure>(
+                    isExpanded: true,
+                    value: selected,
+                    items: entries.reversed
+                        .map(
+                          (entry) => DropdownMenuItem(
+                            value: entry,
+                            child: Text(
+                              '${entry.timestamp.toLocal()} · ${entry.account} · ${entry.method} ${entry.url}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) => setState(() {
+                      _selected = value;
+                    }),
+                  ),
+                  Expanded(
+                    child: FutureBuilder<String>(
+                      future: diagnostics.read(selected),
+                      builder: (context, snapshot) => SingleChildScrollView(
+                        child: SelectableText(
+                          snapshot.hasError
+                              ? '无法读取日志：${snapshot.error}\n文件：${selected.path}'
+                              : snapshot.data ?? '正在读取完整内容…',
+                        ),
+                      ),
+                    ),
+                  ),
+                  SelectableText('文件：${selected.path}'),
+                ] else
+                  const Expanded(child: Text('暂无失败请求。')),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: selected == null
+                  ? null
+                  : () async {
+                      try {
+                        final text = await diagnostics.read(selected);
+                        await Clipboard.setData(ClipboardData(text: text));
+                        if (mounted)
+                          setState(() {
+                            _copiedPath = selected.path;
+                          });
+                      } catch (error) {
+                        if (mounted)
+                          setState(() {
+                            _copiedPath = '复制失败：$error';
+                          });
+                      }
+                    },
+              child: Text(
+                _copiedPath == selected?.path
+                    ? '已复制完整内容'
+                    : _copiedPath?.startsWith('复制失败：') == true
+                    ? _copiedPath!
+                    : '复制完整内容',
+              ),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('关闭'),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

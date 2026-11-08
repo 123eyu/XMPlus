@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:synchronized/synchronized.dart';
 
 import '../models/xmly_models.dart';
+import '../services/request_diagnostics.dart';
 import 'xmly_crypto.dart';
 
 class XmlyClient {
@@ -25,6 +26,7 @@ class XmlyClient {
   final Credentials? credentials;
   final String quality;
   final Dio _dio;
+  final Completer<void> _closeSignal = Completer<void>();
   final Lock _resolveLock = Lock();
   final Map<String, DateTime> _cooldowns = {};
   final Map<String, Track> _metadata = {};
@@ -164,6 +166,16 @@ class XmlyClient {
     unawaited(clearUrlCache());
   }
 
+  Future<void> _retryWait(Duration delay) async {
+    final ready = Completer<void>();
+    final timer = Timer(delay, ready.complete);
+    try {
+      await Future.any<void>([ready.future, _closeSignal.future]);
+    } finally {
+      timer.cancel();
+    }
+  }
+
   Future<Map<String, dynamic>> request(
     String method,
     String origin,
@@ -202,12 +214,28 @@ class XmlyClient {
             const [
               '/fmobile-track/fmobile/track/v2/baseInfo',
               '/lite-mobile/audi/func/v1/config',
-            ].contains(path));
-    for (var attempt = 0; attempt < (readOnly ? 2 : 1); attempt++) {
+            ].contains(path)) ||
+        (origin == collector &&
+            method == 'POST' &&
+            path == '/nyx/v1/history/merge/android');
+    final rewardClaim =
+        method == 'POST' &&
+        origin == welfare &&
+        RegExp(r'^/lite-earn/ting/welfare/rewardDuration/ts-[0-9]+$')
+            .hasMatch(path);
+    for (var attempt = 0; attempt < 5; attempt++) {
       final until = _cooldowns[origin];
-      if (until != null && until.isAfter(DateTime.now()))
-        _rateLimit(origin, until.difference(DateTime.now()));
+      if (until != null && until.isAfter(DateTime.now())) {
+        await _retryWait(until.difference(DateTime.now()));
+      }
+      if (_closed)
+        throw const XmlyException('client_closed', '连接已关闭', definitive: true);
       final cancel = CancelToken();
+      final diagnostic = RequestDiagnostic(
+        account: identity,
+        method: method,
+        url: '$origin$path',
+      );
       try {
         return await _attempt(
           method,
@@ -219,15 +247,19 @@ class XmlyClient {
           signed,
           form,
           cancel,
+          diagnostic,
         ).timeout(
           const Duration(seconds: 25),
           onTimeout: () {
             cancel.cancel();
+            unawaited(
+              diagnostic.fail(TimeoutException('request (25 seconds)')),
+            );
             throw TimeoutException('request');
           },
         );
       } on _RetryableStatus {
-        if (!readOnly || attempt != 0)
+        if (!readOnly || attempt == 4)
           throw XmlyException(
             readOnly ? 'network' : 'uncertain',
             readOnly ? '喜马拉雅服务暂时不可用' : '请求结果未知，请核对后重试',
@@ -239,25 +271,38 @@ class XmlyClient {
         if (cancel.cancelError?.error case final XmlyException limit
             when limit.code == 'response_too_large')
           throw limit;
-        if (!readOnly || attempt != 0)
+        if (!readOnly || attempt == 4)
           throw XmlyException(
             readOnly ? 'network' : 'uncertain',
             readOnly ? '请求失败或超时' : '请求结果未知，请核对后重试',
           );
       } on TimeoutException {
-        if (!readOnly || attempt != 0)
+        if (!readOnly || attempt == 4)
           throw XmlyException(
             readOnly ? 'network' : 'uncertain',
             readOnly ? '请求失败或超时' : '请求结果未知，请核对后重试',
           );
       } on IOException {
-        if (!readOnly || attempt != 0)
+        if (!readOnly || attempt == 4)
           throw XmlyException(
             readOnly ? 'network' : 'uncertain',
             readOnly ? '请求失败或超时' : '请求结果未知，请核对后重试',
           );
+      } on XmlyException catch (error) {
+        final safeRewardRejection =
+            rewardClaim &&
+            error.code == 'rejected' &&
+            diagnostic.status == 200 &&
+            error.definitive;
+        if ((error.code != 'rate_limited' && !safeRewardRejection) ||
+            attempt == 4)
+          rethrow;
       }
-      await Future<void>.delayed(const Duration(milliseconds: 250));
+      final backoff = Duration(seconds: 1 << attempt);
+      final cooldown = _cooldowns[origin]?.difference(DateTime.now());
+      await _retryWait(
+        cooldown != null && cooldown > backoff ? cooldown : backoff,
+      );
     }
     throw const XmlyException('network', '请求失败');
   }
@@ -272,6 +317,7 @@ class XmlyClient {
     bool signed,
     bool form,
     CancelToken cancel,
+    RequestDiagnostic diagnostic,
   ) async {
     final responseLimit = _cachedAlbumEndpoint(method, origin, path)
         ? _maxCachedAlbumResponse
@@ -286,93 +332,134 @@ class XmlyClient {
       if (authenticated) 'Cookie': credentials!.cookie,
       if (signed) 'x-tk': XmlyCrypto.freshTicket(credentials!),
     };
-    final response = await _dio.request<ResponseBody>(
-      '$origin$path',
-      queryParameters: query,
-      data: data,
-      cancelToken: cancel,
-      onReceiveProgress: (received, _) {
-        if (received > responseLimit) cancel.cancel(limitError);
-      },
-      options: Options(
-        method: method,
-        headers: headers,
-        responseType: ResponseType.stream,
-        followRedirects: false,
-        maxRedirects: 0,
-        validateStatus: (_) => true,
-        receiveTimeout: const Duration(seconds: 25),
-        sendTimeout: const Duration(seconds: 25),
-        contentType: form
-            ? Headers.formUrlEncodedContentType
-            : Headers.jsonContentType,
-      ),
-    );
-    final body = response.data;
-    final status = response.statusCode ?? 0;
-    if (status != 200) {
-      if (body != null) await body.stream.listen((_) {}).cancel();
-      if (status == 429)
-        _rateLimit(origin, _retryAfter(response.headers.value('retry-after')));
-      if (status == 401 || (status == 403 && authenticated)) {
-        if (authenticated) _expire();
-        throw const XmlyException(
-          'login_expired',
-          '登录信息已失效，请重新登录',
-          definitive: true,
+    final options =
+        Options(
+          method: method,
+          headers: headers,
+          responseType: ResponseType.stream,
+          followRedirects: false,
+          maxRedirects: 0,
+          validateStatus: (_) => true,
+          receiveTimeout: const Duration(seconds: 25),
+          sendTimeout: const Duration(seconds: 25),
+          contentType: form
+              ? Headers.formUrlEncodedContentType
+              : Headers.jsonContentType,
+        ).compose(
+          _dio.options,
+          '$origin$path',
+          queryParameters: query,
+          data: data,
+          cancelToken: cancel,
+          onReceiveProgress: (received, _) {
+            if (received > responseLimit) cancel.cancel(limitError);
+          },
         );
-      }
-      if ([502, 503, 504].contains(status)) throw _RetryableStatus();
-      throw XmlyException(
-        status >= 400 && status < 500 ? 'rejected' : 'protocol',
-        '接口返回 HTTP $status',
-        definitive: status >= 400 && status < 500,
-      );
-    }
-    if (body == null) throw const XmlyException('invalid_json', '接口响应为空');
-    final length = int.tryParse(response.headers.value('content-length') ?? '');
-    if (length != null && length > responseLimit) {
-      await body.stream.listen((_) {}).cancel();
-      throw limitError;
-    }
+    diagnostic.url = options.uri.toString();
+    diagnostic.requestHeaders = options.headers;
+    diagnostic.requestBody = data == null
+        ? '(无请求体)'
+        : form
+        ? Transformer.urlEncodeMap(data, ListFormat.multi)
+        : jsonEncode(data);
     final bytes = BytesBuilder(copy: false);
-    await for (final chunk in body.stream) {
-      if (bytes.length + chunk.length > responseLimit) {
-        cancel.cancel();
-        throw limitError;
-      }
-      bytes.add(chunk);
-    }
-    Map<String, dynamic> payload;
+    diagnostic.responseBytes = bytes.toBytes;
     try {
-      final decoded = jsonDecode(
-        utf8.decode(bytes.takeBytes(), allowMalformed: false),
+      final response = await _dio.fetch<ResponseBody>(options);
+      final body = response.data;
+      final status = response.statusCode ?? 0;
+      diagnostic.status = status;
+      diagnostic.responseHeaders = response.headers.map;
+      final length = int.tryParse(
+        response.headers.value('content-length') ?? '',
       );
-      if (decoded is! Map<String, dynamic>) throw const FormatException();
-      payload = decoded;
-    } catch (_) {
-      throw const XmlyException('invalid_json', '接口返回无效 JSON');
-    }
-    final code = '${payload['ret'] ?? 0}';
-    if (code != (origin == searchOrigin ? '200' : '0')) {
-      if (code == '429') _rateLimit(origin, const Duration(seconds: 30));
-      if (code == '401') {
-        if (authenticated) _expire();
-        throw const XmlyException(
-          'login_expired',
-          '登录信息已失效，请重新登录',
-          definitive: true,
+      if (body != null) {
+        diagnostic.completeness = '响应体未接收完整（接收中或传输中断）';
+        if (length != null && length > responseLimit) {
+          diagnostic.completeness =
+              '未读取响应体：声明长度 $length 超过 $responseLimit 字节上限';
+          await body.stream.listen((_) {}).cancel();
+          if (status == 200) throw limitError;
+        } else {
+          try {
+            await for (final chunk in body.stream) {
+              final remaining = responseLimit - bytes.length;
+              if (chunk.length > remaining) {
+                if (remaining > 0)
+                  bytes.add(Uint8List.sublistView(chunk, 0, remaining));
+                diagnostic.completeness = '响应体已截断：$responseLimit 字节上限';
+                cancel.cancel(limitError);
+                throw limitError;
+              }
+              bytes.add(chunk);
+            }
+            diagnostic.completeness = length != null && length != bytes.length
+                ? '响应体不完整：声明 $length 字节，收到 ${bytes.length} 字节'
+                : '完整（HTTP 客户端解码后的响应体）';
+          } catch (error) {
+            diagnostic.transportError = '$error';
+            if (status == 200) rethrow;
+          }
+        }
+      }
+      if (status != 200) {
+        if (status == 429)
+          _rateLimit(
+            origin,
+            _retryAfter(response.headers.value('retry-after')),
+          );
+        if (status == 401 || (status == 403 && authenticated)) {
+          if (authenticated) _expire();
+          throw const XmlyException(
+            'login_expired',
+            '登录信息已失效，请重新登录',
+            definitive: true,
+          );
+        }
+        if (status >= 500 && status <= 599) throw _RetryableStatus();
+        throw XmlyException(
+          status >= 400 && status < 500 ? 'rejected' : 'protocol',
+          '接口返回 HTTP $status',
+          definitive: status >= 400 && status < 500,
         );
       }
-      if (['5', '403', '726'].contains(code))
-        throw const XmlyException(
-          'permission_denied',
-          '未获得本次请求的完整权限，请检查账号、听时和版权限制',
-          definitive: true,
+      if (body == null) throw const XmlyException('invalid_json', '接口响应为空');
+      final responseBytes = bytes.takeBytes();
+      diagnostic.responseBytes = () => responseBytes;
+      Map<String, dynamic> payload;
+      try {
+        final decoded = jsonDecode(
+          utf8.decode(responseBytes, allowMalformed: false),
         );
-      throw const XmlyException('rejected', '喜马拉雅拒绝了请求', definitive: true);
+        if (decoded is! Map<String, dynamic>) throw const FormatException();
+        payload = decoded;
+      } catch (_) {
+        throw const XmlyException('invalid_json', '接口返回无效 JSON');
+      }
+      final code = '${payload['ret'] ?? 0}';
+      if (code != (origin == searchOrigin ? '200' : '0')) {
+        if (code == '429') _rateLimit(origin, const Duration(seconds: 30));
+        if (code == '401') {
+          if (authenticated) _expire();
+          throw const XmlyException(
+            'login_expired',
+            '登录信息已失效，请重新登录',
+            definitive: true,
+          );
+        }
+        if (['5', '403', '726'].contains(code))
+          throw const XmlyException(
+            'permission_denied',
+            '未获得本次请求的完整权限，请检查账号、听时和版权限制',
+            definitive: true,
+          );
+        throw const XmlyException('rejected', '喜马拉雅拒绝了请求', definitive: true);
+      }
+      return payload;
+    } catch (error) {
+      await diagnostic.fail(error);
+      rethrow;
     }
-    return payload;
   }
 
   static void _paging(int page, int pageSize, {int maxPageSize = 50}) {
@@ -1326,6 +1413,7 @@ class XmlyClient {
   void close() {
     if (_closed) return;
     _closed = true;
+    if (!_closeSignal.isCompleted) _closeSignal.complete();
     _urlEpoch++;
     _dio.close(force: true);
     _metadata.clear();

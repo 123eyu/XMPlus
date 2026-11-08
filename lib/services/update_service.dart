@@ -2,6 +2,8 @@
 // lib/utils/update.dart and lib/pages/main/controller.dart, commit
 // d9e9626f1a3f89cd9ca85e18f61aaba02634e12a (GNU GPL v3).
 // Source: https://github.com/bggRGjQaUbCoE/PiliPlus
+import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi' show Abi;
 import 'dart:io' show Platform;
 
@@ -13,6 +15,8 @@ import 'package:pub_semver/pub_semver.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../storage/app_storage.dart';
+import 'request_diagnostics.dart';
+import 'network_retry.dart';
 
 /// Only stable, versioned releases from the public XMPlus repository are used.
 class UpdateRelease {
@@ -116,7 +120,9 @@ class UpdateRelease {
 enum _UpdateAction { ignore, download, page }
 
 class UpdateService extends ChangeNotifier {
-  UpdateService(this.storage);
+  UpdateService(this.storage, {HttpClientAdapter? adapter}) {
+    if (adapter != null) _http.httpClientAdapter = adapter;
+  }
 
   final AppStorage storage;
   // A separate client deliberately has no account interceptors, cookies or token.
@@ -129,8 +135,7 @@ class UpdateService extends ChangeNotifier {
         'Accept': 'application/vnd.github+json',
         'User-Agent': 'XMPlus',
       },
-      validateStatus: (status) =>
-          status == 200 || status == 404 || status == 403 || status == 429,
+      validateStatus: (_) => true,
     ),
   );
   PackageInfo? packageInfo;
@@ -138,6 +143,8 @@ class UpdateService extends ChangeNotifier {
   String? message;
   String? error;
   bool _disposed = false;
+  final _closed = Completer<void>();
+  final _cancel = CancelToken();
 
   Map get _preferences {
     final value = (storage.state['settings'] as Map)['updates'];
@@ -184,6 +191,75 @@ class UpdateService extends ChangeNotifier {
     await _save({'ignoredVersion': null});
   }
 
+  Future<(int?, List<int>, RequestDiagnostic)> _latest() async {
+    const url =
+        'https://api.github.com/repos/teikengstudio/XMPlus/releases/latest';
+    for (var attempt = 0; ; attempt++) {
+      if (_disposed) throw StateError('Update service is closed');
+      final bytes = <int>[];
+      final diagnostic =
+          RequestDiagnostic(account: '公共更新检查（无账号）', method: 'GET', url: url)
+            ..requestHeaders = Map<String, dynamic>.from(_http.options.headers)
+            ..responseBytes = (() => bytes);
+      Response<ResponseBody>? response;
+      try {
+        response = await _http.get<ResponseBody>(
+          url,
+          options: Options(responseType: ResponseType.stream),
+          cancelToken: _cancel,
+        );
+        diagnostic
+          ..requestHeaders = response.requestOptions.headers
+          ..status = response.statusCode
+          ..responseHeaders = response.headers.map
+          ..completeness = '响应体接收中；失败时保留全部已接收字节';
+        final iterator = StreamIterator(response.data!.stream);
+        try {
+          while (await Future.any<bool>([
+            iterator.moveNext().timeout(const Duration(seconds: 20)),
+            _closed.future.then<bool>(
+              (_) => throw StateError('Update service closed'),
+            ),
+          ])) {
+            bytes.addAll(iterator.current);
+          }
+        } finally {
+          await iterator.cancel();
+        }
+        diagnostic.completeness = '完整响应体';
+        if (response.statusCode != 200 && response.statusCode != 404) {
+          throw DioException.badResponse(
+            statusCode: response.statusCode ?? 0,
+            requestOptions: response.requestOptions,
+            response: response,
+          );
+        }
+        if (response.statusCode == 404) {
+          await diagnostic.fail(const FormatException('GitHub 尚无稳定版本 (404)'));
+        }
+        return (response.statusCode, bytes, diagnostic);
+      } catch (failure) {
+        if (failure is DioException) {
+          diagnostic.requestHeaders = failure.requestOptions.headers;
+          diagnostic.transportError =
+              '${failure.type}: ${failure.error ?? failure.message}';
+        } else if (retryableTransport(failure)) {
+          diagnostic.transportError = '$failure';
+        }
+        await diagnostic.fail(failure);
+        if (_disposed ||
+            attempt == 4 ||
+            !(retryableStatus(response?.statusCode) ||
+                retryableTransport(failure)))
+          rethrow;
+        await waitToRetry(
+          retryDelay(attempt, response?.headers.value('retry-after')),
+          closed: _closed.future,
+        );
+      }
+    }
+  }
+
   Future<void> check(BuildContext context, {bool manual = false}) async {
     if (checking || _disposed) return;
     var interactive = manual;
@@ -195,23 +271,23 @@ class UpdateService extends ChangeNotifier {
       packageInfo ??= await PackageInfo.fromPlatform();
       _changed();
       if (!manual && !autoCheck) return;
-      final response = await _http.get<dynamic>(
-        'https://api.github.com/repos/teikengstudio/XMPlus/releases/latest',
-      );
-      if (response.statusCode == 404) {
+      final (status, responseBytes, diagnostic) = await _latest();
+      if (status == 404) {
         message = '暂无已发布的稳定版本';
         if (manual && context.mounted && !_disposed) _toast(context, message!);
         return;
       }
-      if (response.statusCode == 403 || response.statusCode == 429) {
-        throw const FormatException('GitHub 接口暂不可用或请求过于频繁，请稍后重试');
+      late final UpdateRelease release;
+      try {
+        final data = jsonDecode(utf8.decode(responseBytes));
+        if (data is! Map<String, dynamic>) {
+          throw const FormatException('GitHub 未返回有效的发布数据');
+        }
+        release = UpdateRelease.fromJson(data);
+      } catch (failure) {
+        await diagnostic.fail(failure);
+        rethrow;
       }
-      if (response.data is! Map<String, dynamic>) {
-        throw const FormatException('GitHub 未返回有效的发布数据');
-      }
-      final release = UpdateRelease.fromJson(
-        response.data as Map<String, dynamic>,
-      );
       if (!release.isNewerThan(packageInfo!.version)) {
         message = '已是最新版本';
         if (manual && context.mounted && !_disposed) _toast(context, message!);
@@ -316,6 +392,8 @@ class UpdateService extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _closed.complete();
+    _cancel.cancel('Update service disposed');
     _http.close(force: true);
     super.dispose();
   }

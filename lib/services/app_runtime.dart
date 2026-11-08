@@ -20,9 +20,11 @@ import 'download_service.dart';
 import 'media_pipeline.dart';
 import 'player_service.dart';
 import 'system_media_service.dart';
+import 'request_diagnostics.dart';
 
 class AppRuntime extends ChangeNotifier {
   AppRuntime({required this.storage, required this.secrets}) {
+    RequestDiagnostics.instance.configure(storage.directory);
     anonymous = XmlyClient(
       urlCacheDirectory: p.join(storage.directory, 'audio-url-cache'),
     );
@@ -46,6 +48,7 @@ class AppRuntime extends ChangeNotifier {
       processOnly: pipeline.processOnly,
       discardSource: pipeline.discardSource,
       anonymous: anonymous,
+      beforeAdmission: _claimForDownload,
     );
     autoDownloads = AutoDownloadService(
       storage: storage,
@@ -129,6 +132,7 @@ class AppRuntime extends ChangeNotifier {
   String? lifecycleError;
   Timer? _rewardTimer;
   bool _refreshingRewards = false;
+  final Map<String, Quota> _rewardChecks = {};
 
   XmlyClient get client => accounts.activeClient ?? anonymous;
   Future<void> load() async {
@@ -170,6 +174,7 @@ class AppRuntime extends ChangeNotifier {
       _cachedDownloadStates[task.id] = task.state;
       if (_restoringDownloads ||
           task.track.albumId.isEmpty ||
+          downloads.albumJobs.any((job) => job.albumId == task.track.albumId) ||
           (previous != null &&
               !(task.state == DownloadState.queued && previous != task.state) &&
               !(task.state == DownloadState.completed &&
@@ -220,13 +225,14 @@ class AppRuntime extends ChangeNotifier {
     List<Track> tracks, {
     String? accountIdentity,
     bool automatic = false,
+    bool? polling,
   }) async {
     final root = await downloadRoot();
     final settings = storage.state['settings'] as Map;
     final identity =
         accountIdentity ?? accounts.primaryAccountId ?? 'anonymous';
     final selected = <Track>[];
-    final catalogues = <String, List<Track>>{};
+    final pages = <String, Map<int, AlbumPage>>{};
     final pattern =
         (settings['download'] as Map?)?['filenamePattern'] as String? ??
         '{index} - {title} [{trackId}]';
@@ -235,13 +241,28 @@ class AppRuntime extends ChangeNotifier {
           track.orderNo == null &&
           track.officialPosition == null &&
           track.albumId.isNotEmpty) {
-        final list = catalogues[track.albumId] ??= await XmlyCatalogue(
-          identity == 'anonymous' ? anonymous : accounts.clientFor(identity),
-        ).album(track.albumId);
-        final matching = list.where((item) => item.id == track.id).toList();
-        if (matching.length != 1)
+        final albumPages = pages.putIfAbsent(track.albumId, () => {});
+        final source = identity == 'anonymous'
+            ? anonymous
+            : accounts.clientFor(identity);
+        Track? matching;
+        for (var page = 1; ; page++) {
+          final result = albumPages[page] ??= await source.album(
+            track.albumId,
+            page: page,
+            pageSize: xmlyAlbumPageSize,
+            ascending: true,
+          );
+          matching = result.tracks
+              .where((item) => item.id == track.id)
+              .firstOrNull;
+          if (matching != null || page * xmlyAlbumPageSize >= result.total)
+            break;
+        }
+        if (matching == null) {
           throw const XmlyException('missing_official_order', '专辑中没有找到此声音');
-        selected.add(matching.single);
+        }
+        selected.add(matching);
       } else {
         selected.add(track);
       }
@@ -253,6 +274,8 @@ class AppRuntime extends ChangeNotifier {
       settings: {
         'download': {
           ...(settings['download'] as Map? ?? const {}),
+          'polling':
+              polling ?? (settings['download'] as Map?)?['polling'] != false,
           if (automatic) 'retryLimit': 0,
         },
         'media': settings['media'] ?? <String, dynamic>{},
@@ -260,6 +283,79 @@ class AppRuntime extends ChangeNotifier {
         'albumTags': settings['albumTags'] ?? <String, dynamic>{},
       },
     );
+  }
+
+  Future<DownloadBatch> prepareAlbumDownloads(
+    String albumId, {
+    String? accountIdentity,
+    bool? polling,
+  }) async {
+    final settings = storage.state['settings'] as Map;
+    return downloads.prepareAlbum(
+      albumId,
+      accountIdentity:
+          accountIdentity ?? accounts.primaryAccountId ?? 'anonymous',
+      rootDirectory: await downloadRoot(),
+      settings: {
+        'download': {
+          ...(settings['download'] as Map? ?? const {}),
+          'polling':
+              polling ?? (settings['download'] as Map?)?['polling'] != false,
+        },
+        'media': settings['media'] ?? <String, dynamic>{},
+        'tags': settings['tags'] ?? <String, dynamic>{},
+        'albumTags': settings['albumTags'] ?? <String, dynamic>{},
+      },
+    );
+  }
+
+  Future<int?> _claimForDownload(String identity, XmlyClient client) async {
+    if (closing || (storage.state['settings'] as Map)['autoClaim'] != true)
+      return null;
+    final record = (storage.state['accounts'] as Map)[identity] as Map?;
+    if (record == null ||
+        record['rewardPaused'] == true ||
+        ledger.isBlocked(identity))
+      return null;
+    final checked = _rewardChecks[identity];
+    if (checked != null &&
+        DateTime.now().difference(checked.checkedAt) <
+            const Duration(minutes: 5)) {
+      var remaining = checked.remainingSeconds - ledger.debt(identity).ceil();
+      for (final receipt in ledger.receipts(identity)) {
+        if (receipt.state == DebitState.confirmed &&
+            receipt.balanceAfter != null &&
+            !receipt.createdAt.isBefore(checked.checkedAt) &&
+            receipt.balanceAfter! < remaining) {
+          remaining = receipt.balanceAfter!;
+        }
+      }
+      if (remaining >= 7200) return null;
+    }
+    return _refreshAccountRewards(identity, client);
+  }
+
+  Future<int?> _refreshAccountRewards(
+    String identity,
+    XmlyClient client,
+  ) async {
+    final rewards = XmlyRewards(client, automaticEnabled: true);
+    var increase = 0;
+    try {
+      final before = await client.queryQuota();
+      final after = await rewards.refresh();
+      _rewardChecks[identity] = after;
+      increase = after.remainingSeconds - before.remainingSeconds;
+    } catch (_) {
+      // Claim availability must not prevent an otherwise authorized download.
+      return null;
+    }
+    if (rewards.lastError.isNotEmpty) {
+      await storage.transaction((state) {
+        ((state['accounts'] as Map)[identity] as Map)['rewardPaused'] = true;
+      });
+    }
+    return increase > 0 ? increase : null;
   }
 
   void _checkAutomaticAccount(String identity) {
@@ -305,6 +401,7 @@ class AppRuntime extends ChangeNotifier {
 
   Future<void> reloadAfterRestore() async {
     _restoringDownloads = true;
+    _rewardChecks.clear();
     try {
       await downloads.reload();
       _cachedDownloadStates
@@ -351,14 +448,7 @@ class AppRuntime extends ChangeNotifier {
         if (record['rewardPaused'] == true) continue;
         try {
           await accounts.runWithAccount(identity, (client) async {
-            final rewards = XmlyRewards(client, automaticEnabled: true);
-            await rewards.refresh();
-            if (rewards.lastError.isNotEmpty) {
-              await storage.transaction((state) {
-                ((state['accounts'] as Map)[identity] as Map)['rewardPaused'] =
-                    true;
-              });
-            }
+            await _refreshAccountRewards(identity, client);
           });
         } catch (_) {
           // A failed account refresh never triggers account rotation or replay.
@@ -422,6 +512,7 @@ class AppRuntime extends ChangeNotifier {
       await pipeline.close();
       anonymous.close();
       await anonymous.flushUrlCache();
+      await RequestDiagnostics.instance.close();
       await storage.close();
       _closed = true;
       return true;
