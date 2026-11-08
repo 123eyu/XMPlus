@@ -171,43 +171,49 @@ class _MyAppState extends State<MyApp> with WindowListener {
                 child: child,
                 builder: (context, child) => Column(
                   children: [
-                    StreamBuilder<void>(
-                      stream: RequestDiagnostics.instance.changes,
-                      builder: (context, _) {
-                        final diagnostics = RequestDiagnostics.instance;
-                        if (diagnostics.entries.isEmpty &&
-                            diagnostics.persistenceError == null) {
-                          return const SizedBox.shrink();
-                        }
-                        return Material(
-                          color: Theme.of(context).colorScheme.errorContainer,
-                          child: SafeArea(
-                            bottom: false,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.error_outline),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      '请求失败记录：${diagnostics.entries.length} 条'
-                                      '${diagnostics.persistenceError == null ? '' : '；本地日志保存失败，请复制保留'}',
+                    ListenableBuilder(
+                      listenable: widget.runtime,
+                      builder: (context, _) => StreamBuilder<void>(
+                        stream: RequestDiagnostics.instance.changes,
+                        builder: (context, _) {
+                          final diagnostics = RequestDiagnostics.instance;
+                          final settings =
+                              widget.runtime.storage.state['settings'] as Map;
+                          if (settings['showRequestFailureBanner'] == false ||
+                              (diagnostics.entries.isEmpty &&
+                                  diagnostics.persistenceError == null)) {
+                            return const SizedBox.shrink();
+                          }
+                          return Material(
+                            color: Theme.of(context).colorScheme.errorContainer,
+                            child: SafeArea(
+                              bottom: false,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.error_outline),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        '请求失败记录：${diagnostics.entries.length} 条'
+                                        '${diagnostics.persistenceError == null ? '' : '；本地日志保存失败，请复制保留'}',
+                                      ),
                                     ),
-                                  ),
-                                  TextButton(
-                                    onPressed: _showRequestFailures,
-                                    child: const Text('详情 / 复制'),
-                                  ),
-                                ],
+                                    TextButton(
+                                      onPressed: _showRequestFailures,
+                                      child: const Text('详情 / 复制'),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
                     Expanded(child: child!),
                     if (_playerRoutes.current?.settings.name !=

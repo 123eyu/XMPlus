@@ -571,6 +571,9 @@ class ConfigArchive {
   static void _validateSettings(Map<String, dynamic> settings) {
     if (settings.containsKey('autoClaim') && settings['autoClaim'] is! bool)
       throw const FormatException();
+    if (settings.containsKey('showRequestFailureBanner') &&
+        settings['showRequestFailureBanner'] is! bool)
+      throw const FormatException();
     final appearance = settings['appearance'];
     if (appearance != null) {
       final value = _map(appearance);

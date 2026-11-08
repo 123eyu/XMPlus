@@ -101,6 +101,7 @@ class _SettingsPageState extends State<SettingsPage> {
     ),
     _SettingsSection.appearance => _AppearanceSettings(
       appearance: widget.appearance,
+      runtime: widget.runtime,
     ),
     _SettingsSection.about => _AboutSettings(updates: widget.updates),
   };
@@ -169,9 +170,10 @@ class _SettingsPageState extends State<SettingsPage> {
 }
 
 class _AppearanceSettings extends StatelessWidget {
-  const _AppearanceSettings({required this.appearance});
+  const _AppearanceSettings({required this.appearance, required this.runtime});
 
   final AppAppearance appearance;
+  final AppRuntime runtime;
 
   static const _colors = [
     (label: '浅红', color: Color(AppAppearance.defaultSeedColor)),
@@ -277,6 +279,37 @@ class _AppearanceSettings extends StatelessWidget {
                 const SizedBox(height: 8),
                 const Text('在系统字号基础上调整，仍保留系统无障碍文字缩放。'),
               ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingsCard(
+            title: '网络错误提示',
+            child: ListenableBuilder(
+              listenable: runtime,
+              builder: (context, _) => SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('显示网络错误栏'),
+                subtitle: const Text('关闭仅隐藏错误栏，不会停止收集错误日志；重新开启可查看记录。'),
+                value:
+                    (runtime.storage.state['settings']
+                        as Map)['showRequestFailureBanner'] !=
+                    false,
+                onChanged: (value) async {
+                  try {
+                    await runtime.storage.transaction((state) {
+                      (state['settings'] as Map)['showRequestFailureBanner'] =
+                          value;
+                    });
+                    runtime.changed();
+                  } catch (_) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('设置保存失败，原设置已保留')),
+                      );
+                    }
+                  }
+                },
+              ),
             ),
           ),
         ],

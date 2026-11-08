@@ -21,7 +21,7 @@ class XmlyClient {
   static const welfare = 'https://m.ximalaya.com';
   static const _maxResponse = 2 * 1024 * 1024;
   static const _maxCachedAlbumResponse = 16 * 1024 * 1024;
-  static const _qualities = ['mp3_64', 'mp3_32', 'm4a_64', 'm4a_24'];
+  static const _qualities = ['m4a_128', 'm4a_64', 'mp3_64', 'mp3_32', 'm4a_24'];
   static const _maxUrlCacheFile = 16 * 1024 * 1024;
   final Credentials? credentials;
   final String quality;
@@ -327,7 +327,7 @@ class XmlyClient {
       '响应超过 ${responseLimit ~/ (1024 * 1024)} MiB 上限',
     );
     final headers = <String, String>{
-      'Accept': 'application/json',
+      'Accept': origin == collector ? '*/*' : 'application/json',
       if (origin == collector) 'User-Agent': 'ting_3.4.10.3(Android,30)',
       if (authenticated) 'Cookie': credentials!.cookie,
       if (signed) 'x-tk': XmlyCrypto.freshTicket(credentials!),
@@ -1233,7 +1233,7 @@ class XmlyClient {
                 !entry.deadline!.isAfter(DateTime.now())))
           break;
         _remember(track);
-        return _resolvedAudio(entry, track, entry.requiresReward!);
+        return await _resolvedAudio(entry, track, entry.requiresReward!);
       }
     }
     var info = await _info(number);
@@ -1339,16 +1339,16 @@ class XmlyClient {
       entry.requiresReward = reward != null;
       if (entry.verified) _saveUrlCache();
     }
-    return _resolvedAudio(entry, track, reward != null);
+    return await _resolvedAudio(entry, track, reward != null);
   });
 
-  ResolvedAudio _resolvedAudio(
+  Future<ResolvedAudio> _resolvedAudio(
     _CachedAudioUrl entry,
     Track track,
     bool requiresReward,
-  ) {
+  ) async {
     final key = _urlKey(entry.number, entry.quality);
-    return ResolvedAudio(
+    final audio = ResolvedAudio(
       uri: entry.uri,
       expiresAt: entry.deadline,
       requiresReward: requiresReward,
@@ -1376,6 +1376,147 @@ class XmlyClient {
         _invalidateLease(key, entry);
       },
     );
+    final host = audio.uri.host.toLowerCase();
+    if (!host.startsWith('audiopay') || !host.endsWith('.xmcdn.com'))
+      return audio;
+    var uri = audio.uri;
+    final epoch = _urlEpoch;
+    for (var redirects = 0; ; redirects++) {
+      final cancel = CancelToken();
+      final diagnostic = RequestDiagnostic(
+        account: identity,
+        method: 'GET',
+        url: uri.toString(),
+      );
+      try {
+        final next = await Future.any<Uri?>([
+          (() async {
+            uri = mediaUri(uri.toString());
+            final options = Options(
+              method: 'GET',
+              headers: const {
+                'User-Agent': 'XMPlus/1.0',
+                'Accept': 'audio/*, application/octet-stream',
+                'Accept-Encoding': 'identity',
+                'Range': 'bytes=0-11',
+              },
+              responseType: ResponseType.stream,
+              followRedirects: false,
+              maxRedirects: 0,
+              validateStatus: (_) => true,
+              receiveTimeout: const Duration(seconds: 10),
+              sendTimeout: const Duration(seconds: 10),
+            ).compose(_dio.options, uri.toString(), cancelToken: cancel);
+            // Never reuse API cookies, tickets, or caller-supplied media headers.
+            diagnostic.requestHeaders = options.headers;
+            final response = await _dio.fetch<ResponseBody>(options);
+            final status = response.statusCode ?? 0;
+            diagnostic.status = status;
+            diagnostic.responseHeaders = response.headers.map;
+            diagnostic.completeness = '仅探测音频前缀，未下载完整响应体';
+            if ([301, 302, 303, 307, 308].contains(status)) {
+              final location = response.headers.value('location');
+              if (location == null || location.isEmpty || redirects >= 5)
+                throw const XmlyException('invalid_media', '音频重定向过多或无效');
+              try {
+                return mediaUri(uri.resolve(location).toString());
+              } on FormatException {
+                throw const XmlyException('invalid_media', '音频重定向地址无效');
+              }
+            }
+            final bytes = BytesBuilder(copy: false);
+            diagnostic.responseBytes = bytes.toBytes;
+            final successful = status == 200 || status == 206;
+            final limit = successful ? 12 : 4096;
+            final body = response.data;
+            if (body != null) {
+              await for (final chunk in body.stream) {
+                final count = min(chunk.length, limit - bytes.length);
+                if (count > 0)
+                  bytes.add(Uint8List.sublistView(chunk, 0, count));
+                if (bytes.length == limit) break;
+              }
+            }
+            if (!successful)
+              throw XmlyException(
+                'media_http',
+                status == 401 || status == 403
+                    ? '音频授权已失效，请重新获取'
+                    : '音频请求返回 HTTP $status',
+              );
+            final type = (response.headers.value('content-type') ?? '')
+                .split(';')
+                .first
+                .trim()
+                .toLowerCase();
+            if (!(type.startsWith('audio/') ||
+                type.startsWith('video/') ||
+                type == 'application/octet-stream' ||
+                type == 'binary/octet-stream' ||
+                type == 'application/ogg' ||
+                type.isEmpty))
+              throw const XmlyException('invalid_media', '响应不是音频，未缓存错误页面');
+            final prefix = bytes.takeBytes();
+            diagnostic.responseBytes = () => prefix;
+            bool text(int offset, String value) {
+              if (prefix.length < offset + value.length) return false;
+              for (var i = 0; i < value.length; i++) {
+                if (prefix[offset + i] != value.codeUnitAt(i)) return false;
+              }
+              return true;
+            }
+
+            if (!(text(0, 'ID3') ||
+                text(0, 'fLaC') ||
+                text(0, 'OggS') ||
+                (text(0, 'RIFF') && text(8, 'WAVE')) ||
+                text(4, 'ftyp') ||
+                (prefix.length >= 4 &&
+                    prefix[0] == 0xff &&
+                    (((prefix[1] & 0xe0) == 0xe0 &&
+                            (prefix[1] & 0x06) != 0 &&
+                            (prefix[2] & 0xf0) != 0xf0 &&
+                            (prefix[2] & 0xf0) != 0 &&
+                            (prefix[2] & 0x0c) != 0x0c) ||
+                        ((prefix[1] & 0xf6) == 0xf0 &&
+                            (prefix[2] & 0x3c) != 0x3c)))))
+              throw const XmlyException('invalid_media', '响应不是可识别的音频，未缓存错误页面');
+            if (status == 206 &&
+                !RegExp(r'^bytes 0-[0-9]+/(?:[0-9]+|\*)$')
+                    .hasMatch(response.headers.value('content-range') ?? ''))
+              throw const XmlyException('invalid_media', '音频范围响应无效');
+            return null;
+          })(),
+          _closeSignal.future.then<Uri?>((_) {
+            throw const XmlyException(
+              'client_closed',
+              '连接已关闭',
+              definitive: true,
+            );
+          }),
+        ]).timeout(const Duration(seconds: 25));
+        if (_closed)
+          throw const XmlyException('client_closed', '连接已关闭', definitive: true);
+        if (_expired || epoch != _urlEpoch || !identical(_urls[key], entry))
+          throw const XmlyException('cache_source_changed', '音频来源已变化，请重新获取');
+        if (next != null) {
+          uri = next;
+          continue;
+        }
+        audio.rememberFinalUri(uri);
+        return audio;
+      } catch (error) {
+        cancel.cancel();
+        _invalidateLease(key, entry);
+        if (error is! XmlyException) diagnostic.transportError = '$error';
+        await diagnostic.fail(error);
+        if (error is XmlyException) rethrow;
+        throw const XmlyException('network', '音频地址请求失败或超时');
+      } finally {
+        // Dio's stream wrapper must also cancel its underlying HTTP response.
+        cancel.cancel();
+      }
+    }
   }
 
   void _invalidateLease(String key, _CachedAudioUrl entry) {

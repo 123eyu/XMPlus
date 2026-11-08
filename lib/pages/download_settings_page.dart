@@ -179,10 +179,11 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage>
             isExpanded: true,
             decoration: const InputDecoration(labelText: '音质'),
             items: const [
-              DropdownMenuItem(value: 'auto', child: Text('自动')),
+              DropdownMenuItem(value: 'auto', child: Text('自动（优先最高音质）')),
+              DropdownMenuItem(value: 'm4a_128', child: Text('M4A 128 kbps')),
+              DropdownMenuItem(value: 'm4a_64', child: Text('M4A 64 kbps')),
               DropdownMenuItem(value: 'mp3_64', child: Text('MP3 64 kbps')),
               DropdownMenuItem(value: 'mp3_32', child: Text('MP3 32 kbps')),
-              DropdownMenuItem(value: 'm4a_64', child: Text('M4A 64 kbps')),
               DropdownMenuItem(value: 'm4a_24', child: Text('M4A 24 kbps')),
             ],
             onChanged: _saving
