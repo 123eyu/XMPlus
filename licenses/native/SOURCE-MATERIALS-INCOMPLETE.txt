@@ -30,28 +30,12 @@ The real mpv client API and WASAPI output remain; only unused optional graphics,
 scripting and system-integration features are disabled at configure time. No
 video-source deletion or fake platform library is used. No downstream patches.
 
-Build modes:
-- Local full mode (command above) retains runtime, exact source archives, locks,
-  recipes, build objects/configuration, licenses and build/import receipts in
-  windows-native-supply.zip. Source materials are not application runtime files.
-- CI uses --runtime-only: windows-native-supply.zip contains runtime, licenses,
-  sources/SOURCES.json provenance, IMPORTS.json and BUILD-RECEIPT.json only.
-  CI does not package or upload source archives, toolchains or relink objects.
-The recipe rejects unexpected non-system imported DLLs. Receipts bind runtime
-hashes to the locked source versions and recipe; runtime-only receipts do not
-assert that corresponding-source materials are included.
+Use --runtime-only to omit source archives and build objects from the supply.
 A runnable digest check is: python tool/windows_native_build.py <supply> --verify-supply
 
 Package the matching supply with:
   powershell -File tool/build_windows.ps1 -NativeSupply build/windows-native
-For CI runtime-only supply, add -RuntimeOnly. Both modes verify payload hashes,
-source locks and recipe provenance and refuse the retired binaries. Local full
-mode additionally verifies and retains source/relink materials under the separate
--DevelopmentDirectory (default build/corresponding-source), never inside dist.
-The real media-kit wrapper is compiled with its hash-pinned download section
-replaced in a generated build-directory copy; the global Pub cache is unchanged.
-Both modes produce Windows ZIPs with and without standalone FFmpeg/FFprobe;
-both retain libmpv for playback. Required licenses and origin notes remain.
+For runtime-only supply, add -RuntimeOnly.
 Applicable corresponding-source access must be arranged separately before public
 binary distribution; these checks do not establish complete license compliance.
 Local candidate mode does not bypass supply checks.
@@ -62,9 +46,3 @@ https://aka.ms/vc14/vc_redist.x64.exe
 https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist
 This is a prerequisite link, NOT a grant of distribution rights or terms acceptance.
 
-Runtime-only receipts mark sourceComplete false; source provenance verification
-does not supply corresponding-source materials. This file does not assert that
-a build, playback test or release has occurred. The
-parent must run the real Windows package: media-kit open/play/pause/seek/close,
-all MP3/AAC/FLAC outputs, original remux + audio packet hash, JPEG/PNG cover and
-metadata, plus FFprobe. A successful cross-build is not functional acceptance.

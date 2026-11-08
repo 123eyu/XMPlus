@@ -6,7 +6,6 @@
 - 修复 Android 极验验证、官方音频跳转、外置存储安全保存和备份声音 ID 恢复。
 - 升级 Flutter 3.47.9、Gradle 9.9.0、AGP 9.5.1、Kotlin 2.4.21 与 Android API 36；支持预测性返回和横屏、平板系统栏避让。
 - Android 三 ABI 正式签名 APK；真机 WebView、外置存储及系统手势仍待验收。
-- Windows 构建新增内置 FFmpeg / FFprobe 和不含这两个工具的双包，均保留 libmpv 播放；尚未发布。
 
 ## 1.0.0
 

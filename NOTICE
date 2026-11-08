@@ -99,10 +99,7 @@ Native media and build materials
   This software is based in part on the work of the Independent JPEG Group.
 - Windows FFmpeg/FFprobe/libmpv use the exact source versions and SHA-256 locks in
   tool/windows_native_sources.json and tool/media_sources.json, built by
-  tool/windows_native_build.py. Receipts bind runtime hashes to these locks and
-  recipe provenance. Local full mode also retains source archives, configuration
-  and relinkable objects; CI uses runtime-only supply, not these source materials.
-  New Windows packages never silently fall back to the retired publisher DLLs.
+  tool/windows_native_build.py.
 - media_kit wrappers remain MIT; that does not relicense their native libraries.
   Per-component licenses and notices accompany the native supply, separately
   from the application license. No downstream media-library patches are used.
@@ -111,13 +108,7 @@ Native media and build materials
   https://aka.ms/vc14/vc_redist.x64.exe
   This prerequisite link is not a grant of redistribution rights.
 
-Windows CI is configured to generate runtime ZIPs with and without standalone FFmpeg/FFprobe;
-both retain libmpv for playback, licenses and origin notes. CI does not package or
-upload source archives, toolchains or relink objects. Local full mode keeps source
-and build materials in a separate development directory, outside the runtime ZIP.
-Public binary distribution still requires applicable corresponding-source access
-to be provided separately. Build/provenance checks alone establish neither full
-license compliance nor functional playback acceptance.
+Public binary distribution requires applicable corresponding-source access.
 
 
 Search endpoint documentation consulted:

@@ -3,9 +3,7 @@ HISTORICAL RETIRED GYAN BINARY — NOT THE CURRENT SOURCE BUILD
 The metadata below belongs only to the retired Gyan candidate. Its source gaps
 were not waived. Current source versions and SHA-256 locks are in
 tool/media_sources.json and tool/windows_native_sources.json; the recipe is
-tool/windows_native_build.py, with actual provenance in BUILD-RECEIPT.json and
-sources/SOURCES.json. Local full mode retains source/relink materials separately.
-CI transfers runtime, licenses and provenance only, not source/toolchain/object archives.
+tool/windows_native_build.py.
 
 Fixed package URL: https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip
 Package SHA-256: 60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba
