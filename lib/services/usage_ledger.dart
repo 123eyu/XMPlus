@@ -488,10 +488,16 @@ class UsageLedger {
         );
       }
     });
-    final Quota result;
+    final balanceBefore = operation['balanceBefore'] as int;
+    // 一天限免时余额超过 20 小时，扣时接口不可用。
+    final freeDay = balanceBefore > const Duration(hours: 20).inSeconds;
+    final int balanceAfter;
     try {
-      result = await clientFor(identity)
-          .debitSeconds(operation['seconds'] as int);
+      balanceAfter = freeDay
+          ? balanceBefore
+          : (await clientFor(identity)
+                    .debitSeconds(operation['seconds'] as int))
+                .remainingSeconds;
     } catch (error) {
       if (error is XmlyException && error.definitive) {
         try {
@@ -510,9 +516,8 @@ class UsageLedger {
       await _markUncertain(identity, operation, online: online);
       throw _uncertain;
     }
-    operation['balanceAfter'] = result.remainingSeconds;
-    if ((operation['balanceBefore'] as int) - result.remainingSeconds !=
-        operation['seconds']) {
+    operation['balanceAfter'] = balanceAfter;
+    if (!freeDay && balanceBefore - balanceAfter != operation['seconds']) {
       await _markUncertain(identity, operation, online: online);
       throw _uncertain;
     }
