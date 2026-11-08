@@ -31,43 +31,11 @@ class RequestDiagnostics {
             FileSystemEntityType.directory) {
           throw const FileSystemException('诊断目录不能是链接');
         }
-        final restored = <RequestFailure>[];
         await for (final file in Directory(target).list(followLinks: false)) {
           if (file is! File || !p.basename(file.path).endsWith('.log'))
             continue;
-          try {
-            final line = await file
-                .openRead()
-                .transform(utf8.decoder)
-                .transform(const LineSplitter())
-                .first;
-            final metadata = jsonDecode(line) as Map;
-            restored.add(
-              RequestFailure(
-                timestamp: DateTime.parse(metadata['timestamp'] as String),
-                method: metadata['method'] as String,
-                url: metadata['url'] as String,
-                account: metadata['account'] as String,
-                path: file.path,
-              ),
-            );
-          } catch (_) {
-            // An interrupted/older log remains discoverable and copyable.
-            restored.add(
-              RequestFailure(
-                timestamp: await file.lastModified(),
-                method: 'HTTP',
-                url: p.basename(file.path),
-                account: '未知',
-                path: file.path,
-              ),
-            );
-          }
+          await file.delete();
         }
-        _entries.insertAll(
-          0,
-          restored..sort((a, b) => a.timestamp.compareTo(b.timestamp)),
-        );
         persistenceError = null;
       } catch (error) {
         persistenceError = '$error';

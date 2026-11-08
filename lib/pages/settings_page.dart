@@ -292,8 +292,8 @@ class _AppearanceSettings extends StatelessWidget {
                 subtitle: const Text('关闭仅隐藏错误栏，不会停止收集错误日志；重新开启可查看记录。'),
                 value:
                     (runtime.storage.state['settings']
-                        as Map)['showRequestFailureBanner'] !=
-                    false,
+                        as Map)['showRequestFailureBanner'] ==
+                    true,
                 onChanged: (value) async {
                   try {
                     await runtime.storage.transaction((state) {

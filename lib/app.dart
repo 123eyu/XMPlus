@@ -179,7 +179,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
                           final diagnostics = RequestDiagnostics.instance;
                           final settings =
                               widget.runtime.storage.state['settings'] as Map;
-                          if (settings['showRequestFailureBanner'] == false ||
+                          if (settings['showRequestFailureBanner'] != true ||
                               (diagnostics.entries.isEmpty &&
                                   diagnostics.persistenceError == null)) {
                             return const SizedBox.shrink();
