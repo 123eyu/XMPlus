@@ -143,32 +143,35 @@ class _MyAppState extends State<MyApp> with WindowListener {
               _appearance.textScale,
             ),
           ),
-          child: Overlay.wrap(
-            child: ListenableBuilder(
-              listenable: _playerRoutes,
-              child: child,
-              builder: (context, child) => Column(
-                children: [
-                  Expanded(child: child!),
-                  if (_playerRoutes.current?.settings.name !=
-                      PlayerPanel.routeName)
-                    SafeArea(
-                      top: false,
-                      child: ExcludeFocus(
-                        excluding: _playerRoutes.current is PopupRoute,
-                        child: ExcludeSemantics(
+          child: ColoredBox(
+            color: Theme.of(context).colorScheme.surface,
+            child: Overlay.wrap(
+              child: ListenableBuilder(
+                listenable: _playerRoutes,
+                child: child,
+                builder: (context, child) => Column(
+                  children: [
+                    Expanded(child: child!),
+                    if (_playerRoutes.current?.settings.name !=
+                        PlayerPanel.routeName)
+                      SafeArea(
+                        top: false,
+                        child: ExcludeFocus(
                           excluding: _playerRoutes.current is PopupRoute,
-                          child: AbsorbPointer(
-                            absorbing: _playerRoutes.current is PopupRoute,
-                            child: PlayerPanel(
-                              runtime: widget.runtime,
-                              navigatorKey: _navigator,
+                          child: ExcludeSemantics(
+                            excluding: _playerRoutes.current is PopupRoute,
+                            child: AbsorbPointer(
+                              absorbing: _playerRoutes.current is PopupRoute,
+                              child: PlayerPanel(
+                                runtime: widget.runtime,
+                                navigatorKey: _navigator,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

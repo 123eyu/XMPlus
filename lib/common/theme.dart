@@ -4,6 +4,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show PredictiveBackEvent;
 
 import '../storage/app_storage.dart';
 
@@ -171,7 +172,7 @@ ThemeData getThemeData({
     pageTransitionsTheme: PageTransitionsTheme(
       builders: {
         ...const PageTransitionsTheme().builders,
-        TargetPlatform.android: const PredictiveBackPageTransitionsBuilder(),
+        TargetPlatform.android: const _FadePageTransitionsBuilder(),
       },
     ),
     appBarTheme: AppBarTheme(
@@ -286,4 +287,82 @@ ThemeData getThemeData({
       style: buttonStyle.copyWith(elevation: const WidgetStatePropertyAll(0)),
     ),
   );
+}
+
+class _FadePageTransitionsBuilder extends PageTransitionsBuilder {
+  const _FadePageTransitionsBuilder();
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 200);
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => _PredictiveBackFadeTransition(
+    route: route,
+    animation: animation,
+    child: child,
+  );
+}
+
+class _PredictiveBackFadeTransition extends StatefulWidget {
+  const _PredictiveBackFadeTransition({
+    required this.route,
+    required this.animation,
+    required this.child,
+  });
+
+  final PageRoute<dynamic> route;
+  final Animation<double> animation;
+  final Widget child;
+
+  @override
+  State<_PredictiveBackFadeTransition> createState() =>
+      _PredictiveBackFadeTransitionState();
+}
+
+class _PredictiveBackFadeTransitionState
+    extends State<_PredictiveBackFadeTransition>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  bool handleStartBackGesture(PredictiveBackEvent backEvent) {
+    if (backEvent.isButtonEvent ||
+        !widget.route.isCurrent ||
+        !widget.route.popGestureEnabled) {
+      return false;
+    }
+    widget.route.handleStartBackGesture(progress: 1 - backEvent.progress);
+    return true;
+  }
+
+  @override
+  void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) => widget
+      .route
+      .handleUpdateBackGestureProgress(progress: 1 - backEvent.progress);
+
+  @override
+  void handleCancelBackGesture() => widget.route.handleCancelBackGesture();
+
+  @override
+  void handleCommitBackGesture() => widget.route.handleCommitBackGesture();
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      FadeTransition(opacity: widget.animation, child: widget.child);
 }
