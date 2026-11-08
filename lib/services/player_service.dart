@@ -131,12 +131,16 @@ class PlayerService {
   final Set<int> _checkedEpochs = {};
   Future<void>? _prefetchFlight;
   int _prefetchEpoch = -1, _prefetchGeneration = -1;
+  bool _loading = false;
+  int _seekRevision = 0;
 
   Stream<void> get changes => _changes.stream;
   List<Track> get queue => List.unmodifiable(_queue);
   Track? get current =>
       cursor >= 0 && cursor < _queue.length ? _queue[cursor] : null;
   String get sourceKind => _source?.kind ?? '';
+  bool get loading => _loading;
+  int get seekRevision => _seekRevision;
   String? get currentTaskId => _source?.taskId;
   String get libraryIdentity => accounts.activeClient?.identity ?? 'anonymous';
   String get _progressIdentity => _source?.identity ?? libraryIdentity;
@@ -575,6 +579,27 @@ class PlayerService {
     bool manualReplay = false,
     String? localTaskId,
   }) async {
+    if (current == null || request != _request) return;
+    _loading = true;
+    try {
+      await _openCurrentSource(
+        request,
+        resumePosition: resumePosition,
+        manualReplay: manualReplay,
+        localTaskId: localTaskId,
+      );
+    } finally {
+      _loading = false;
+      _notify();
+    }
+  }
+
+  Future<void> _openCurrentSource(
+    int request, {
+    double? resumePosition,
+    bool manualReplay = false,
+    String? localTaskId,
+  }) async {
     final track = current;
     if (track == null || request != _request) return;
     final saved = resumePosition;
@@ -953,6 +978,7 @@ class PlayerService {
         _manualChapterPosition = true;
         position = policy.manualSeek(seconds);
         await _driver.seek(position);
+        ++_seekRevision;
         // Seeking itself is never an actual listening observation or history POST.
         _notify();
       }),

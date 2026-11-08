@@ -42,7 +42,8 @@ class AppStorage {
     }
     RandomAccessFile? lock;
     try {
-      lock = await File(p.join(canonical, 'state.lock')).open(mode: FileMode.append);
+      lock = await File(p.join(canonical, 'state.lock'))
+          .open(mode: FileMode.append);
       try {
         await lock.lock(FileLock.exclusive, 0, 1);
       } on FileSystemException {
@@ -52,7 +53,8 @@ class AppStorage {
       Map<String, dynamic> state;
       if (await file.exists()) {
         try {
-          if (await file.length() > maxStateBytes) throw const FormatException();
+          if (await file.length() > maxStateBytes)
+            throw const FormatException();
           final decoded = jsonDecode(await file.readAsString());
           if (decoded is! Map<String, dynamic>) throw const FormatException();
           _validate(decoded);
@@ -62,7 +64,10 @@ class AppStorage {
         }
       } else {
         if (await File(p.join(canonical, 'state.backup')).exists()) {
-          throw const StorageException('recovery_required', '资料提交未完成，请保留资料目录并恢复备份');
+          throw const StorageException(
+            'recovery_required',
+            '资料提交未完成，请保留资料目录并恢复备份',
+          );
         }
         state = {
           'schemaVersion': 1,
@@ -75,6 +80,15 @@ class AppStorage {
           'history': <String, dynamic>{},
           'queue': <String, dynamic>{},
         };
+      }
+      // Only sweep session data while holding the instance lock, before services start.
+      for (final name in const ['captcha', 'playback-cache']) {
+        final temporary = Directory(p.join(canonical, name));
+        try {
+          if (await temporary.exists()) await temporary.delete(recursive: true);
+        } on FileSystemException {
+          // A leftover file may still be in use; do not block opening the app.
+        }
       }
       return AppStorage._(canonical, lock, _freezeMap(state));
     } catch (_) {
@@ -94,7 +108,9 @@ class AppStorage {
         if (bytes.length > maxStateBytes) {
           throw const StorageException('too_large', '资料超过大小限制，未保存更改');
         }
-        final temporary = File(p.join(directory, 'state.${const Uuid().v4()}.tmp'));
+        final temporary = File(
+          p.join(directory, 'state.${const Uuid().v4()}.tmp'),
+        );
         try {
           final output = await temporary.open(mode: FileMode.writeOnly);
           try {
@@ -120,23 +136,28 @@ class AppStorage {
       });
 
   Future<void> close() => _writes.synchronized(() async {
-        if (_closed) return;
-        _closed = true;
-        try {
-          await _lockFile.unlock(0, 1);
-        } finally {
-          await _lockFile.close();
-          _openDirectories.remove(directory);
-        }
-      });
+    if (_closed) return;
+    _closed = true;
+    try {
+      await _lockFile.unlock(0, 1);
+    } finally {
+      await _lockFile.close();
+      _openDirectories.remove(directory);
+    }
+  });
 
   static void _validate(Map<String, dynamic> value) {
     if (value['schemaVersion'] != 1 ||
-        value['settings'] is! Map || value['accounts'] is! Map ||
-        value['downloads'] is! List || value['library'] is! Map ||
-        value['history'] is! Map || value['queue'] is! Map ||
-        (value['activeAccountId'] != null && value['activeAccountId'] is! String) ||
-        (value['primaryAccountId'] != null && value['primaryAccountId'] is! String)) {
+        value['settings'] is! Map ||
+        value['accounts'] is! Map ||
+        value['downloads'] is! List ||
+        value['library'] is! Map ||
+        value['history'] is! Map ||
+        value['queue'] is! Map ||
+        (value['activeAccountId'] != null &&
+            value['activeAccountId'] is! String) ||
+        (value['primaryAccountId'] != null &&
+            value['primaryAccountId'] is! String)) {
       throw const StorageException('corrupt', '资料格式无效，未保存更改');
     }
     final cleanup = value['credentialCleanup'];
@@ -148,18 +169,30 @@ class AppStorage {
       if (node is Map) {
         for (final entry in node.entries) {
           if (entry.key is! String ||
-              const {'token', 'device_id', 'deviceId', 'cookie', 'cookie2', 'x-tk',
-                'headers', 'password', 'verificationCode'}.contains(entry.key)) {
+              const {
+                'token',
+                'device_id',
+                'deviceId',
+                'cookie',
+                'cookie2',
+                'x-tk',
+                'headers',
+                'password',
+                'verificationCode',
+              }.contains(entry.key)) {
             throw const StorageException('secret_in_state', '登录秘密不能写入资料文件');
           }
           inspect(entry.value);
         }
       } else if (node is List) {
-        for (final item in node) { inspect(item); }
+        for (final item in node) {
+          inspect(item);
+        }
       } else if (node is num && !node.isFinite) {
         throw const StorageException('corrupt', '资料包含无效数字');
       }
     }
+
     inspect(value);
   }
 
@@ -168,7 +201,9 @@ class AppStorage {
 
   static Object? _freeze(Object? value) => value is Map<String, dynamic>
       ? _freezeMap(value)
-      : value is List ? List.unmodifiable(value.map(_freeze)) : value;
+      : value is List
+      ? List.unmodifiable(value.map(_freeze))
+      : value;
 
   static Future<void> _replaceFile(String temporary, String destination) async {
     if (!Platform.isWindows) {
@@ -182,22 +217,42 @@ class AppStorage {
 /// win32 6.4 MoveFileEx returns Win32Result<bool>; ReplaceFileW is not exported
 /// by that package, so only that missing call has a local FFI declaration.
 class _WindowsAtomic {
-  static final _replace = DynamicLibrary.open('kernel32.dll').lookupFunction<
-      Int32 Function(Pointer<Utf16>, Pointer<Utf16>, Pointer<Utf16>, Uint32,
-          Pointer<Void>, Pointer<Void>),
-      int Function(Pointer<Utf16>, Pointer<Utf16>, Pointer<Utf16>, int,
-          Pointer<Void>, Pointer<Void>)>('ReplaceFileW');
+  static final _replace = DynamicLibrary.open('kernel32.dll')
+      .lookupFunction<
+        Int32 Function(
+          Pointer<Utf16>,
+          Pointer<Utf16>,
+          Pointer<Utf16>,
+          Uint32,
+          Pointer<Void>,
+          Pointer<Void>,
+        ),
+        int Function(
+          Pointer<Utf16>,
+          Pointer<Utf16>,
+          Pointer<Utf16>,
+          int,
+          Pointer<Void>,
+          Pointer<Void>,
+        )
+      >('ReplaceFileW');
 
   static String _longPath(String value) => value.startsWith(r'\\?\')
-      ? value : value.startsWith(r'\\')
-      ? '${r'\\?\UNC\'}${value.substring(2)}' : '${r'\\?\'}$value';
+      ? value
+      : value.startsWith(r'\\')
+      ? '${r'\\?\UNC\'}${value.substring(2)}'
+      : '${r'\\?\'}$value';
 
   static void replace(String temporary, String destination) {
     using((arena) {
       final source = _longPath(temporary).toNativeUtf16(allocator: arena);
       final target = _longPath(destination).toNativeUtf16(allocator: arena);
       if (!File(destination).existsSync()) {
-        final moved = win.MoveFileEx(win.PCWSTR(source), win.PCWSTR(target), win.MOVEFILE_WRITE_THROUGH);
+        final moved = win.MoveFileEx(
+          win.PCWSTR(source),
+          win.PCWSTR(target),
+          win.MOVEFILE_WRITE_THROUGH,
+        );
         if (!moved.value) {
           throw const StorageException('write_failed', '资料保存失败，原有资料未被替换');
         }
@@ -215,12 +270,22 @@ class _WindowsAtomic {
       if (result == 0) {
         // 1176/1177 may move the old file. Supplying a backup lets us restore it.
         if (!File(destination).existsSync() && backupFile.existsSync()) {
-          final restored = win.MoveFileEx(win.PCWSTR(backup), win.PCWSTR(target), win.MOVEFILE_WRITE_THROUGH);
+          final restored = win.MoveFileEx(
+            win.PCWSTR(backup),
+            win.PCWSTR(target),
+            win.MOVEFILE_WRITE_THROUGH,
+          );
           if (!restored.value) {
-            throw const StorageException('recovery_required', '资料恢复失败，请保留资料目录和备份');
+            throw const StorageException(
+              'recovery_required',
+              '资料恢复失败，请保留资料目录和备份',
+            );
           }
         }
-        throw StorageException('write_failed', '资料保存失败（${error.toInt()}），原有资料未被替换');
+        throw StorageException(
+          'write_failed',
+          '资料保存失败（${error.toInt()}），原有资料未被替换',
+        );
       }
       try {
         if (backupFile.existsSync()) backupFile.deleteSync();

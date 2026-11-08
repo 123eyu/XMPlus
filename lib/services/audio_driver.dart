@@ -1,12 +1,20 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:media_kit/media_kit.dart';
 
 /// Device observations, not requested commands. Epoch rejects old-source events.
 class AudioSnapshot {
-  const AudioSnapshot({required this.epoch, this.playing = false,
-    this.buffering = false, this.completed = false, this.position = 0,
-    this.duration = 0, this.error});
+  const AudioSnapshot({
+    required this.epoch,
+    this.playing = false,
+    this.buffering = false,
+    this.completed = false,
+    this.position = 0,
+    this.duration = 0,
+    this.error,
+  });
   final int epoch;
   final bool playing, buffering, completed;
   final double position, duration;
@@ -27,10 +35,19 @@ abstract class AudioDriver {
 }
 
 void requireLocalAudio(Uri uri) {
-  if (uri.scheme == 'file' && uri.host.isEmpty && uri.path.isNotEmpty &&
-      !uri.hasQuery && !uri.hasFragment) return;
-  if (uri.scheme == 'http' && uri.host == '127.0.0.1' && uri.hasPort &&
-      uri.userInfo.isEmpty && !uri.hasQuery && !uri.hasFragment) return;
+  if (uri.scheme == 'file' &&
+      uri.host.isEmpty &&
+      uri.path.isNotEmpty &&
+      !uri.hasQuery &&
+      !uri.hasFragment)
+    return;
+  if (uri.scheme == 'http' &&
+      uri.host == '127.0.0.1' &&
+      uri.hasPort &&
+      uri.userInfo.isEmpty &&
+      !uri.hasQuery &&
+      !uri.hasFragment)
+    return;
   throw ArgumentError('播放器仅接受本机缓存或已下载文件');
 }
 
@@ -42,6 +59,11 @@ class MediaKitAudioDriver implements AudioDriver {
   int _epoch = 0;
   bool _opening = false;
   bool _closed = false;
+  AudioSession? _session;
+  Future<void> _commands = Future<void>.value();
+  Future<void>? _closing;
+  int _intent = 0;
+  int? _resumeIntent;
   @override
   Stream<AudioSnapshot> get snapshots => _events.stream;
 
@@ -49,18 +71,26 @@ class MediaKitAudioDriver implements AudioDriver {
     final player = _player;
     if (player == null || _opening || _closed) return;
     final state = player.state;
-    _events.add(AudioSnapshot(epoch: _epoch, playing: state.playing,
-      buffering: state.buffering, completed: state.completed,
-      position: state.position.inMicroseconds / 1000000,
-      duration: state.duration.inMicroseconds / 1000000, error: error));
+    _events.add(
+      AudioSnapshot(
+        epoch: _epoch,
+        playing: state.playing,
+        buffering: state.buffering,
+        completed: state.completed,
+        position: state.position.inMicroseconds / 1000000,
+        duration: state.duration.inMicroseconds / 1000000,
+        error: error,
+      ),
+    );
   }
 
   Player _create() {
     if (_closed) throw StateError('播放器已关闭');
     MediaKit.ensureInitialized();
     // Independent pitch remains 1.0 while scaletempo changes playback rate.
-    final player = Player(configuration: const PlayerConfiguration(
-      pitch: true, title: 'XMPlus'));
+    final player = Player(
+      configuration: const PlayerConfiguration(pitch: true, title: 'XMPlus'),
+    );
     _player = player;
     _subscriptions.addAll([
       player.stream.playing.listen((_) => _emit()),
@@ -73,40 +103,187 @@ class MediaKitAudioDriver implements AudioDriver {
     return player;
   }
 
+  // Serialize Android device/session operations, including disposal. The returned
+  // future still reports command failures; only the queue tail handles its copy.
+  Future<void> _run(Future<void> Function() action) {
+    if (!Platform.isAndroid) return action();
+    final result = _commands.then((_) async {
+      if (!_closed) await action();
+    });
+    _commands = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return result;
+  }
+
+  int _cancelResume() {
+    _resumeIntent = null;
+    return ++_intent;
+  }
+
+  void _event(Future<void> Function() action) {
+    if (_closed) return;
+    unawaited(
+      _run(action).catchError((Object _) {
+        _emit(error: '音频播放失败，请重试');
+      }),
+    );
+  }
+
+  Future<AudioSession> _audioSession() async {
+    if (_session case final session?) return session;
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.speech());
+    if (_closed) return session;
+    _session = session;
+    _subscriptions.addAll([
+      session.interruptionEventStream.listen(
+        _interrupt,
+        onError: (Object _) => _emit(error: '音频播放失败，请重试'),
+      ),
+      session.becomingNoisyEventStream.listen((_) {
+        final intent = _cancelResume();
+        _event(() async {
+          if (intent == _intent) await _pause();
+        });
+      }, onError: (Object _) => _emit(error: '音频播放失败，请重试')),
+    ]);
+    return session;
+  }
+
+  void _interrupt(AudioInterruptionEvent event) {
+    if (_closed) return;
+    if (event.begin) {
+      final resume =
+          event.type != AudioInterruptionType.unknown &&
+          (_player?.state.playing == true || _resumeIntent != null);
+      final intent = ++_intent;
+      _resumeIntent = resume ? intent : null;
+      _event(() async {
+        if (intent != _intent) return;
+        await _player?.pause();
+        _emit();
+        // Keep transient focus requests registered so Android can send gain.
+        if (event.type == AudioInterruptionType.unknown) await _releaseFocus();
+      });
+    } else {
+      final intent = _resumeIntent;
+      _resumeIntent = null;
+      if (event.type != AudioInterruptionType.unknown && intent != null) {
+        _event(() => _play(intent));
+      }
+    }
+  }
+
+  Future<void> _releaseFocus() async {
+    await _session?.setActive(false);
+  }
+
+  Future<void> _play(int intent) async {
+    final player = _player;
+    if (player == null || _closed || intent != _intent) return;
+    if (Platform.isAndroid) {
+      final session = await _audioSession();
+      if (_closed || intent != _intent) return;
+      final granted = await session.setActive(true);
+      if (!granted) {
+        await player.pause();
+        throw StateError('无法获取音频焦点，请稍后重试');
+      }
+      if (_closed || intent != _intent) return;
+    }
+    await player.play();
+    if (Platform.isAndroid && (_closed || intent != _intent)) {
+      await player.pause();
+    }
+  }
+
+  Future<void> _pause() async {
+    try {
+      await _player?.pause();
+      _emit();
+    } finally {
+      await _releaseFocus();
+    }
+  }
+
   @override
   Future<void> open(Uri localUri, {required int epoch}) async {
     requireLocalAudio(localUri);
-    _opening = true;
-    try {
-      final player = _player ?? _create();
-      await player.stop();
-      _epoch = epoch;
-      await player.open(Media(localUri.toString()), play: false);
-      await player.setPitch(1.0);
-    } finally { _opening = false; }
-    _emit();
+    _cancelResume();
+    await _run(() async {
+      _opening = true;
+      try {
+        final player = _player ?? _create();
+        await player.stop();
+        await _releaseFocus();
+        _epoch = epoch;
+        await player.open(Media(localUri.toString()), play: false);
+        await player.setPitch(1.0);
+      } finally {
+        _opening = false;
+      }
+      _emit();
+    });
   }
+
   @override
-  Future<void> play() async { await _player?.play(); }
+  Future<void> play() {
+    final intent = _cancelResume();
+    return _run(() => _play(intent));
+  }
+
   @override
-  Future<void> pause() async { await _player?.pause(); }
+  Future<void> pause() {
+    _cancelResume();
+    return _run(_pause);
+  }
+
   @override
-  Future<void> stop() async { await _player?.stop(); }
+  Future<void> stop() {
+    _cancelResume();
+    return _run(() async {
+      try {
+        await _player?.stop();
+        _emit();
+      } finally {
+        await _releaseFocus();
+      }
+    });
+  }
+
   @override
-  Future<void> seek(double seconds) async {
+  Future<void> seek(double seconds) => _run(() async {
     await _player?.seek(Duration(microseconds: (seconds * 1000000).round()));
-  }
+  });
   @override
-  Future<void> setRate(double rate) async { await _player?.setRate(rate); }
+  Future<void> setRate(double rate) => _run(() async {
+    await _player?.setRate(rate);
+  });
   @override
-  Future<void> setVolume(double volume) async { await _player?.setVolume(volume); }
+  Future<void> setVolume(double volume) => _run(() async {
+    await _player?.setVolume(volume);
+  });
   @override
-  Future<void> close() async {
-    if (_closed) return;
+  Future<void> close() => _closing ??= _dispose();
+
+  Future<void> _dispose() async {
     _closed = true;
-    for (final subscription in _subscriptions) { await subscription.cancel(); }
-    await _player?.dispose();
-    _player = null;
-    await _events.close();
+    _cancelResume();
+    await _commands;
+    try {
+      for (final subscription in _subscriptions) {
+        await subscription.cancel();
+      }
+      await _releaseFocus();
+    } finally {
+      try {
+        await _player?.dispose();
+      } finally {
+        _player = null;
+        await _events.close();
+      }
+    }
   }
 }

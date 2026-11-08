@@ -12,12 +12,14 @@ import '../storage/app_storage.dart';
 import '../storage/credential_store.dart';
 import 'account_service.dart';
 import 'album_cache.dart';
+import 'android_background_service.dart';
 import 'auto_download_service.dart';
 import 'usage_ledger.dart';
 import '../models/xmly_models.dart';
 import 'download_service.dart';
 import 'media_pipeline.dart';
 import 'player_service.dart';
+import 'system_media_service.dart';
 
 class AppRuntime extends ChangeNotifier {
   AppRuntime({required this.storage, required this.secrets}) {
@@ -111,6 +113,8 @@ class AppRuntime extends ChangeNotifier {
   late final DownloadService downloads;
   late final AutoDownloadService autoDownloads;
   late final PlayerService player;
+  SystemMediaService? _systemMedia;
+  AndroidBackgroundService? _androidBackground;
   Future<bool> Function(DownloadBatch)? confirmDownload;
   Future<void> Function()? requestExit;
   bool scheduledExit = false, _closed = false;
@@ -134,10 +138,19 @@ class AppRuntime extends ChangeNotifier {
     await albumCache.load();
     albumCache.addListener(_albumCacheChanged);
     await downloads.load();
+    if (Platform.isAndroid) {
+      _androidBackground = await AndroidBackgroundService.start(downloads);
+    }
     for (final task in downloads.tasks) {
       _cachedDownloadStates[task.id] = task.state;
     }
     await player.load();
+    if (Platform.isAndroid || Platform.isWindows) {
+      _systemMedia = await SystemMediaService.start(
+        player: player,
+        albumCache: albumCache,
+      );
+    }
     _playerChanges = player.changes.listen((_) => notifyListeners());
     _downloadChanges = downloads.changes.listen((_) {
       _refreshDownloadedAlbums();
@@ -395,6 +408,8 @@ class AppRuntime extends ChangeNotifier {
     try {
       await quiesce();
       await settle();
+      await _systemMedia?.close();
+      await _androidBackground?.close();
       await albumCache.close();
       albumCache.removeListener(_albumCacheChanged);
       await accounts.close();

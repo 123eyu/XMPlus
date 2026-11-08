@@ -276,7 +276,7 @@ class AudioCache {
           }
         }
         if (next == null) break;
-        await _fetch(next, epoch);
+        await _fetchWithRetry(next, epoch);
         for (final index in _waiting.keys.toList()) {
           if (_validated &&
               (_blocks.containsKey(index) ||
@@ -306,6 +306,60 @@ class AudioCache {
     }
   }
 
+  Future<T> _transport<T>(Future<T> Function() operation) async {
+    try {
+      return await operation();
+    } on SocketException catch (error, stack) {
+      throw _AudioTransportFailure(error, stack);
+    } on TimeoutException catch (error, stack) {
+      throw _AudioTransportFailure(error, stack);
+    } on HttpException catch (error, stack) {
+      final message = error.message.toLowerCase();
+      if (!message.startsWith('connection closed') &&
+          !message.contains('connection reset by peer'))
+        rethrow;
+      throw _AudioTransportFailure(error, stack);
+    }
+  }
+
+  Future<void> _fetchWithRetry(int index, int epoch) async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        await _fetch(index, epoch, resumeSequential: attempt > 0);
+        return;
+      } on _AudioTransportFailure catch (failure) {
+        _client?.close(force: true);
+        _client = null;
+        _checkProducer(epoch);
+        if (attempt >= 2) {
+          Error.throwWithStackTrace(failure.error, failure.stack);
+        }
+        // Only byte transport is retried: checkpoint/refresh failures bypass
+        // this wrapper, and cancellation interrupts the same active wait.
+        await _whileActive(
+          epoch,
+          () => Future<void>.delayed(Duration(seconds: attempt == 0 ? 1 : 3)),
+        );
+      }
+    }
+  }
+
+  Stream<List<int>> _responseBytes(
+    HttpClientResponse response,
+    int epoch,
+  ) async* {
+    final iterator = StreamIterator(
+      response.timeout(const Duration(seconds: 25)),
+    );
+    try {
+      while (await _whileActive(epoch, () => _transport(iterator.moveNext))) {
+        yield iterator.current;
+      }
+    } finally {
+      await iterator.cancel();
+    }
+  }
+
   Future<void> _discard(HttpClientResponse response) =>
       response.listen(null).cancel();
 
@@ -326,9 +380,12 @@ class AudioCache {
       _client ??= HttpClient()
         ..connectionTimeout = const Duration(seconds: 10)
         ..autoUncompress = false;
-      final request = await _client!
-          .getUrl(uri)
-          .timeout(const Duration(seconds: 25));
+      final request = await _whileActive(
+        epoch,
+        () => _transport(
+          () => _client!.getUrl(uri).timeout(const Duration(seconds: 25)),
+        ),
+      );
       request.followRedirects = false;
       // Deliberately ignore ResolvedAudio.headers. API cookies, x-tk and all other
       // identity headers must never reach either a CDN or its redirect target.
@@ -346,8 +403,11 @@ class AudioCache {
         if (validator != null)
           request.headers.set(HttpHeaders.ifRangeHeader, validator);
       }
-      final response = await request.close().timeout(
-        const Duration(seconds: 25),
+      final response = await _whileActive(
+        epoch,
+        () => _transport(
+          () => request.close().timeout(const Duration(seconds: 25)),
+        ),
       );
       if ([301, 302, 303, 307, 308].contains(response.statusCode)) {
         final location = response.headers.value(HttpHeaders.locationHeader);
@@ -476,8 +536,9 @@ class AudioCache {
   Future<bool> _metadata(
     HttpClientResponse response,
     int? size,
-    bool ranges,
-  ) async {
+    bool ranges, {
+    bool resumeSequential = false,
+  }) async {
     final etag = response.headers.value(HttpHeaders.etagHeader);
     final modified = response.headers.value(HttpHeaders.lastModifiedHeader);
     final hadBytes = _blocks.isNotEmpty || _partialBytes > 0;
@@ -487,7 +548,7 @@ class AudioCache {
             _etag != etag ||
             _modified != modified ||
             _ranges != ranges ||
-            !ranges ||
+            (!ranges && !resumeSequential) ||
             (!_validated && etag == null && modified == null));
     if (changed) await _reset();
     _length = size;
@@ -497,7 +558,11 @@ class AudioCache {
     return changed;
   }
 
-  Future<void> _fetch(int index, int epoch) async {
+  Future<void> _fetch(
+    int index,
+    int epoch, {
+    bool resumeSequential = false,
+  }) async {
     final start = index * blockSize;
     final requestedEnd = !_validated || _length == null
         ? start + blockSize - 1
@@ -530,13 +595,17 @@ class AudioCache {
       throw const XmlyException('invalid_media', '服务器未返回有效音频');
     }
     if (response.statusCode == 200) {
-      await _metadata(
+      final changed = await _metadata(
         response,
         response.contentLength < 0 ? null : response.contentLength,
         false,
+        resumeSequential: resumeSequential,
       );
-      if (_blocks.isNotEmpty || _partialBytes > 0) await _reset();
-      await _sequential(response, result.finalUri, epoch);
+      final resumeBytes = resumeSequential && !changed ? downloadedBytes : 0;
+      if (resumeBytes == 0 && (_blocks.isNotEmpty || _partialBytes > 0)) {
+        await _reset();
+      }
+      await _sequential(response, result.finalUri, epoch, resumeBytes);
       return;
     }
     final match = RegExp(
@@ -565,7 +634,7 @@ class AudioCache {
     }
     final bytes = BytesBuilder(copy: false);
     try {
-      await for (final chunk in response.timeout(const Duration(seconds: 25))) {
+      await for (final chunk in _responseBytes(response, epoch)) {
         _checkState();
         if (_checkpoint != null) await _whileActive(epoch, _checkpoint);
         if (bytes.length + chunk.length > last - start + 1)
@@ -612,6 +681,7 @@ class AudioCache {
     HttpClientResponse response,
     Uri finalUri,
     int epoch,
+    int resumeBytes,
   ) async {
     var offset = 0;
     RandomAccessFile? writer;
@@ -620,8 +690,42 @@ class AudioCache {
     Future<void> writeChunk(List<int> bytes) async {
       var position = 0;
       while (position < bytes.length) {
+        _checkProducer(epoch);
         final index = offset ~/ blockSize;
-        writer ??= await _part(index).open(mode: FileMode.write);
+        if (offset < resumeBytes) {
+          // A non-range server must replay its prefix. Compare every cached
+          // byte before appending, even when it supplies no version validator.
+          final count = min(
+            bytes.length - position,
+            min(resumeBytes - offset, blockSize - offset % blockSize),
+          );
+          final file = _blocks.containsKey(index)
+              ? _block(index)
+              : _part(index);
+          final handle = await file.open();
+          late List<int> cached;
+          try {
+            await handle.setPosition(offset % blockSize);
+            cached = await handle.read(count);
+          } finally {
+            await handle.close();
+          }
+          var matches = cached.length == count;
+          for (var i = 0; matches && i < count; i++) {
+            matches = cached[i] == bytes[position + i];
+          }
+          _checkProducer(epoch);
+          if (!matches) {
+            await _reset();
+            throw const XmlyException('cache_source_changed', '音频来源已变化');
+          }
+          offset += count;
+          position += count;
+          continue;
+        }
+        writer ??= await _part(index).open(
+          mode: offset % blockSize == 0 ? FileMode.write : FileMode.append,
+        );
         final count = min(
           bytes.length - position,
           blockSize - offset % blockSize,
@@ -645,7 +749,7 @@ class AudioCache {
     }
 
     try {
-      await for (final chunk in response.timeout(const Duration(seconds: 25))) {
+      await for (final chunk in _responseBytes(response, epoch)) {
         _checkState();
         if (_checkpoint != null) await _whileActive(epoch, _checkpoint);
         if (_length != null &&
@@ -880,6 +984,12 @@ class AudioCache {
     await close();
     await Directory(directory).delete(recursive: true);
   }
+}
+
+class _AudioTransportFailure {
+  final Object error;
+  final StackTrace stack;
+  const _AudioTransportFailure(this.error, this.stack);
 }
 
 /// Loopback-only, capability-token HTTP facade. No URL ever exposes a disk path.

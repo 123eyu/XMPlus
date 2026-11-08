@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../common/widgets/adaptive_text.dart';
 import '../services/app_runtime.dart';
+import '../services/android_background_service.dart';
 
 class DownloadSettingsPage extends StatefulWidget {
   const DownloadSettingsPage({required this.runtime, super.key});
@@ -11,9 +14,55 @@ class DownloadSettingsPage extends StatefulWidget {
   State<DownloadSettingsPage> createState() => _DownloadSettingsPageState();
 }
 
-class _DownloadSettingsPageState extends State<DownloadSettingsPage> {
+class _DownloadSettingsPageState extends State<DownloadSettingsPage>
+    with WidgetsBindingObserver {
   String? _error;
   bool _saving = false;
+  bool? _batteryExempt;
+  bool _requestingBattery = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (Platform.isAndroid) {
+      WidgetsBinding.instance.addObserver(this);
+      _readBatteryStatus();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _readBatteryStatus();
+  }
+
+  Future<void> _readBatteryStatus() async {
+    try {
+      final exempt = await AndroidBackgroundService.batteryOptimizationExempt();
+      if (mounted) setState(() => _batteryExempt = exempt);
+    } catch (error) {
+      if (mounted) setState(() => _error = '无法读取电池优化状态：$error');
+    }
+  }
+
+  Future<void> _requestBatteryExemption() async {
+    if (_requestingBattery) return;
+    setState(() => _requestingBattery = true);
+    try {
+      await AndroidBackgroundService.requestBatteryOptimizationExemption();
+      await _readBatteryStatus();
+    } catch (error) {
+      if (mounted) setState(() => _error = '无法打开系统电池优化申请：$error');
+    } finally {
+      if (mounted) setState(() => _requestingBattery = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    if (Platform.isAndroid) WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
   Map get _settings =>
       (widget.runtime.storage.state['settings'] as Map)['download'] as Map? ??
       const {};
@@ -212,6 +261,43 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage> {
                 ? null
                 : (value) => _set('continueDownloadAfterSleep', value),
           ),
+          if (Platform.isAndroid) ...[
+            const Divider(),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.battery_saver_outlined),
+              title: const Text('后台运行 / 电池优化'),
+              subtitle: Text(
+                _batteryExempt == null
+                    ? '正在读取系统状态…'
+                    : _batteryExempt!
+                    ? '已忽略电池优化。下载仍受系统后台启动限制和 Android 15+ 下载服务时限约束。'
+                    : '尚未忽略电池优化。下载时使用进度通知；系统仍可能限制后台运行。',
+              ),
+              isThreeLine: true,
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _requestingBattery || _batteryExempt != false
+                    ? null
+                    : _requestBatteryExemption,
+                icon: const Icon(Icons.open_in_new),
+                label: Text(_batteryExempt == true ? '已获系统豁免' : '申请忽略电池优化'),
+              ),
+            ),
+            ValueListenableBuilder<String?>(
+              valueListenable: AndroidBackgroundService.error,
+              builder: (context, message, _) => message == null
+                  ? const SizedBox.shrink()
+                  : Text(
+                      message,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+            ),
+          ],
         ],
       ),
     ),
