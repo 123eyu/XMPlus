@@ -50,6 +50,7 @@ Windows 构建命令见 `licenses/native/SOURCE-MATERIALS-INCOMPLETE.txt`。
 
 ## 致谢与交流
 
-- [PiliPlus](https://github.com/bggRGjQaUbCoE/PiliPlus)：界面与 Windows runner 参考，固定修订 `d9e9626f1a3f89cd9ca85e18f61aaba02634e12a`。
+- [PiliPlus](https://github.com/bggRGjQaUbCoE/PiliPlus)：界面与 Windows runner 参考。
+- [LinuxDo](https://linux.do/)
 - [Flutter](https://flutter.dev/) · [media-kit](https://github.com/media-kit/media-kit) · [Dio](https://pub.dev/packages/dio) · [FFmpeg](https://ffmpeg.org/)
 - [GitHub Issues](https://github.com/teikengstudio/XMPlus/issues) · [Telegram](https://t.me/+csbfHjIyqkoyNDA1)
