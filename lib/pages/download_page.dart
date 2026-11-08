@@ -73,11 +73,15 @@ Future<void> requestDownloads(
     tracks,
     accountIdentity: account.identity,
     polling: account.polling,
+    previewBilling: false,
   );
   if (!context.mounted) return;
-  if (await confirmDownloadBatch(context, batch)) {
-    await runtime.downloads.enqueue(batch, confirmed: true);
+  if (batch.items.isEmpty) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('所选声音已在下载列表中')));
+    return;
   }
+  await runtime.downloads.enqueue(batch, confirmed: true);
 }
 
 Future<void> requestAlbumDownloads(
@@ -93,9 +97,7 @@ Future<void> requestAlbumDownloads(
     polling: account.polling,
   );
   if (!context.mounted) return;
-  if (await confirmDownloadBatch(context, batch)) {
-    await runtime.downloads.enqueue(batch, confirmed: true);
-  }
+  await runtime.downloads.enqueue(batch, confirmed: true);
 }
 
 Future<bool> deleteDownloadedAudio(

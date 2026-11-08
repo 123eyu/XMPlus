@@ -315,6 +315,7 @@ class DownloadService {
     required String accountIdentity,
     required String rootDirectory,
     required Map<String, dynamic> settings,
+    bool previewBilling = true,
   }) async {
     _ensureOpen();
     await _reconcileOutputs(tracks.map((track) => track.id).toSet());
@@ -361,6 +362,7 @@ class DownloadService {
       sorted
           .map((entry) => (track: entry.track, taskId: entry.taskId))
           .toList(),
+      previewBilling: previewBilling,
     );
   }
 
@@ -369,6 +371,7 @@ class DownloadService {
     required String accountIdentity,
     required String rootDirectory,
     required Map<String, dynamic> settings,
+    bool previewBilling = true,
   }) async {
     _ensureOpen();
     await _checkRoot(rootDirectory, settings);
@@ -392,11 +395,18 @@ class DownloadService {
       total: first.total,
       seen: first.tracks.map((track) => track.id).toList(),
     );
-    return _preview(accountIdentity, rootDirectory, snapshot, [
-      for (final track in first.tracks)
-        if (!_duplicate(accountIdentity, track.id))
-          (track: track, taskId: _missingTask(track.id)?.id),
-    ], album: job);
+    return _preview(
+      accountIdentity,
+      rootDirectory,
+      snapshot,
+      [
+        for (final track in first.tracks)
+          if (!_duplicate(accountIdentity, track.id))
+            (track: track, taskId: _missingTask(track.id)?.id),
+      ],
+      album: job,
+      previewBilling: previewBilling,
+    );
   }
 
   Future<AlbumPage> _albumPage(
@@ -542,6 +552,7 @@ class DownloadService {
               (track: track, taskId: _missingTask(track.id)?.id),
         ],
         album: next,
+        previewBilling: job.settings['billingPreviewPending'] != true,
       );
       if (!allowed()) return;
       await _enqueue(batch, confirmed: true, allowed: allowed);
@@ -578,8 +589,38 @@ class DownloadService {
     List<({Track track, String? taskId})> selected, {
     DownloadAlbumJob? album,
     DownloadControl? control,
+    bool previewBilling = true,
   }) async {
     await _requireMediaTools();
+    if (!previewBilling) {
+      final deferred = {...settings, 'billingPreviewPending': true};
+      return DownloadBatch._(
+        accountIdentity: identity,
+        rootDirectory: root,
+        settings: deferred,
+        items: List.unmodifiable([
+          for (final selection in selected)
+            DownloadBatchItem._(
+              selection.track,
+              0,
+              null,
+              selection.taskId,
+              selection.taskId == null
+                  ? identity
+                  : task(selection.taskId!).accountIdentity,
+            ),
+        ]),
+        balance: null,
+        createdAt: DateTime.now(),
+        owner: this,
+        album: album == null
+            ? null
+            : DownloadAlbumJob.fromJson({
+                ...album.toJson(),
+                'settings': deferred,
+              }),
+      );
+    }
     final items = <DownloadBatchItem>[];
     final balances = <String, int>{}, reserved = <String, int>{};
     final refreshed = <String>{};
@@ -838,6 +879,13 @@ class DownloadService {
           }
           final resumed = existing.copyWith(
             track: item.track,
+            settings: {
+              for (final entry in existing.settings.entries)
+                if (entry.key != 'billingPreviewPending')
+                  entry.key: entry.value,
+              if (batch.settings['billingPreviewPending'] == true)
+                'billingPreviewPending': true,
+            },
             state: item.error == null
                 ? DownloadState.queued
                 : DownloadState.failed,
@@ -1419,7 +1467,40 @@ class DownloadService {
   }
 
   Future<ResolvedAudio> _admit(String id, DownloadControl control) async {
-    final current = task(id);
+    var current = task(id);
+    if (current.settings['billingPreviewPending'] == true) {
+      if (_hasDebit(current.accountIdentity, id, current.track.id) &&
+          _receipt(current.accountIdentity, id, current.track.id) == null) {
+        throw const XmlyException('usage_uncertain', '请先核对本集未确认的听时扣除');
+      }
+      // Manual batches defer the existing fee/account preview until execution.
+      final batch = await _preview(
+        current.accountIdentity,
+        current.rootDirectory,
+        current.settings,
+        [(track: current.track, taskId: id)],
+        control: control,
+      );
+      final prepared = batch.items.single;
+      await control.checkpoint();
+      if (prepared.error != null) {
+        throw XmlyException('download_unavailable', prepared.error!);
+      }
+      final settings = Map<String, dynamic>.from(current.settings)
+        ..remove('billingPreviewPending');
+      await _change(
+        id,
+        (item) => item.copyWith(
+          accountIdentity: prepared.accountIdentity,
+          track: prepared.track,
+          costSeconds: prepared.seconds,
+          expectedBalance: prepared.expectedBalance,
+          attemptedAccounts: prepared.attemptedAccounts,
+          settings: settings,
+        ),
+      );
+      current = task(id);
+    }
     Future<ResolvedAudio> authorize(XmlyClient client) async {
       await control.checkpoint();
       if (current.accountIdentity != 'anonymous' &&

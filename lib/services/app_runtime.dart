@@ -226,6 +226,7 @@ class AppRuntime extends ChangeNotifier {
     String? accountIdentity,
     bool automatic = false,
     bool? polling,
+    bool previewBilling = true,
   }) async {
     final root = await downloadRoot();
     final settings = storage.state['settings'] as Map;
@@ -271,6 +272,7 @@ class AppRuntime extends ChangeNotifier {
       selected,
       accountIdentity: identity,
       rootDirectory: root,
+      previewBilling: previewBilling,
       settings: {
         'download': {
           ...(settings['download'] as Map? ?? const {}),
@@ -296,6 +298,7 @@ class AppRuntime extends ChangeNotifier {
       accountIdentity:
           accountIdentity ?? accounts.primaryAccountId ?? 'anonymous',
       rootDirectory: await downloadRoot(),
+      previewBilling: false,
       settings: {
         'download': {
           ...(settings['download'] as Map? ?? const {}),
