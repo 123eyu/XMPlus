@@ -12,7 +12,8 @@
     "sharedSourceLock": "tool/media_sources.json",
     "recipe": "tool/windows_native_build.py",
     "buildCommand": "bash tool/windows-native-build.sh build/windows-native",
-    "gate": "tool/build_windows.ps1 requires and hashes every supply member, matches every source archive/URL/hash to both source locks, matches the current build recipe, requires relinkable objects, and uses only the produced libmpv/FFmpeg binaries.",
+    "ciBuildCommand": "bash tool/windows-native-build.sh build/windows-native --runtime-only",
+    "gate": "tool/build_windows.ps1 hashes every runtime supply member and matches source URLs/hashes and the current build recipe. Explicit -RuntimeOnly CI mode validates provenance receipts without claiming complete source materials; full local mode additionally verifies source archives and relink objects. Only produced libmpv/FFmpeg binaries are admitted.",
     "status": "Exact replacement source materials acquired; binary build receipt and Windows functional acceptance required, not asserted here.",
     "msvcRuntime": "Not bundled. Windows requires the official Microsoft Visual C++ v14 x64 Redistributable: https://aka.ms/vc14/vc_redist.x64.exe. This is not a grant of redistribution rights."
   },
@@ -25,7 +26,7 @@
     "label": "源代码与第三方许可",
     "localManifest": "tool/native_sources.json",
     "localMaterials": "licenses/native/",
-    "notice": "Windows媒体库改由精确源码自产；构建收据、对应源码归档及重链接对象单独随源码包提供。旧2023二进制缺口保留为历史证据，不作为新供应包授权。",
+    "notice": "Windows媒体库改由锁定源码构建；CI仅保留运行库、许可和来源收据，不打包或发布对应源码归档及重链接对象，也不宣称源码材料或发行合规已完备。本地完整材料模式可另行保留源码。旧2023二进制缺口仅作历史证据，不作为新供应包授权。",
     "upstreamEntries": [
       {
         "component": "Flutter framework 3.47.9",

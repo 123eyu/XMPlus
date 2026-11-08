@@ -16,6 +16,14 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
+RECIPES = ['windows-native-build.sh', 'windows_native_build.py', 'windows_native_sources.json', 'media_sources.json']
+RUNTIME_MEMBERS = ['runtime/libmpv-2.dll', 'runtime/tools/ffmpeg/ffmpeg.exe',
+                   'runtime/tools/ffmpeg/ffprobe.exe', 'licenses/THIRD-PARTY-NOTICES.txt',
+                   'licenses/WINDOWS-PREREQUISITES.txt', 'sources/SOURCES.json', 'IMPORTS.json']
+
+def locked_sources():
+    return [item for name in ['media_sources.json', 'windows_native_sources.json']
+            for item in json.loads((ROOT / 'tool' / name).read_text(encoding='utf-8'))['components']]
 
 def digest(path):
     with path.open('rb') as stream:
@@ -60,23 +68,70 @@ def inventory(base):
 
 def verify_supply(base):
     receipt = json.loads((base / 'BUILD-RECEIPT.json').read_text(encoding='utf-8'))
-    if receipt['schemaVersion'] != 1 or receipt['target'] != 'windows-x64':
+    runtime_only = receipt.get('supplyMode') == 'runtime-only'
+    if (receipt['schemaVersion'] != 1 or receipt['target'] != 'windows-x64' or
+            receipt['producer'] != 'tool/windows_native_build.py' or
+            receipt['sourceComplete'] is not (not runtime_only)):
         raise ValueError('Unsupported native supply')
+    names = [item['path'] for item in receipt['files']]
+    if len(names) != len(set(names)):
+        raise ValueError('Duplicate native supply members')
+    if runtime_only and set(names) != set(RUNTIME_MEMBERS):
+        raise ValueError('Runtime-only supply contains missing or development members')
     for item in receipt['files']:
         path = (base / item['path']).resolve()
         if not path.is_relative_to(base.resolve()) or digest(path) != item['sha256']:
             raise ValueError(f'Native supply digest mismatch: {item["path"]}')
-    for name in ['runtime/libmpv-2.dll', 'runtime/tools/ffmpeg/ffmpeg.exe',
-                 'runtime/tools/ffmpeg/ffprobe.exe', 'sources/SOURCES.json',
-                 'sources/BUILD-OBJECTS.tar.gz', 'licenses/THIRD-PARTY-NOTICES.txt']:
-        if name not in {f['path'] for f in receipt['files']}:
+    required = RUNTIME_MEMBERS + ([] if runtime_only else ['sources/BUILD-OBJECTS.tar.gz'])
+    for name in required:
+        if name not in names:
             raise ValueError(f'Missing native supply member: {name}')
-    print('Native supply hashes and required members verified.')
+    provenance = json.loads((base / 'sources/SOURCES.json').read_text(encoding='utf-8'))
+    entries = locked_sources()
+    if provenance['components'] != entries or provenance['patches']:
+        raise ValueError('Native source closure differs from the admitted source locks')
+    expected_recipes = [{'path': name, 'sha256': digest(ROOT / 'tool' / name)} for name in RECIPES]
+    if provenance['recipes'] != expected_recipes:
+        raise ValueError('Native build recipe mismatch')
+    if receipt['toolchainSha256'] != next(x['sha256'] for x in entries if x['name'] == 'llvm-mingw-toolchain'):
+        raise ValueError('Native toolchain mismatch')
+    if not runtime_only:
+        for item in entries:
+            if digest(base / 'sources' / Path(item['file']).name) != item['sha256']:
+                raise ValueError(f'Source SHA-256 mismatch: {item["name"]}')
+        for recipe in expected_recipes:
+            if digest(base / 'sources' / recipe['path']) != recipe['sha256']:
+                raise ValueError(f'Native build recipe mismatch: {recipe["path"]}')
+    print('Native supply hashes, source locks and build recipe verified.')
+
+def package_supply(out, runtime_only):
+    # Select the transfer boundary before inventorying: never walk work/ or hash build objects in CI.
+    if runtime_only:
+        files = [{'path': name, 'sha256': digest(out / name), 'bytes': (out / name).stat().st_size}
+                 for name in RUNTIME_MEMBERS]
+    else:
+        files = [dict(item, path=directory + '/' + item['path'])
+                 for directory in ['runtime', 'licenses', 'sources'] for item in inventory(out / directory)]
+        files += [{'path': 'IMPORTS.json', 'sha256': digest(out / 'IMPORTS.json'),
+                   'bytes': (out / 'IMPORTS.json').stat().st_size}]
+    save_json(out / 'BUILD-RECEIPT.json', {'schemaVersion': 1, 'target': 'windows-x64',
+        'producer': 'tool/windows_native_build.py', 'sourceComplete': not runtime_only,
+        'supplyMode': 'runtime-only' if runtime_only else 'complete', 'patches': [],
+        'toolchainSha256': next(x['sha256'] for x in locked_sources() if x['name'] == 'llvm-mingw-toolchain'),
+        'functionalValidation': 'Not run by cross-build; Windows media_kit playback and FFmpeg format/remux/cover/hash checks required.',
+        'files': files})
+    verify_supply(out)
+    target = out / 'windows-native-supply.zip'
+    with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as archive:
+        for item in files + [{'path': 'BUILD-RECEIPT.json'}]:
+            archive.write(out / item['path'], item['path'])
+    print(target)
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output', type=Path)
     parser.add_argument('--verify-supply', action='store_true')
+    parser.add_argument('--runtime-only', action='store_true', help='Package runtime, licenses and provenance only; no source archives or relink objects')
     args = parser.parse_args()
     out = args.output.resolve()
     if args.verify_supply:
@@ -95,8 +150,7 @@ def main():
     runtime = out / 'runtime'
     for directory in [work, prefix, source_dir, license_dir, runtime / 'tools/ffmpeg']:
         directory.mkdir(parents=True, exist_ok=True)
-    locks = [ROOT / 'tool/media_sources.json', ROOT / 'tool/windows_native_sources.json']
-    entries = [item for lock in locks for item in json.loads(lock.read_text(encoding='utf-8'))['components']]
+    entries = locked_sources()
     sources = {}
     for item in entries:
         cached = ROOT / item['file']
@@ -111,8 +165,8 @@ def main():
             temporary.rename(cached)
         if digest(cached) != item['sha256']:
             raise ValueError(f'Source SHA-256 mismatch: {cached}')
-        archived = source_dir / cached.name
-        shutil.copyfile(cached, archived)
+        if not args.runtime_only:
+            shutil.copyfile(cached, source_dir / cached.name)
         destination = work / item['name']
         # Compiler source archives are supplied intact, but are not needed to use the pinned toolchain.
         if item['name'] not in ['llvm-project', 'mingw-w64', 'llvm-mingw']:
@@ -120,9 +174,11 @@ def main():
         sources[item['name']] = destination
     save_json(source_dir / 'SOURCES.json', {'schemaVersion': 1, 'components': entries,
         'patches': [], 'hostPrerequisites': 'Python3.11+, make, cmake, ninja, pkg-config, meson>=1.3, Jinja2',
-        'note': 'Complete locked archives for these newly generated binaries, not for historical publisher binaries.'})
-    for name in ['windows-native-build.sh', 'windows_native_build.py', 'windows_native_sources.json', 'media_sources.json']:
-        shutil.copyfile(ROOT / 'tool' / name, source_dir / name)
+        'recipes': [{'path': name, 'sha256': digest(ROOT / 'tool' / name)} for name in RECIPES],
+        'note': 'Verified locked inputs for newly generated binaries, not historical publisher binaries. Source archives and relink objects are not included in runtime-only supplies.'})
+    if not args.runtime_only:
+        for name in RECIPES:
+            shutil.copyfile(ROOT / 'tool' / name, source_dir / name)
     toolchain = sources['llvm-mingw-toolchain']
     env = os.environ.copy()
     env['PATH'] = str(toolchain / 'bin') + os.pathsep + env['PATH']
@@ -221,16 +277,17 @@ cpp_link_args = ['-static', '-static-libstdc++']
     with (license_dir / 'THIRD-PARTY-NOTICES.txt').open('w', encoding='utf-8') as notices:
         for item in entries:
             notices.write('\n\n=== ' + item['name'] + ' | ' + item['url'] + ' ===\n')
-            with tarfile.open(source_dir / Path(item['file']).name) as package:
+            with tarfile.open(ROOT / item['file']) as package:
                 for member in package.getmembers():
                     name = Path(member.name).name.lower()
                     if member.isfile() and (name.startswith(('copying', 'copyright', 'license')) or name in ['ftl.txt', 'zlib.h']):
                         notices.write('\n--- ' + member.name + ' ---\n')
                         notices.write(package.extractfile(member).read().decode('utf-8', errors='replace'))
     (license_dir / 'WINDOWS-PREREQUISITES.txt').write_text('Windows 10 x64 or later. Microsoft Visual C++ v14 x64 Redistributable is required by the Flutter application.\nInstall only from Microsoft: https://aka.ms/vc14/vc_redist.x64.exe\nDocumentation: https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist\nThe package does not redistribute MSVC CRT DLLs and does not grant rights under any Microsoft license.\n', encoding='utf-8')
-    # Preserve generated configure files, object files, static libraries and link map for relinking.
-    with tarfile.open(source_dir / 'BUILD-OBJECTS.tar.gz', 'w:gz') as archive:
-        archive.add(work, arcname='work', filter=lambda member: None if any(p.lower().startswith('readme') for p in Path(member.name).parts) else member)
+    if not args.runtime_only:
+        # Preserve configure files, object files, static libraries and link map only for full local supplies.
+        with tarfile.open(source_dir / 'BUILD-OBJECTS.tar.gz', 'w:gz') as archive:
+            archive.add(work, arcname='work', filter=lambda member: None if any(p.lower().startswith('readme') for p in Path(member.name).parts) else member)
     imports = {}
     for binary in runtime.rglob('*'):
         if binary.suffix.lower() in ['.exe', '.dll']:
@@ -248,16 +305,7 @@ cpp_link_args = ['-static', '-static-libstdc++']
                         raise ValueError(f'Unbundled/non-system DLL dependency {dependency}: {binary}')
     save_json(out / 'IMPORTS.json', imports)
     log.close()
-    save_json(out / 'BUILD-RECEIPT.json', {'schemaVersion': 1, 'target': 'windows-x64',
-        'producer': 'tool/windows_native_build.py', 'sourceComplete': True, 'patches': [],
-        'toolchainSha256': next(x['sha256'] for x in entries if x['name'] == 'llvm-mingw-toolchain'),
-        'functionalValidation': 'Not run by cross-build; Windows media_kit playback and FFmpeg format/remux/cover/hash checks required.',
-        'files': [x for x in inventory(out) if not x['path'].startswith('work/')]})
-    verify_supply(out)
-    with zipfile.ZipFile(out / 'windows-native-supply.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
-        for item in json.loads((out / 'BUILD-RECEIPT.json').read_text())['files'] + [{'path': 'BUILD-RECEIPT.json'}]:
-            archive.write(out / item['path'], item['path'])
-    print(out / 'windows-native-supply.zip')
+    package_supply(out, args.runtime_only)
 
 if __name__ == '__main__':
     main()

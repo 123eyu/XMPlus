@@ -170,30 +170,22 @@ jobs:
           flutter-version: '3.47.9'
           channel: stable
           cache: true
-      - name: Restore source-built Windows native supply
+      - name: Restore source-built Windows runtime and provenance
         uses: actions/download-artifact@v7
         with:
-          name: windows-native-supply
+          name: windows-native-runtime
           path: ${{ runner.temp }}/windows-native
       - name: Unpack native supply
         shell: pwsh
         run: Expand-Archive -LiteralPath "$env:RUNNER_TEMP/windows-native/windows-native-supply.zip" -DestinationPath build/windows-native
       - name: Build and package Windows
         shell: pwsh
-        run: ./tool/build_windows.ps1
-      - name: Package separate corresponding-source materials
-        shell: pwsh
-        run: |
-          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+)\+\d+\s*$').Matches[0].Groups[1].Value
-          tar -czf "dist/XMPlus-$version-windows-corresponding-source.tar.gz" -C build/corresponding-source "XMPlus-$version-source"
-          if ($LASTEXITCODE -ne 0) { throw 'Corresponding-source archive failed.' }
+        run: ./tool/build_windows.ps1 -RuntimeOnly
       - name: Upload Windows release files
         uses: actions/upload-artifact@v6
         with:
           name: XMPlus-windows
-          path: |
-            dist/XMPlus-*-windows-x64.zip
-            dist/XMPlus-*-windows-corresponding-source.tar.gz
+          path: dist/XMPlus-*-windows-x64*.zip
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
@@ -224,10 +216,11 @@ jobs:
         run: |
           set -euo pipefail
           (cd release && sha256sum --check SHA256SUMS)
+          python3 tool/release_notes.py "$RELEASE_TAG" --output release/RELEASE-NOTES.md
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release/*.apk release/*.zip release/*.tar.gz release/SHA256SUMS --clobber
-            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file CHANGELOG.md
+            gh release upload "$RELEASE_TAG" release/*.apk release/*.zip release/SHA256SUMS --clobber
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file release/RELEASE-NOTES.md
           else
-            gh release create "$RELEASE_TAG" release/*.apk release/*.zip release/*.tar.gz release/SHA256SUMS \
-              --verify-tag --title "$RELEASE_TAG" --notes-file CHANGELOG.md
+            gh release create "$RELEASE_TAG" release/*.apk release/*.zip release/SHA256SUMS \
+              --verify-tag --title "$RELEASE_TAG" --notes-file release/RELEASE-NOTES.md
           fi

@@ -2,14 +2,15 @@
 <#
 Builds directly in the workspace; refuses to replace a running project client.
 Requires a verified source-built native supply, including in private candidate mode.
-Never launches XMPlus or changes the shared SDK. Source/relink materials remain
-in a separate development directory; application output contains no source ZIP.
+Use -RuntimeOnly in CI: validates source provenance without copying source/relink
+materials. Full local mode retains separate development materials, never in the ZIP.
 -ReplaceLocalCandidate preserves the previous private bundle/ZIP as unique backups.
 #>
 [CmdletBinding()]
 param(
     [switch]$LocalCandidate,
     [switch]$ReplaceLocalCandidate,
+    [switch]$RuntimeOnly,
     [string]$NugetPath,
     [string]$NativeSupply = 'build/windows-native',
     [string]$OutputDirectory = 'dist',
@@ -155,11 +156,12 @@ function Assert-ProjectClientsStopped {
         }
     }
 }
-function Assert-Replacement([string]$Target, [string]$Zip, [string]$SourceDirectory) {
+function Assert-Replacement([string]$Target, [string]$Zip, [string]$NoFFmpegZip, [string]$SourceDirectory) {
     $hasTarget = Test-Path -LiteralPath $Target
     $hasZip = Test-Path -LiteralPath $Zip
+    $hasNoFFmpegZip = Test-Path -LiteralPath $NoFFmpegZip
     if (Test-Path -LiteralPath $SourceDirectory) { throw "Existing development sources must be preserved: $SourceDirectory" }
-    if (-not $hasTarget -and -not $hasZip) { return }
+    if (-not $hasTarget -and -not $hasZip -and -not $hasNoFFmpegZip) { return }
     if (-not $LocalCandidate -or -not $ReplaceLocalCandidate -or -not $hasTarget) {
         throw 'Output exists; only -LocalCandidate -ReplaceLocalCandidate may replace a recognized private candidate.'
     }
@@ -173,6 +175,7 @@ function Assert-Replacement([string]$Target, [string]$Zip, [string]$SourceDirect
         throw 'Existing output is not a matching XMPlus private candidate.'
     }
     if ($hasZip) { Assert-PlainPath $Zip }
+    if ($hasNoFFmpegZip) { Assert-PlainPath $NoFFmpegZip }
 }
 function File-Inventory([string]$Root) {
     foreach ($file in Get-ChildItem -LiteralPath $Root -File -Recurse -Force | Sort-Object FullName) {
@@ -180,9 +183,9 @@ function File-Inventory([string]$Root) {
         [pscustomobject]@{ path = (Relative-Path $Root $file.FullName); bytes = $file.Length; sha256 = (File-Hash $file.FullName) }
     }
 }
-function New-VerifiedZip([string]$Directory, [string]$ZipPath) {
+function New-VerifiedZip([string]$Directory, [string]$ZipPath, [switch]$ExcludeFFmpeg) {
     # Stream the runtime payload and use standard compact compression for bundled tools.
-    $files = @(File-Inventory $Directory)
+    $files = @(File-Inventory $Directory | Where-Object { -not $ExcludeFFmpeg -or $_.path -notlike 'tools/ffmpeg/*' })
     foreach ($file in $files) {
         if ($file.path -match '(?i)\.(?:tar(?:\.[a-z0-9]+)?|zip|7z|nupkg|jks|keystore|pdb|obj|o|a|c|cc|cpp|h|hpp|py|ps1|sh)$' -or
             $file.path -match '(?i)(^|/)(?:BUILD-MANIFEST|BUILD-RECEIPT|RELEASE-STATUS|IMPORTS)\.json$') {
@@ -220,8 +223,10 @@ if (-not (Test-Path -LiteralPath (Join-Path $NativeSupply 'BUILD-RECEIPT.json') 
 }
 $supplyReceipt = Read-Json (Join-Path $NativeSupply 'BUILD-RECEIPT.json')
 if ($supplyReceipt.schemaVersion -ne 1 -or $supplyReceipt.target -ne 'windows-x64' -or
-    $supplyReceipt.producer -ne 'tool/windows_native_build.py' -or $supplyReceipt.sourceComplete -ne $true) {
-    throw 'Unsupported or incomplete Windows native supply receipt.'
+    $supplyReceipt.producer -ne 'tool/windows_native_build.py' -or
+    (Field $supplyReceipt 'supplyMode') -ne $(if ($RuntimeOnly) { 'runtime-only' } else { 'complete' }) -or
+    $supplyReceipt.sourceComplete -ne (-not [bool]$RuntimeOnly)) {
+    throw 'Unsupported Windows native supply receipt or packaging mode mismatch.'
 }
 foreach ($file in $supplyReceipt.files) { Assert-Hash (Child-Path $NativeSupply $file.path) $file.sha256 }
 $supplySources = Read-Json (Join-Path $NativeSupply 'sources\SOURCES.json')
@@ -235,21 +240,36 @@ foreach ($expected in $expectedSources) {
     if ($actual.Count -ne 1 -or $actual[0].sha256 -ne $expected.sha256 -or $actual[0].url -ne $expected.url) {
         throw "Native source lock mismatch: $($expected.name)"
     }
-    Assert-Hash (Join-Path $NativeSupply ('sources\' + (Split-Path -Leaf $expected.file))) $expected.sha256
+    if (-not $RuntimeOnly) {
+        Assert-Hash (Join-Path $NativeSupply ('sources\' + (Split-Path -Leaf $expected.file))) $expected.sha256
+    }
 }
-foreach ($name in @('windows_native_build.py', 'windows-native-build.sh', 'windows_native_sources.json', 'media_sources.json')) {
-    Assert-Hash (Join-Path $NativeSupply ('sources\' + $name)) (File-Hash (Join-Path $PSScriptRoot $name))
+$recipes = @('windows_native_build.py', 'windows-native-build.sh', 'windows_native_sources.json', 'media_sources.json')
+if (@($supplySources.recipes).Count -ne $recipes.Count) { throw 'Native build recipe closure mismatch.' }
+foreach ($name in $recipes) {
+    $recipe = @($supplySources.recipes | Where-Object { $_.path -eq $name })
+    $expectedHash = File-Hash (Join-Path $PSScriptRoot $name)
+    if ($recipe.Count -ne 1 -or $recipe[0].sha256 -ne $expectedHash) { throw "Native build recipe mismatch: $name" }
+    if (-not $RuntimeOnly) { Assert-Hash (Join-Path $NativeSupply ('sources\' + $name)) $expectedHash }
 }
-foreach ($required in @('runtime/libmpv-2.dll', 'runtime/tools/ffmpeg/ffmpeg.exe', 'runtime/tools/ffmpeg/ffprobe.exe',
-    'sources/BUILD-OBJECTS.tar.gz', 'licenses/THIRD-PARTY-NOTICES.txt', 'licenses/WINDOWS-PREREQUISITES.txt', 'IMPORTS.json')) {
+$toolchain = @($expectedSources | Where-Object { $_.name -eq 'llvm-mingw-toolchain' })[0]
+if ($supplyReceipt.toolchainSha256 -ne $toolchain.sha256) { throw 'Native toolchain mismatch.' }
+$requiredMembers = @('runtime/libmpv-2.dll', 'runtime/tools/ffmpeg/ffmpeg.exe', 'runtime/tools/ffmpeg/ffprobe.exe',
+    'sources/SOURCES.json', 'licenses/THIRD-PARTY-NOTICES.txt', 'licenses/WINDOWS-PREREQUISITES.txt', 'IMPORTS.json')
+if (-not $RuntimeOnly) { $requiredMembers += 'sources/BUILD-OBJECTS.tar.gz' }
+foreach ($required in $requiredMembers) {
     if (@($supplyReceipt.files | Where-Object { $_.path -eq $required }).Count -ne 1) {
         throw "Native supply omits a required hashed member: $required"
     }
 }
+if ($RuntimeOnly -and (@($supplyReceipt.files).Count -ne $requiredMembers.Count -or
+    @($supplyReceipt.files | Where-Object { $_.path -notin $requiredMembers }).Count -ne 0)) {
+    throw 'Runtime-only supply contains development material or unexpected members.'
+}
 $nativeFFmpegHash = File-Hash (Join-Path $NativeSupply 'runtime\tools\ffmpeg\ffmpeg.exe')
 $blockers = New-Object 'System.Collections.Generic.List[string]'
 # Historical Gyan/2023-mpv gaps are not waived: those binaries are no longer packaged.
-# Admission instead binds the generated payload to all exact sources, recipe and relink objects.
+# Admission binds runtime hashes to exact source locks and build recipe; relink objects are local-only.
 if ($ReplaceLocalCandidate -and -not $LocalCandidate) { throw '-ReplaceLocalCandidate requires -LocalCandidate.' }
 $sdk = Read-Json (Join-Path $SdkRoot 'bin\cache\flutter.version.json')
 if ($sdk.frameworkVersion -ne '3.47.9' -or $sdk.dartSdkVersion -ne '3.13.7') {
@@ -268,6 +288,7 @@ if (-not [IO.Path]::IsPathRooted($OutputDirectory)) { $OutputDirectory = Join-Pa
 $dist = [IO.Path]::GetFullPath($OutputDirectory)
 $target = Join-Path $dist $PackageName
 $targetZip = $target + '.zip'
+$targetNoFFmpegZip = $target + '-no-ffmpeg.zip'
 if (-not [IO.Path]::IsPathRooted($DevelopmentDirectory)) { $DevelopmentDirectory = Join-Path $ProjectRoot $DevelopmentDirectory }
 $development = [IO.Path]::GetFullPath($DevelopmentDirectory)
 if ($development.Equals($dist, [StringComparison]::OrdinalIgnoreCase) -or
@@ -278,7 +299,7 @@ $targetSources = Join-Path $development $SourceName
 $targetEvidence = Join-Path $development ($PackageName + '-evidence')
 if (Test-Path -LiteralPath $targetEvidence) { throw "Existing development evidence must be preserved: $targetEvidence" }
 Assert-ProjectClientsStopped
-Assert-Replacement $target $targetZip $targetSources
+Assert-Replacement $target $targetZip $targetNoFFmpegZip $targetSources
 
 $stage = Join-Path $ProjectRoot ('build\xmplus-package-' + [Guid]::NewGuid().ToString('N'))
 $source = $ProjectRoot
@@ -389,7 +410,7 @@ try {
     $origins = [ordered]@{
         schemaVersion = 1
         application = "XMPlus $PackageVersion"
-        notice = 'Hash-locked source-built Windows media payload. Exact source archives, recipe and relink objects remain separate development materials, never inside the application package. Microsoft CRT DLLs are not redistributed.'
+        notice = 'Hash-locked source-built Windows media payload. Source provenance is retained; source archives and relink objects are not bundled with the runtime or transferred by CI. Microsoft CRT DLLs are not redistributed.'
         flutter = [ordered]@{ version = $sdk.frameworkVersion; frameworkCommit = $sdk.frameworkRevision; engineCommit = $sdk.engineRevision; url = 'https://github.com/flutter/flutter' }
         upstreamEntries = $nativeManifest.aboutSourceEntry.upstreamEntries
         packages = @($nativeManifest.packages | Select-Object name, version, url, archiveSha256)
@@ -404,15 +425,16 @@ try {
     $private = [bool]$LocalCandidate
     $statusValue = 'redistribution-material-gates-cleared'
     if ($private) { $statusValue = 'local-verification-only' }
+    if ($RuntimeOnly -and -not $private) { $statusValue = 'runtime-provenance-verified' }
     $status = [ordered]@{
-        sourceMaterialsComplete = $true
+        sourceMaterialsComplete = (-not [bool]$RuntimeOnly)
         redistributionReady = $false
         distributionRequirement = 'Provide applicable corresponding-source access separately before public binary distribution; it is not bundled with this runtime package.'
         schemaVersion = 1; application = 'XMPlus'; version = $PackageVersion; package = $PackageName
         status = $statusValue
         generatedAtUtc = [DateTime]::UtcNow.ToString('o'); blockers = @($blockers.ToArray())
-        ffmpegReleaseCompliance = [ordered]@{ completeCorrespondingSource = $true; sourceBuild = $true }
-        nativeDistributionReady = $true
+        ffmpegReleaseCompliance = [ordered]@{ completeCorrespondingSource = (-not [bool]$RuntimeOnly); sourceBuild = $true }
+        nativeDistributionReady = (-not [bool]$RuntimeOnly)
         functionalValidation = 'Packaging verifies tool identities/hashes, not playback. Real Windows media_kit playback and all media processing formats/remux/cover/hash require parent acceptance.'
         sourceMaterials = $null
     }
@@ -424,7 +446,7 @@ try {
     }
 
     $stagedSources = $null
-    if (-not $private) {
+    if (-not $private -and -not $RuntimeOnly) {
         # App sources plus explicitly admitted third-party sources; never account data.
         $appSource = Join-Path $stage $SourceName
         Ensure-Directory $appSource
@@ -484,13 +506,16 @@ try {
     $stagedZip = Join-Path $stage ($PackageName + '.zip')
     New-VerifiedZip $bundle $stagedZip
     $zipHash = File-Hash $stagedZip
+    $stagedNoFFmpegZip = Join-Path $stage ($PackageName + '-no-ffmpeg.zip')
+    New-VerifiedZip $bundle $stagedNoFFmpegZip -ExcludeFFmpeg
 
     # Verify the runtime ZIP before installing it; development material is separate.
     Ensure-Directory $dist
     Ensure-Directory $development
     Assert-ProjectClientsStopped
-    Assert-Replacement $target $targetZip $targetSources
-    $moves = @(@{ from = $bundle; to = $target }, @{ from = $stagedZip; to = $targetZip }, @{ from = $evidence; to = $targetEvidence })
+    Assert-Replacement $target $targetZip $targetNoFFmpegZip $targetSources
+    $moves = @(@{ from = $bundle; to = $target }, @{ from = $stagedZip; to = $targetZip },
+        @{ from = $stagedNoFFmpegZip; to = $targetNoFFmpegZip }, @{ from = $evidence; to = $targetEvidence })
     if ($stagedSources) {
         # Source watchers may hold directory handles; copy verified developer files
         # instead of renaming the tree. This never enters the application output.
@@ -502,7 +527,7 @@ try {
     $backups = @()
     $installed = @()
     try {
-        foreach ($destination in @($target, $targetZip)) {
+        foreach ($destination in @($target, $targetZip, $targetNoFFmpegZip)) {
             if (Test-Path -LiteralPath $destination) {
                 $backup = $destination + '.backup-' + [Guid]::NewGuid().ToString('N')
                 Move-Item -LiteralPath $destination -Destination $backup
@@ -525,6 +550,7 @@ try {
     Write-Host "Bundle: $target"
     Write-Host "ZIP: $targetZip"
     Write-Host "ZIP SHA-256: $zipHash"
+    Write-Host "ZIP without FFmpeg (libmpv retained): $targetNoFFmpegZip"
     Write-Host "Development materials (not runtime): $development"
     Write-Host "Status: $statusValue"
     Write-Host "Workspace build: $release"

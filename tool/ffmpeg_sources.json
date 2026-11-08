@@ -7,14 +7,14 @@
     "status": "source-build-receipt-required",
     "completeCorrespondingSource": false,
     "redistributionReady": false,
-    "reason": "Gyan binary is retired, not declared source-complete. The package uses only tool/windows_native_build.py outputs with every exact source and current recipe verified by build_windows.ps1; actual binary build receipt and Windows acceptance are still required."
+    "reason": "Gyan binary is retired, not declared source-complete. The package uses only tool/windows_native_build.py outputs bound to verified source locks and the current recipe by build_windows.ps1; runtime-only CI supplies do not claim complete corresponding-source materials. Actual Windows acceptance is still required."
   },
   "replacement": {
     "recipe": "tool/windows_native_build.py",
     "sourceLocks": ["tool/media_sources.json", "tool/windows_native_sources.json"],
     "patches": [],
     "configuration": "Unmodified FFmpeg9.0.2; LGPL build; static LAME3.100 and zlib1.3.1; built-in AAC/FLAC, remux, hash, JPEG/PNG covers, Windows Schannel HTTPS. No Gyan external libraries or GPL/nonfree features.",
-    "sourceArtifacts": "NativeSupply/sources contains every locked archive, recipe, generated configuration and BUILD-OBJECTS.tar.gz; supplied separately in the public application source ZIP.",
+    "sourceArtifacts": "Full local mode keeps locked archives, recipes and BUILD-OBJECTS.tar.gz separately. CI --runtime-only transfers only runtime, licenses and small provenance receipts; it does not create or publish corresponding-source archives.",
     "binaryIdentity": "NativeSupply/BUILD-RECEIPT.json produced by the successful cross-build; no fabricated output digest is predeclared."
   },
   "retiredPackage": {

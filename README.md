@@ -24,6 +24,8 @@
 
 从 [Releases](https://github.com/teikengstudio/XMPlus/releases) 下载。
 
+Windows 构建配置生成内置 FFmpeg / FFprobe 和不含这两个命令行工具的双 ZIP，两包均保留 libmpv 播放；新双包尚未发布。CI 配置仅上传运行包、许可与来源信息，不打包上传源码、工具链或对象文件。
+
 
 ## 编译
 
@@ -38,6 +40,8 @@ flutter build apk --release --split-per-abi --no-pub
 ```
 
 正式 Android 构建必须配置 JKS 签名环境变量：`ANDROID_KEYSTORE_PATH`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_PASSWORD`、`ANDROID_KEY_ALIAS`。签名材料不得提交到仓库。
+
+Windows 原生组件版本与 SHA-256 锁定在 `tool/media_sources.json`、`tool/windows_native_sources.json`，配方为 `tool/windows_native_build.py`。CI 使用 runtime-only 模式；本地 full 模式可将源码和重链接材料保留在独立开发目录，不放入运行包。具体命令见 `licenses/native/SOURCE-MATERIALS-INCOMPLETE.txt`；这些构建检查不代表已完成全部许可合规或功能验收。
 
 
 ## 许可与安全

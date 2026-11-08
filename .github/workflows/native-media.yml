@@ -43,7 +43,9 @@ jobs:
         with:
           path: |
             android/app/src/main/jniLibs/${{ matrix.abi }}
-            build/android-media/${{ matrix.abi }}/receipt
+            build/android-media/${{ matrix.abi }}/receipt/build-manifest.json
+            build/android-media/${{ matrix.abi }}/receipt/outputs.sha256
+            build/android-media/${{ matrix.abi }}/receipt/*.elf.txt
           key: android-media-ndk28.2-api24-${{ matrix.abi }}-${{ hashFiles('tool/build_android_media.sh', 'tool/media_sources.json') }}
       - name: Install native host tools
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -61,12 +63,15 @@ jobs:
           path: android/app/src/main/jniLibs/
           if-no-files-found: error
           retention-days: 14
-      - name: Upload native configuration and build evidence
+      - name: Upload native provenance and runtime identity receipts
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: android-native-evidence-${{ matrix.abi }}
-          path: build/android-media/${{ matrix.abi }}/receipt/
+          path: |
+            build/android-media/${{ matrix.abi }}/receipt/build-manifest.json
+            build/android-media/${{ matrix.abi }}/receipt/outputs.sha256
+            build/android-media/${{ matrix.abi }}/receipt/*.elf.txt
           if-no-files-found: warn
           retention-days: 14
 
@@ -84,34 +89,13 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/native-build-python"
           "$RUNNER_TEMP/native-build-python/bin/pip" install 'meson==1.7.2' 'Jinja2==3.1.6'
           echo "$RUNNER_TEMP/native-build-python/bin" >> "$GITHUB_PATH"
-      - name: Build source-traceable Windows native supply
-        run: bash tool/windows-native-build.sh build/windows-native
-      - name: Upload native runtime only (no source or build objects)
+      - name: Build source-traceable Windows runtime (no source or object packaging)
+        run: bash tool/windows-native-build.sh build/windows-native --runtime-only
+      - name: Upload runtime, licenses and provenance receipts only
         uses: actions/upload-artifact@v6
         with:
           name: windows-native-runtime
-          path: |
-            build/windows-native/runtime/
-            build/windows-native/licenses/
-          if-no-files-found: error
-          retention-days: 14
-      - name: Upload complete native supply for Windows packaging
-        uses: actions/upload-artifact@v6
-        with:
-          name: windows-native-supply
           path: build/windows-native/windows-native-supply.zip
           if-no-files-found: error
           compression-level: 0
-          retention-days: 14
-      - name: Upload native build evidence
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: windows-native-evidence
-          path: |
-            build/windows-native/BUILD-RECEIPT.json
-            build/windows-native/IMPORTS.json
-            build/windows-native/logs/
-            build/windows-native/BUILD.log
-          if-no-files-found: warn
           retention-days: 14

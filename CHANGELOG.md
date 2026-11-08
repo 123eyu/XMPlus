@@ -6,7 +6,7 @@
 - 修复 Android 极验验证、官方音频跳转、外置存储安全保存和备份声音 ID 恢复。
 - 升级 Flutter 3.47.9、Gradle 9.9.0、AGP 9.5.1、Kotlin 2.4.21 与 Android API 36；支持预测性返回和横屏、平板系统栏避让。
 - Android 三 ABI 正式签名 APK；真机 WebView、外置存储及系统手势仍待验收。
-- 补齐 Windows 自动构建与发行；原生组件从固定源码构建，软件 ZIP 与对应源码材料分别提供。
+- Windows 构建新增内置 FFmpeg / FFprobe 和不含这两个工具的双包，均保留 libmpv 播放；尚未发布。
 
 ## 1.0.0
 
@@ -20,6 +20,6 @@ XMPlus 首个发行版。
 
 - 首版 Android APK 未包含 FFmpeg / FFprobe，不支持离线媒体处理；这只描述 1.0.0 原始发行包。
 - 当时未完成 Android 真机登录、极验和播放验收；当前未发行候选同样尚待真机验收。
-- Windows 第三方原生组件对应源码材料不完整，不公开发行 Windows 二进制。
+- 首版因 Windows 第三方原生组件对应源码材料不完整，未公开发行 Windows 二进制；当前构建已更换原生组件来源。
 
 请勿向 Issues 上传账号备份、Cookie、令牌或签名私钥。
