@@ -207,6 +207,8 @@ class DownloadService {
   final Map<String, DownloadAlbumJob> _albums = {};
   final Set<String> _albumWorkers = {};
   List<DownloadAlbumJob> get albumJobs => List.unmodifiable(_albums.values);
+  // Continue commands must observe the final snapshot after pause-all drains.
+  final Lock _queueCommands = Lock();
   final Lock _updates = Lock();
   final Map<String, Lock> _admissionOrder = {};
   final StreamController<void> _changes = StreamController<void>.broadcast();
@@ -1039,10 +1041,15 @@ class DownloadService {
         _notify();
       });
 
-  Future<void> resume(String id) async {
+  Future<void> resume(String id) => _queueCommands.synchronized(() async {
     _ensureOpen();
     final worker = _workers[id];
-    if (worker != null) await worker.done;
+    if (worker != null) {
+      // An active worker needs no resume. Do not hold up a later pause command.
+      if (!worker.control.paused && !worker.control.cancelled) return;
+      await worker.done;
+    }
+    _ensureOpen();
     final item = task(id);
     if (item.state == DownloadState.completed || item.active) return;
     if (!item.processingFailed &&
@@ -1062,7 +1069,7 @@ class DownloadService {
     );
     _suspended = false;
     _pump();
-  }
+  });
 
   Future<void> retry(String id, {bool reacquire = false}) async {
     _ensureOpen();
@@ -1162,7 +1169,7 @@ class DownloadService {
     });
   }
 
-  Future<void> pauseAll() async {
+  Future<void> pauseAll() => _queueCommands.synchronized(() async {
     _suspended = true;
     for (final job in _albums.values) {
       if (job.state == 'running') job.state = 'paused';
@@ -1202,9 +1209,9 @@ class DownloadService {
         _notify();
       }
     });
-  }
+  });
 
-  Future<void> resumeAll() async {
+  Future<void> resumeAll() => _queueCommands.synchronized(() async {
     _ensureOpen();
     await Future.wait(
       _workers.values
@@ -1234,7 +1241,7 @@ class DownloadService {
     }
     await _updates.synchronized(() => _save(_tasks));
     _pump();
-  }
+  });
 
   void prioritize(String? taskId) {
     if (taskId != null) task(taskId);
