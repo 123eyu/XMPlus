@@ -116,11 +116,16 @@ class XmlyClient {
         '/fmobile-track/fmobile/track/v2/baseInfo',
         '/lite-mobile/audi/func/v1/config',
         '/lite-mobile/audi/func/v1/report',
+        '/lite-mobile/like/v1/like',
+        '/lite-mobile/like/v1/dislike',
+        '/subscribe/album/subscribe/delete',
+        '/subscribe/album-subscribe/and/ask-anchor-info',
       ].contains(path);
     return method == 'GET' &&
         (const [
               '/mobile/v1/album/track/v2',
               '/nyx/v1/history/query/android',
+              '/lite-mobile/like/v1/user-likes',
             ].contains(path) ||
             RegExp(r'^/mobile/track/[1-9][0-9]{0,18}$').hasMatch(path) ||
             RegExp(r'^/fmobile-album/album/track/ts-[0-9]+$').hasMatch(path) ||
@@ -1092,10 +1097,10 @@ class XmlyClient {
       );
   }
 
-  Future<Track> track(String trackId) async {
+  Future<Track> track(String trackId, {bool force = false}) async {
     final number = xmlyIdentifier(trackId);
     final cached = _metadata[number];
-    if (cached != null) return cached;
+    if (!force && cached != null) return cached;
     final info = await _info(number);
     _matchingId(info, number);
     final value = Track.fromApi(info);
