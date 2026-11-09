@@ -259,7 +259,6 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   final _search = TextEditingController();
   final _range = TextEditingController();
   final _selected = <String, Track>{};
-  final _fileChecks = <String, Future<DownloadTask?>>{};
   List<DownloadTask> _observedDownloads = [];
   Set<String> _downloaded = {};
   Object? _observedCache;
@@ -317,7 +316,6 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         _observedCache = cached;
         _downloaded = _completedTrackIds();
         _selected.removeWhere((id, _) => _downloaded.contains(id));
-        _fileChecks.clear();
         if (_cachedView) _showCached(_page);
       }
     });
@@ -708,14 +706,13 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       case 'queue':
         await widget.runtime.player.addToQueue(track);
       case 'download':
-        if (!_completedTrackIds().contains(track.id))
+        final task = await _localDownload(track);
+        if (mounted && task == null)
           await requestDownloads(context, widget.runtime, [track]);
       case 'delete':
         final task = await _localDownload(track);
-        if (mounted &&
-            task != null &&
-            await deleteDownloadedAudio(context, widget.runtime, task)) {
-          _fileChecks.remove(track.id);
+        if (mounted && task != null) {
+          await deleteDownloadedAudio(context, widget.runtime, task);
         }
     }
     if (mounted) setState(() {});
@@ -760,10 +757,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           statusError = _safeError(error);
         }
       }
-      final task = await _fileChecks.putIfAbsent(
-        track.id,
-        () => _localDownload(track),
-      );
+      final task = await _localDownload(track);
       if (!current()) return;
       if (statusError != null) setState(() => _error = statusError);
       final action = await showMenu<String>(
@@ -774,7 +768,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           const PopupMenuItem(value: 'queue', child: Text('加入播放队列')),
           if (task != null)
             const PopupMenuItem(value: 'delete', child: Text('删除已下载文件'))
-          else if (!_downloaded.contains(track.id))
+          else
             const PopupMenuItem(value: 'download', child: Text('下载')),
           PopupMenuItem(
             value: favorite == true ? 'unfavorite' : 'favorite',
