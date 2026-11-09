@@ -501,12 +501,7 @@ class DownloadService {
           job.taskIds.any(
             (id) =>
                 _workers.containsKey(id) ||
-                !const {
-                      DownloadState.completed,
-                      DownloadState.failed,
-                      DownloadState.cancelled,
-                    }.contains(task(id).state) &&
-                    !task(id).needsConfirmation,
+                task(id).active && !task(id).needsConfirmation,
           ))
         continue;
       _albumWorkers.add(job.id);
@@ -526,6 +521,9 @@ class DownloadService {
       if (job.page * xmlyAlbumPageSize >= job.total) {
         job.state = 'completed';
         await _updates.synchronized(() => _save(_tasks));
+        for (final id in job.taskIds) {
+          _automaticGuards.remove(id);
+        }
         _notify();
         return;
       }
@@ -906,13 +904,11 @@ class DownloadService {
       if (beforeStart != null) await beforeStart(List.unmodifiable(admitted));
       final album = batch.album;
       if (album != null) {
-        final pageTracks = album.seen
-            .skip((album.page - 1) * xmlyAlbumPageSize)
-            .toSet();
+        final albumTracks = album.seen.toSet();
         album.taskIds = next.values
             .where(
               (item) =>
-                  pageTracks.contains(item.track.id) &&
+                  albumTracks.contains(item.track.id) &&
                   item.state != DownloadState.cancelled,
             )
             .map((item) => item.id)
@@ -988,6 +984,7 @@ class DownloadService {
     } finally {
       _stopping.remove(id);
     }
+    _pump();
   }
 
   static Future<bool> _outputExists(DownloadTask item) async =>

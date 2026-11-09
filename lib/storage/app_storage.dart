@@ -77,7 +77,7 @@ class AppStorage {
           'accounts': <String, dynamic>{},
           'downloads': <dynamic>[],
           'library': <String, dynamic>{},
-          'history': <String, dynamic>{},
+          'officialProgress': <String, dynamic>{},
           'queue': <String, dynamic>{},
         };
       }
@@ -152,7 +152,9 @@ class AppStorage {
         value['accounts'] is! Map ||
         value['downloads'] is! List ||
         value['library'] is! Map ||
-        value['history'] is! Map ||
+        (value.containsKey('history') && value['history'] is! Map) ||
+        (value.containsKey('officialProgress') &&
+            value['officialProgress'] is! Map) ||
         value['queue'] is! Map ||
         (value['activeAccountId'] != null &&
             value['activeAccountId'] is! String) ||
@@ -194,6 +196,23 @@ class AppStorage {
     }
 
     inspect(value);
+    // Accept legacy libraries, but never retain their local favorites.
+    for (final library in (value['library'] as Map).values) {
+      if (library is Map) library.remove('favorites');
+    }
+    // Keep the cloud-report outbox, not the legacy local history/read model.
+    final progress =
+        value.putIfAbsent('officialProgress', () => <String, dynamic>{}) as Map;
+    final history = value.remove('history') as Map?;
+    for (final entry in history?.entries ?? const <MapEntry>[]) {
+      final pending = entry.value is Map ? entry.value['pending'] : null;
+      if (pending is! Map) continue;
+      final current =
+          progress.putIfAbsent(entry.key, () => <String, dynamic>{}) as Map;
+      for (final report in pending.entries) {
+        current.putIfAbsent(report.key, () => report.value);
+      }
+    }
   }
 
   static Map<String, dynamic> _freezeMap(Map<String, dynamic> value) =>
