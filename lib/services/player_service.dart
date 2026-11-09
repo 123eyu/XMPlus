@@ -859,7 +859,8 @@ class PlayerService {
       final mounted = cache!;
       final source = PlaybackSource(
         uri: _proxy!.mount(mounted),
-        identity: task.accountIdentity,
+        // The task may have rotated accounts while this request awaited a cache.
+        identity: mounted.accountIdentity,
         kind: 'prepaid',
         taskId: task.id,
         cache: mounted,
