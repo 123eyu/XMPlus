@@ -209,7 +209,7 @@ class DownloadService {
   final Map<String, DownloadAlbumJob> _albums = {};
   final Set<String> _albumWorkers = {};
   List<DownloadAlbumJob> get albumJobs => List.unmodifiable(_albums.values);
-  // Continue commands must observe the final snapshot after pause-all drains.
+  // Continue commands must observe the final snapshot after stopped workers drain.
   final Lock _queueCommands = Lock();
   final Lock _updates = Lock();
   final Map<String, Lock> _admissionOrder = {};
@@ -217,7 +217,7 @@ class DownloadService {
   final Map<String, DownloadTask> _tasks = {};
   final Map<String, ({DownloadControl control, Future<void> done})> _workers =
       {};
-  final Set<String> _stopping = {};
+  final Map<String, int> _stopping = {};
   final Map<String, bool Function()> _automaticGuards = {};
   bool _loaded = false, _closed = false, _suspended = false;
   int _parallelism = 3;
@@ -957,41 +957,51 @@ class DownloadService {
   Future<void> cancel(String id) => _stop(id, cancel: true);
   Future<void> _stop(String id, {required bool cancel}) async {
     _ensureOpen();
-    _stopping.add(id);
+    // Signal before waiting for the command lock so album stops reach every
+    // producer. Keep each pending stop counted until its final state is applied.
+    _stopping.update(id, (count) => count + 1, ifAbsent: () => 1);
+    _workers[id]?.control._stop(cancel: cancel);
     try {
-      final worker = _workers[id];
-      worker?.control._stop(cancel: cancel);
-      await _change(
-        id,
-        (item) => item.state == DownloadState.completed
-            ? item
-            : item.copyWith(
-                state: cancel ? DownloadState.cancelled : DownloadState.paused,
-                bytesPerSecond: 0,
-                retryAt: null,
-                processingFailed:
-                    item.processingFailed ||
-                    item.state == DownloadState.processing,
-              ),
-      );
-      await worker?.done;
-      await _change(
-        id,
-        (item) => item.state == DownloadState.completed
-            ? item
-            : item.copyWith(
-                state: cancel ? DownloadState.cancelled : DownloadState.paused,
-                bytesPerSecond: 0,
-                retryAt: null,
-                processingFailed:
-                    item.processingFailed ||
-                    item.state == DownloadState.processing,
-              ),
-      );
+      await _queueCommands.synchronized(() async {
+        await _workers[id]?.done;
+        await _updates.synchronized(() async {
+          final item = task(id);
+          var stopped = item.state == DownloadState.completed
+              ? item
+              : item.copyWith(
+                  state: cancel ? DownloadState.cancelled : DownloadState.paused,
+                  bytesPerSecond: 0,
+                  retryAt: null,
+                  processingFailed:
+                      item.processingFailed ||
+                      item.state == DownloadState.processing,
+                );
+          try {
+            await _save({..._tasks, id: stopped});
+          } catch (_) {
+            if (item.state != DownloadState.completed) {
+              stopped = stopped.copyWith(
+                error: cancel
+                    ? '取消状态保存失败，请检查资料目录后重新打开应用'
+                    : '暂停状态保存失败，请检查资料目录后重新打开应用',
+              );
+            }
+            rethrow;
+          } finally {
+            _tasks[id] = stopped;
+            _notify();
+          }
+        });
+      });
     } finally {
-      _stopping.remove(id);
+      final remaining = _stopping[id]! - 1;
+      if (remaining == 0) {
+        _stopping.remove(id);
+      } else {
+        _stopping[id] = remaining;
+      }
+      _pump();
     }
-    _pump();
   }
 
   static Future<bool> _outputExists(DownloadTask item) async =>
@@ -1263,7 +1273,7 @@ class DownloadService {
     for (final item in tasks.where(
       (item) =>
           item.state == DownloadState.queued &&
-          !_stopping.contains(item.id) &&
+          !_stopping.containsKey(item.id) &&
           !(_automaticGuards[item.id]?.call() ?? true),
     )) {
       unawaited(
@@ -1281,7 +1291,7 @@ class DownloadService {
           (item) =>
               item.state == DownloadState.queued &&
               !_workers.containsKey(item.id) &&
-              !_stopping.contains(item.id) &&
+              !_stopping.containsKey(item.id) &&
               (_automaticGuards[item.id]?.call() ?? true),
         )
         .toList();
