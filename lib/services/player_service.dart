@@ -1109,11 +1109,11 @@ class PlayerService {
   Future<void> _finish() async {
     _atEnd = true;
     final sleep = policy.onChapterEnd();
-    await _pause();
     if (sleep != null) {
       await _sleep(sleep);
       return;
     }
+    await _pause();
     if (_manualPaused) return;
     if (effectiveSettings.loopMode == 'single') {
       await _openCurrent(_newRequest(), resumePosition: 0, manualReplay: true);
