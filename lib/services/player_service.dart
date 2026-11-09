@@ -72,9 +72,10 @@ class PlayerService {
     });
     _official = OfficialProgress(
       client: () => _historyClient,
-      readPending: (identity) => xmlyMap(_history(identity)['pending']),
+      readPending: (identity) =>
+          xmlyMap((storage.state['officialProgress'] as Map)[identity]),
       savePending: (identity, pending) => storage.transaction((state) {
-        _mutableHistory(state, identity)['pending'] = pending;
+        (state['officialProgress'] as Map)[identity] = pending;
       }),
       enabled: () => _syncHistory,
       clock: _clock,
@@ -162,11 +163,6 @@ class PlayerService {
     (_settings['albumOverrides'] as Map?)?[current?.albumId] as Map? ??
         const {},
   );
-  Map<String, dynamic> _history(String identity) =>
-      xmlyMap((storage.state['history'] as Map)[identity]);
-  static Map _mutableHistory(Map<String, dynamic> state, String identity) =>
-      (state['history'] as Map).putIfAbsent(identity, () => <String, dynamic>{})
-          as Map;
 
   void _notify() {
     if (!_changes.isClosed) _changes.add(null);
@@ -274,7 +270,7 @@ class PlayerService {
     _atEnd = false;
     _sleepStopped = false;
     duration = current?.duration ?? 0;
-    position = current == null ? 0 : _localPosition(current!).$1;
+    position = 0;
     _loaded = true;
     await applySettings();
     _notify();
@@ -542,35 +538,21 @@ class PlayerService {
     );
   });
 
-  (double, int) _localPosition(Track track) {
-    final entry = xmlyMap(
-      xmlyMap(_history(_progressIdentity)['positions'])[track.id],
-    );
-    final value = entry['position'];
-    return (
-      value is num && value.isFinite && value >= 0 ? value.toDouble() : 0,
-      entry['updatedAt'] is int ? entry['updatedAt'] as int : 0,
-    );
-  }
-
   Future<double> _resumePosition(Track track) async {
-    final local = _localPosition(track);
     final client = _historyClient;
-    if (!_syncHistory || client == null) return local.$1;
+    if (!_syncHistory || client == null) return 0;
     try {
-      final cloud = await XmlyHistory(client, clock: _clock).progress(
-        albumId: track.albumId,
-        trackId: track.albumId.isEmpty ? track.id : '',
-      );
-      if (cloud != null &&
-          cloud['track_id'] == track.id &&
-          (cloud['updated_at'] as num) * 1000 > local.$2) {
+      final cloud = await XmlyHistory(
+        client,
+        clock: _clock,
+      ).progress(albumId: track.albumId, trackId: track.id);
+      if (cloud != null) {
         return (cloud['position'] as num).toDouble();
       }
     } catch (_) {
-      warning = '云进度暂不可用，已使用本地进度';
+      warning = '云进度暂不可用，将从片头开始';
     }
-    return local.$1;
+    return 0;
   }
 
   Future<void> _openCurrent(
@@ -909,15 +891,6 @@ class PlayerService {
       await _openCurrent(request, localTaskId: taskId);
     });
   });
-  Future<void> continueListening() async {
-    final history = _history(libraryIdentity);
-    final id = history['lastTrackId'];
-    final entry = xmlyMap(xmlyMap(history['positions'])[id]);
-    if (entry['track'] is! Map)
-      throw const XmlyException('history_missing', '暂无收听记录');
-    final track = Track.fromJson(xmlyMap(entry['track']));
-    await playTrack(track);
-  }
 
   Future<void> pause() {
     ++_advanceIntent;
@@ -1390,21 +1363,8 @@ class PlayerService {
   Future<void> _saveProgress({bool terminal = false, bool sync = true}) async {
     final track = current;
     if (track == null || _source == null || !_actual) return;
-    final identity = _progressIdentity, actualPosition = _observedPosition;
-    final timestamp = _clock().millisecondsSinceEpoch;
-    await storage.transaction((state) {
-      final history = _mutableHistory(state, identity);
-      final positions =
-          history.putIfAbsent('positions', () => <String, dynamic>{}) as Map;
-      positions[track.id] = {
-        'position': actualPosition,
-        'updatedAt': timestamp,
-        'albumId': track.albumId,
-        'track': track.toJson(),
-      };
-      history['lastTrackId'] = track.id;
-    });
-    _savedAt = timestamp;
+    final actualPosition = _observedPosition;
+    _savedAt = _clock().millisecondsSinceEpoch;
     if (sync)
       await _official.observe('player', actualPosition, terminal: terminal);
   }
@@ -1518,23 +1478,6 @@ class PlayerService {
     _notify();
   }
 
-  Future<void> toggleFavorite([Track? track]) async {
-    final favorite = track ?? current;
-    if (favorite == null) return;
-    await _library((library) {
-      final favorites =
-          library.putIfAbsent('favorites', () => <String, dynamic>{}) as Map;
-      if (favorites.containsKey(favorite.id))
-        favorites.remove(favorite.id);
-      else {
-        favorites[favorite.id] = favorite.toJson();
-      }
-    });
-  }
-
-  Future<void> removeFavorite(String trackId) => _library((library) {
-    (library['favorites'] as Map?)?.remove(trackId);
-  });
   Future<void> bookmark() async {
     final track = current;
     if (track == null) return;
@@ -1547,12 +1490,6 @@ class PlayerService {
       });
     });
   }
-
-  Future<void> removeBookmark(int index) => _library((library) {
-    final bookmarks = library['bookmarks'] as List? ?? [];
-    RangeError.checkValidIndex(index, bookmarks);
-    bookmarks.removeAt(index);
-  });
 
   Future<void> _downloadChanged() async {
     final id = currentTaskId;
