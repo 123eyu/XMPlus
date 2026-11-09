@@ -1167,35 +1167,41 @@ class DownloadService {
     for (final job in _albums.values) {
       if (job.state == 'running') job.state = 'paused';
     }
-    await _updates.synchronized(() => _save(_tasks));
-    for (final worker in _workers.values) {
+    final workers = _workers.values.toList();
+    for (final worker in workers) {
       worker.control._stop(cancel: false);
     }
-    for (final item in tasks.where((item) => item.active)) {
-      await _change(
-        item.id,
-        (value) => value.copyWith(
+    // Stopping must not depend on a writable state directory. Drain producers
+    // before taking the final snapshot so late worker updates cannot undo it.
+    await Future.wait(workers.map((worker) => worker.done));
+    await _updates.synchronized(() async {
+      final next = Map<String, DownloadTask>.from(_tasks);
+      final paused = tasks.where((item) => item.active).toList();
+      for (final item in paused) {
+        next[item.id] = item.copyWith(
           state: DownloadState.paused,
           bytesPerSecond: 0,
           retryAt: null,
           processingFailed:
-              value.processingFailed || value.state == DownloadState.processing,
-        ),
-      );
-    }
-    await Future.wait(_workers.values.map((worker) => worker.done).toList());
-    for (final item in tasks.where((item) => item.active)) {
-      await _change(
-        item.id,
-        (value) => value.copyWith(
-          state: DownloadState.paused,
-          bytesPerSecond: 0,
-          retryAt: null,
-          processingFailed:
-              value.processingFailed || value.state == DownloadState.processing,
-        ),
-      );
-    }
+              item.processingFailed || item.state == DownloadState.processing,
+        );
+      }
+      try {
+        await _save(next);
+      } catch (_) {
+        for (final item in paused) {
+          next[item.id] = next[item.id]!.copyWith(
+            error: '暂停状态保存失败，请检查资料目录后重新打开应用',
+          );
+        }
+        rethrow;
+      } finally {
+        _tasks
+          ..clear()
+          ..addAll(next);
+        _notify();
+      }
+    });
   }
 
   Future<void> resumeAll() async {
@@ -1365,7 +1371,7 @@ class DownloadService {
         }
       }
     } on DownloadStopped {
-      // The caller persisted pause/cancel before waiting for this worker to drain.
+      // The caller owns the stopped state and waits for this worker to drain.
     } catch (error) {
       try {
         final changed =
