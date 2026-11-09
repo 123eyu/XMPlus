@@ -105,10 +105,7 @@ class ConfigArchive {
     final state = storage.state;
     final files = <String, Object?>{
       'setting.json': _clean(state['settings']),
-      'library.json': {
-        'library': _clean(state['library']),
-        'history': _clean(state['history']),
-      },
+      'library.json': {'library': _clean(state['library'])},
     };
     if (includeAccount) {
       final records = <Map<String, dynamic>>[];
@@ -253,7 +250,7 @@ class ConfigArchive {
     await roots(payload);
     final summary = <String>[
       if (payload.containsKey('setting.json')) '替换应用设置',
-      if (payload.containsKey('library.json')) '替换书架、收藏和实际收听历史',
+      if (payload.containsKey('library.json')) '替换本地书签',
       if (account != null)
         '合并 ${(account['accounts'] as List).length} 个账号及账本，恢复的任务保持暂停',
       if (account != null) '现有未确认扣时和已确认收据不会删除',
@@ -324,7 +321,6 @@ class ConfigArchive {
     await accounts.restoreArchive(
       settings: payload['setting.json'] as Map<String, dynamic>?,
       library: library?['library'] as Map<String, dynamic>?,
-      history: library?['history'] as Map<String, dynamic>?,
       importedAccounts: (account?['accounts'] as List?)
           ?.cast<Map<String, dynamic>>(),
       primaryAccountId: account?['primaryAccountId'] as String?,
@@ -381,8 +377,15 @@ class ConfigArchive {
     final library = payload['library.json'];
     if (library != null) {
       final value = _map(library);
-      if (value.containsKey('library')) _map(value['library']);
-      if (value.containsKey('history')) _map(value['history']);
+      if (value.containsKey('library')) {
+        // Validate old backups above before discarding obsolete local favorites.
+        for (final library in _map(value['library']).values) {
+          if (library is Map) library.remove('favorites');
+        }
+      }
+      // Validate legacy history above, but never restore it or its old outbox.
+      if (value.containsKey('history')) _map(value.remove('history'));
+      value.remove('officialProgress');
     }
     final account = payload['account.json'];
     if (account == null) return;

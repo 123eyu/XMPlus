@@ -20,6 +20,7 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage>
   bool _saving = false;
   bool? _batteryExempt;
   bool _requestingBattery = false;
+  bool _clearingUrlCache = false;
 
   @override
   void initState() {
@@ -97,6 +98,30 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage>
   Future<void> _directory() async {
     final directory = await FilePicker.getDirectoryPath(dialogTitle: '选择下载目录');
     if (directory != null) await _set('rootDirectory', directory);
+  }
+
+  Future<void> _clearUrlCache() async {
+    if (_clearingUrlCache) return;
+    setState(() {
+      _clearingUrlCache = true;
+      _error = null;
+    });
+    try {
+      final runtime = widget.runtime;
+      await Future.wait([
+        runtime.anonymous.clearUrlCache(),
+        for (final id in runtime.accounts.accountIds)
+          runtime.accounts.clientFor(id).clearUrlCache(),
+      ]);
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已清除所有 URL 缓存')),
+        );
+    } catch (error) {
+      if (mounted) setState(() => _error = 'URL 缓存清除失败：$error');
+    } finally {
+      if (mounted) setState(() => _clearingUrlCache = false);
+    }
   }
 
   Widget _number(
@@ -261,6 +286,21 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage>
             onChanged: _saving
                 ? null
                 : (value) => _set('continueDownloadAfterSleep', value),
+          ),
+          const Divider(),
+          const ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.link_off),
+            title: Text('播放地址缓存'),
+            subtitle: Text('清除所有账号及匿名播放地址，下次使用时重新获取；不删除已下载音频。'),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: _clearingUrlCache ? null : _clearUrlCache,
+              icon: const Icon(Icons.delete_outline),
+              label: Text(_clearingUrlCache ? '正在清除…' : '清除所有 URL 缓存'),
+            ),
           ),
           if (Platform.isAndroid) ...[
             const Divider(),

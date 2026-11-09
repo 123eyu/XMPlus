@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../api/xmly_client.dart';
 import '../api/xmly_catalogue.dart';
+import '../api/xmly_experience.dart';
 import '../api/xmly_rewards.dart';
 import '../storage/app_storage.dart';
 import '../storage/credential_store.dart';
@@ -133,6 +134,7 @@ class AppRuntime extends ChangeNotifier {
   Timer? _rewardTimer;
   bool _refreshingRewards = false;
   final Map<String, Quota> _rewardChecks = {};
+  int libraryRevision = 0;
 
   XmlyClient get client => accounts.activeClient ?? anonymous;
   Future<void> load() async {
@@ -198,6 +200,12 @@ class AppRuntime extends ChangeNotifier {
 
   void changed() {
     _configureRewards();
+    notifyListeners();
+  }
+
+  void libraryChanged() {
+    XmlyExperience(client).invalidateLibrary();
+    libraryRevision++;
     notifyListeners();
   }
 
