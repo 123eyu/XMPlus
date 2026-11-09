@@ -137,6 +137,16 @@ class MediaPipeline {
     );
     await control.checkpoint();
     var cache = _caches[task.id];
+    if (cache != null && _directories[task.id] != directory) {
+      // Account rotation keeps the task ID, but bytes and refresh callbacks
+      // belong to the old account. Stop old readers before opening its successor.
+      await cache.close();
+      _caches.remove(task.id);
+      _directories.remove(task.id);
+      _finished.remove(task.id);
+      cache = null;
+      await control.checkpoint();
+    }
     if (cache == null) {
       cache = await AudioCache.open(
         directory: directory,
