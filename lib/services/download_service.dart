@@ -479,7 +479,7 @@ class DownloadService {
     _notify();
   }
 
-  Future<void> resumeAlbum(String id) async {
+  Future<void> resumeAlbum(String id) => _queueCommands.synchronized(() async {
     _ensureOpen();
     final job = _albums[id]!;
     if (job.state == 'completed' || job.state == 'cancelled') return;
@@ -489,12 +489,12 @@ class DownloadService {
     for (final taskId in job.taskIds) {
       final item = task(taskId);
       if (item.state == DownloadState.paused && !item.needsConfirmation)
-        await resume(taskId);
+        await _resume(taskId);
     }
     _suspended = false;
     _notify();
     _pump();
-  }
+  });
 
   void _pumpAlbums() {
     for (final job in _albums.values.toList()) {
@@ -826,7 +826,7 @@ class DownloadService {
     await _checkRoot(batch.rootDirectory, batch.settings);
     final parallelism = _option(batch.settings, 'parallelism', 3, 1, 6);
     await _reconcileOutputs(batch.items.map((item) => item.track.id).toSet());
-    Future<void> admit(XmlyClient _) => _updates.synchronized(() async {
+    Future<void> persist() => _updates.synchronized(() async {
       _ensureOpen();
       if (allowed != null && !allowed()) throw const DownloadStopped();
       final next = Map<String, DownloadTask>.from(_tasks);
@@ -940,6 +940,9 @@ class DownloadService {
       _suspended = false;
       _notify();
     });
+    // Account changes can hold their mutex while pausing the queue. Acquire the
+    // queue command lock only after admission has entered that account mutex.
+    Future<void> admit(XmlyClient _) => _queueCommands.synchronized(persist);
     if (batch.accountIdentity == 'anonymous') {
       await admit(anonymous);
     } else {
@@ -1041,7 +1044,10 @@ class DownloadService {
         _notify();
       });
 
-  Future<void> resume(String id) => _queueCommands.synchronized(() async {
+  Future<void> resume(String id) =>
+      _queueCommands.synchronized(() => _resume(id));
+
+  Future<void> _resume(String id) async {
     _ensureOpen();
     final worker = _workers[id];
     if (worker != null) {
@@ -1069,7 +1075,7 @@ class DownloadService {
     );
     _suspended = false;
     _pump();
-  });
+  }
 
   Future<void> retry(String id, {bool reacquire = false}) async {
     _ensureOpen();
