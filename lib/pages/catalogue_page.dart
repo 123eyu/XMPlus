@@ -45,11 +45,13 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
   final _query = TextEditingController();
   String _kind = 'album';
   SearchPage? _result;
+  String? _resultQuery;
   String? _error;
   bool _loading = false;
   int _generation = 0;
 
-  Future<void> _search([int page = 1]) async {
+  Future<void> _search({int page = 1, String? query}) async {
+    final submittedQuery = query ?? _query.text;
     final generation = ++_generation;
     setState(() {
       _loading = true;
@@ -57,7 +59,7 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
     });
     try {
       final result = await widget.runtime.client.search(
-        _query.text,
+        submittedQuery,
         kind: _kind,
         page: page,
         pageSize: 30,
@@ -65,6 +67,7 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
       if (mounted && generation == _generation)
         setState(() {
           _result = result;
+          _resultQuery = submittedQuery;
         });
     } catch (error) {
       if (mounted && generation == _generation)
@@ -147,6 +150,7 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
                                   : (value) => setState(() {
                                       _kind = value!;
                                       _result = null;
+                                      _resultQuery = null;
                                     }),
                             ),
                           ),
@@ -226,7 +230,7 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
                     total: result.total,
                     pageSize: result.pageSize,
                     busy: _loading,
-                    onPage: _search,
+                    onPage: (page) => _search(page: page, query: _resultQuery),
                   ),
                 ),
             ],
