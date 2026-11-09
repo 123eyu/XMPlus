@@ -20,20 +20,27 @@ class _Session {
 /// readPending/savePending must address the specified account's persistent map.
 /// Automatic sync is disabled until the caller supplies an enabled consent flag.
 class OfficialProgress {
-  OfficialProgress({required XmlyClient? Function() client,
-      required Map<String, dynamic> Function(String identity) readPending,
-      required Future<void> Function(String identity, Map<String, dynamic>) savePending,
-      bool Function()? enabled, DateTime Function()? clock,
-      Duration Function()? monotonic})
-      : _client = client, _readPending = readPending, _savePending = savePending,
-        _enabled = enabled ?? (() => false), _clock = clock ?? DateTime.now {
+  OfficialProgress({
+    required XmlyClient? Function() client,
+    required Map<String, dynamic> Function(String identity) readPending,
+    required Future<void> Function(String identity, Map<String, dynamic>)
+    savePending,
+    bool Function()? enabled,
+    DateTime Function()? clock,
+    Duration Function()? monotonic,
+  }) : _client = client,
+       _readPending = readPending,
+       _savePending = savePending,
+       _enabled = enabled ?? (() => false),
+       _clock = clock ?? DateTime.now {
     final watch = Stopwatch()..start();
     _monotonic = monotonic ?? (() => watch.elapsed);
   }
 
   final XmlyClient? Function() _client;
   final Map<String, dynamic> Function(String identity) _readPending;
-  final Future<void> Function(String identity, Map<String, dynamic>) _savePending;
+  final Future<void> Function(String identity, Map<String, dynamic>)
+  _savePending;
   final bool Function() _enabled;
   final DateTime Function() _clock;
   late final Duration Function() _monotonic;
@@ -51,12 +58,20 @@ class OfficialProgress {
 
   void start(String device, Track track, String identity) {
     if (_closing) return;
-    _sessions[device] = _Session(identity, track, _clock().millisecondsSinceEpoch);
+    _sessions[device] = _Session(
+      identity,
+      track,
+      _clock().millisecondsSinceEpoch,
+    );
     _observed.remove(device);
   }
 
-  Future<void> observe(String device, double position,
-      {bool terminal = false, bool actual = false}) async {
+  Future<void> observe(
+    String device,
+    double position, {
+    bool terminal = false,
+    bool actual = false,
+  }) async {
     if (!position.isFinite || position < 0 || position > 2147483647) {
       throw ArgumentError('播放位置无效');
     }
@@ -64,20 +79,29 @@ class OfficialProgress {
     final client = _client();
     if (session == null || client == null || _closing) return;
     if (session.identity != client.identity) {
-      _sessions.remove(device); _observed.remove(device); return;
+      _sessions.remove(device);
+      _observed.remove(device);
+      return;
     }
     if (actual) {
       final now = _clock().millisecondsSinceEpoch;
-      _observed[device] = (position, now < session.started ? session.started : now);
+      _observed[device] = (
+        position,
+        now < session.started ? session.started : now,
+      );
     }
     final observed = _observed[device];
     if (observed == null || observed.$2 <= session.started || !_enabled()) {
-      if (terminal) { _sessions.remove(device); _observed.remove(device); }
+      if (terminal) {
+        _sessions.remove(device);
+        _observed.remove(device);
+      }
       return;
     }
     final track = session.track;
-    final album = track.albumId.isNotEmpty ? track.albumId :
-        '${track.raw['album_id'] ?? track.raw['albumId'] ?? ''}';
+    final album = track.albumId.isNotEmpty
+        ? track.albumId
+        : '${track.raw['album_id'] ?? track.raw['albumId'] ?? ''}';
     final key = album.isEmpty ? track.id : album;
     await _stateLock.synchronized(() async {
       final pending = _copy(_readPending(session.identity));
@@ -86,47 +110,75 @@ class OfficialProgress {
         return;
       }
       final previous = pending[key];
-      if (previous is Map && previous['ended_at_ms'] is int &&
-          (previous['ended_at_ms'] as int) > observed.$2) return;
+      if (previous is Map &&
+          previous['ended_at_ms'] is int &&
+          (previous['ended_at_ms'] as int) > observed.$2)
+        return;
       final safeTrack = track.toJson();
-      safeTrack['raw'] = {'album_id': album,
-        if (track.raw.containsKey('direction')) 'direction': track.raw['direction']};
+      safeTrack['raw'] = {
+        'album_id': album,
+        if (track.raw.containsKey('direction'))
+          'direction': track.raw['direction'],
+      };
       pending[key] = {
-        'identity': session.identity, 'track': safeTrack,
-        'position': observed.$1, 'started_at_ms': session.started,
-        'ended_at_ms': observed.$2, 'terminal': terminal, 'attempted': false,
+        'identity': session.identity,
+        'track': safeTrack,
+        'position': observed.$1,
+        'started_at_ms': session.started,
+        'ended_at_ms': observed.$2,
+        'terminal': terminal,
+        'attempted': false,
       };
       // Durable before any history POST; account switching cannot lose records.
       await _savePending(session.identity, pending);
     });
-    if (terminal) { _sessions.remove(device); _observed.remove(device); }
-    if (terminal || _monotonic() - _lastSent >= const Duration(seconds: 30)) schedule();
+    if (terminal) {
+      _sessions.remove(device);
+      _observed.remove(device);
+    }
+    if (terminal || _monotonic() - _lastSent >= const Duration(seconds: 30))
+      schedule();
   }
 
   void schedule() {
     if (_closing || !_enabled() || _running != null) return;
-    _running = flush().catchError((Object _) {
-      _error = '进度保存或同步失败，已保留本地进度';
-    }).whenComplete(() {
-      _running = null;
-      final client = _client();
-      if (_closing || !_enabled() || client == null) return;
-      if (_error.isNotEmpty) return;
-      final eligible = _readPending(client.identity).values.whereType<Map>().any(
-          (entry) => entry['identity'] == client.identity && entry['attempted'] != true &&
-              (entry['terminal'] == true ||
-                  _monotonic() - _lastSent >= const Duration(seconds: 30)));
-      if (eligible) schedule();
-    });
+    _running = flush()
+        .catchError((Object _) {
+          _error = '进度保存或同步失败，已保留待同步云进度';
+        })
+        .whenComplete(() {
+          _running = null;
+          final client = _client();
+          if (_closing || !_enabled() || client == null) return;
+          if (_error.isNotEmpty) return;
+          final eligible = _readPending(client.identity).values
+              .whereType<Map>()
+              .any(
+                (entry) =>
+                    entry['identity'] == client.identity &&
+                    entry['attempted'] != true &&
+                    (entry['terminal'] == true ||
+                        _monotonic() - _lastSent >=
+                            const Duration(seconds: 30)),
+              );
+          if (eligible) schedule();
+        });
   }
 
   Map<String, dynamic> snapshot() {
     final client = _client();
     final pending = client == null ? 0 : _readPending(client.identity).length;
     return {
-      'status': _running != null ? 'syncing' : _error.isNotEmpty ? 'failed' :
-          pending > 0 ? 'pending' : 'synced',
-      'pending': pending, 'error': _error, 'last_synced_at': _lastSyncedAt,
+      'status': _running != null
+          ? 'syncing'
+          : _error.isNotEmpty
+          ? 'failed'
+          : pending > 0
+          ? 'pending'
+          : 'synced',
+      'pending': pending,
+      'error': _error,
+      'last_synced_at': _lastSyncedAt,
       'enabled': _enabled(),
     };
   }
@@ -143,8 +195,10 @@ class OfficialProgress {
     for (final key in pending.keys) {
       if (!_enabled() || !identical(client, _client())) return;
       final raw = pending[key];
-      if (raw is! Map<String, dynamic> || raw['identity'] != identity ||
-          (!retry && raw['attempted'] == true)) continue;
+      if (raw is! Map<String, dynamic> ||
+          raw['identity'] != identity ||
+          (!retry && raw['attempted'] == true))
+        continue;
       var entry = _copy(raw);
       try {
         // Mark even read failures: only explicit retry may repeat this entry.
@@ -161,12 +215,16 @@ class OfficialProgress {
         final position = (entry['position'] as num).toDouble();
         final started = entry['started_at_ms'] as int;
         final ended = entry['ended_at_ms'] as int;
-        final album = track.albumId.isNotEmpty ? track.albumId :
-            '${track.raw['album_id'] ?? ''}';
-        final official = await history.progress(albumId: album,
-            trackId: album.isEmpty ? track.id : '');
+        final album = track.albumId.isNotEmpty
+            ? track.albumId
+            : '${track.raw['album_id'] ?? ''}';
+        final official = await history.progress(
+          albumId: album,
+          trackId: album.isEmpty ? track.id : '',
+        );
         if (!_enabled() || !identical(client, _client())) return;
-        if (official != null && (official['updated_at'] as num) * 1000 > ended) {
+        if (official != null &&
+            (official['updated_at'] as num) * 1000 > ended) {
           await _removeIfUnchanged(identity, key, entry);
           _error = '';
           continue;
@@ -178,15 +236,18 @@ class OfficialProgress {
         _error = '';
       } on Exception {
         // Preserve the original absolute wall-clock bounds and pending record.
-        _error = '收听进度同步失败，已保留本地进度';
+        _error = '收听进度同步失败，已保留待同步云进度';
       } on TypeError {
-        _error = '本地进度格式无效，已保留记录';
+        _error = '待同步云进度格式无效，已保留记录';
       }
     }
   });
 
-  Future<void> _removeIfUnchanged(String identity, String key,
-      Map<String, dynamic> entry) => _stateLock.synchronized(() async {
+  Future<void> _removeIfUnchanged(
+    String identity,
+    String key,
+    Map<String, dynamic> entry,
+  ) => _stateLock.synchronized(() async {
     final pending = _copy(_readPending(identity));
     if (jsonEncode(pending[key]) != jsonEncode(entry)) return;
     pending.remove(key);
@@ -197,6 +258,7 @@ class OfficialProgress {
     _closing = true;
     await _running;
     await flush();
-    _sessions.clear(); _observed.clear();
+    _sessions.clear();
+    _observed.clear();
   }
 }

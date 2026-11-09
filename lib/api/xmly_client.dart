@@ -116,11 +116,16 @@ class XmlyClient {
         '/fmobile-track/fmobile/track/v2/baseInfo',
         '/lite-mobile/audi/func/v1/config',
         '/lite-mobile/audi/func/v1/report',
+        '/lite-mobile/like/v1/like',
+        '/lite-mobile/like/v1/dislike',
+        '/subscribe/album/subscribe/delete',
+        '/subscribe/album-subscribe/and/ask-anchor-info',
       ].contains(path);
     return method == 'GET' &&
         (const [
               '/mobile/v1/album/track/v2',
               '/nyx/v1/history/query/android',
+              '/lite-mobile/like/v1/user-likes',
             ].contains(path) ||
             RegExp(r'^/mobile/track/[1-9][0-9]{0,18}$').hasMatch(path) ||
             RegExp(r'^/fmobile-album/album/track/ts-[0-9]+$').hasMatch(path) ||
@@ -610,34 +615,43 @@ class XmlyClient {
       'device': 'android',
       'isQueryInvitationBrand': 'true',
     };
-    Map<String, dynamic> response;
+    Map<String, dynamic>? authenticated;
     if (accountAvailable) {
       try {
-        response = await request(
+        authenticated = await request(
           'GET',
           mobile,
           '/fmobile-album/album/track/ts-${DateTime.now().millisecondsSinceEpoch}',
           query: query,
         );
       } on XmlyException catch (error) {
-        if (error.code != 'login_expired') rethrow;
-        response = await request(
-          'GET',
-          mobile,
-          '/mobile/v1/album/track/v2',
-          query: query,
-          account: false,
-        );
+        // Preserve the public fallback on expiry; only transport failures may
+        // otherwise discard a source. Permissions, throttling and bad data fail.
+        if (error.code != 'login_expired' && error.code != 'network') rethrow;
       }
-    } else {
-      response = await request(
+    }
+    Map<String, dynamic>? public;
+    try {
+      public = await request(
         'GET',
         mobile,
         '/mobile/v1/album/track/v2',
         query: query,
         account: false,
       );
+    } on XmlyException catch (error) {
+      if (error.code != 'network' || authenticated == null) rethrow;
     }
+    final response = authenticated != null && public != null
+        ? _mergeAlbumPages(
+            authenticated,
+            public,
+            number,
+            page,
+            pageSize,
+            ascending,
+          )
+        : authenticated ?? public!;
     return _readAlbumPage(
       response,
       number,
@@ -647,14 +661,161 @@ class XmlyClient {
     );
   }
 
-  Future<AlbumPage> _readAlbumPage(
+  static int? _albumOrder(Map<String, dynamic> raw) {
+    int? order;
+    for (final key in ['orderNo', 'orderNum', 'order_no']) {
+      final value = xmlyPositive(raw[key]);
+      if (value == null) continue;
+      if (order != null && order != value)
+        throw const XmlyException('invalid_catalogue', '专辑声音序号冲突');
+      order = value;
+    }
+    return order;
+  }
+
+  static Map<String, dynamic> _albumMetadata(
+    Map<String, dynamic> preferred,
+    Map<String, dynamic> other,
+  ) {
+    bool present(Object? value) => value != null && value != '';
+    final result = <String, dynamic>{
+      ...other,
+      for (final entry in preferred.entries)
+        if (present(entry.value)) entry.key: entry.value,
+    };
+    // Normalize aliases so a public alias cannot shadow authenticated metadata.
+    for (final keys in [
+      ['album_id', 'albumId'],
+      ['album_title', 'albumTitle'],
+      ['is_paid', 'isPaid'],
+      [
+        'coverLarge',
+        'coverMiddle',
+        'coverSmall',
+        'cover_path',
+        'album_cover_path',
+        'cover_url',
+        'albumImage',
+      ],
+    ]) {
+      for (final source in [preferred, other]) {
+        final values = keys.map((key) => source[key]).where(present);
+        if (values.isEmpty) continue;
+        for (final key in keys) result[key] = values.first;
+        break;
+      }
+    }
+    final order = _albumOrder(preferred) ?? _albumOrder(other);
+    if (order != null) {
+      for (final key in ['orderNo', 'orderNum', 'order_no'])
+        result[key] = order;
+    }
+    for (final source in [preferred, other]) {
+      final names = [
+        source['nickname'],
+        xmlyMap(source['userInfo'])['nickname'],
+      ].where(present);
+      if (names.isEmpty) continue;
+      result['nickname'] = names.first;
+      break;
+    }
+    if (preferred['duration'] is! num || (preferred['duration'] as num) <= 0) {
+      if (other['duration'] is num && (other['duration'] as num) > 0)
+        result['duration'] = other['duration'];
+    }
+    return result;
+  }
+
+  Map<String, dynamic> _mergeAlbumPages(
+    Map<String, dynamic> authenticated,
+    Map<String, dynamic> public,
+    String number,
+    int page,
+    int pageSize,
+    bool ascending,
+  ) {
+    final sources = [
+      _albumPageData(authenticated, number, page, pageSize, ascending),
+      _albumPageData(public, number, page, pageSize, ascending),
+    ];
+    final total = _total(sources.first['totalCount'] ?? 0);
+    if (_total(sources.last['totalCount'] ?? 0) != total)
+      throw const XmlyException('catalogue_changed', '专辑总数不一致，请刷新重试');
+    final items = <String, Map<String, dynamic>>{};
+    final orders = <int, String>{};
+    final successors = <String, Set<String>>{};
+    final incoming = <String, int>{};
+    void before(String left, String right) {
+      if (successors[left]!.add(right)) incoming[right] = incoming[right]! + 1;
+    }
+
+    // Both relative orders constrain the result. Unlike officialPosition, real
+    // server ordinals may also order disjoint runs between two common anchors.
+    for (final source in sources) {
+      String? previous;
+      for (final raw in source['list'] as List) {
+        final item = xmlyMap(raw);
+        final id = xmlyIdentifier('${item['trackId'] ?? item['id']}');
+        final existing = items[id];
+        final order = _albumOrder(item);
+        if (existing != null &&
+            order != null &&
+            _albumOrder(existing) != null &&
+            _albumOrder(existing) != order)
+          throw const XmlyException('invalid_catalogue', '专辑声音序号冲突');
+        items[id] = existing == null ? item : _albumMetadata(existing, item);
+        successors.putIfAbsent(id, () => <String>{});
+        incoming.putIfAbsent(id, () => 0);
+        if (order != null) {
+          if (orders.containsKey(order) && orders[order] != id)
+            throw const XmlyException('invalid_catalogue', '专辑声音序号重复');
+          orders[order] = id;
+        }
+        if (previous != null) before(previous, id);
+        previous = id;
+      }
+    }
+    final ordinals = orders.keys.toList()..sort();
+    if (!ascending) {
+      for (var index = ordinals.length - 1; index > 0; index--)
+        before(orders[ordinals[index]]!, orders[ordinals[index - 1]]!);
+    } else {
+      for (var index = 1; index < ordinals.length; index++)
+        before(orders[ordinals[index - 1]]!, orders[ordinals[index]]!);
+    }
+    final ready = incoming.keys.where((id) => incoming[id] == 0).toSet();
+    final merged = <Map<String, dynamic>>[];
+    while (ready.isNotEmpty) {
+      if (ready.length != 1)
+        throw const XmlyException('invalid_catalogue', '专辑声音顺序不明确');
+      final id = ready.single;
+      ready.remove(id);
+      merged.add(items[id]!);
+      for (final next in successors[id]!) {
+        incoming[next] = incoming[next]! - 1;
+        if (incoming[next] == 0) ready.add(next);
+      }
+    }
+    if (merged.length != items.length)
+      throw const XmlyException('invalid_catalogue', '专辑声音顺序冲突');
+    return {
+      ...authenticated,
+      'album': _albumMetadata(
+        xmlyMap(authenticated['album']),
+        xmlyMap(public['album']),
+      ),
+      'data': {...sources.first, 'list': merged},
+    };
+  }
+
+  Map<String, dynamic> _albumPageData(
     Map<String, dynamic> response,
-    String number, {
-    required int page,
-    required int pageSize,
-    required bool ascending,
+    String number,
+    int page,
+    int pageSize,
+    bool ascending, {
     bool cached = false,
-  }) async {
+  }) {
     if (response['data'] is! Map)
       throw const XmlyException('invalid_catalogue', '专辑列表无效');
     final data = xmlyMap(response['data']);
@@ -669,9 +830,8 @@ class XmlyClient {
           total > 5000 ||
           (total > 0
               ? maxPage != (total + pageSize - 1) ~/ pageSize
-              : maxPage > 1)) {
+              : maxPage > 1))
         throw const XmlyException('invalid_catalogue', '历史目录分页无效');
-      }
     } else if ((data.containsKey('pageId') && _total(data['pageId']) != page) ||
         (data.containsKey('pageSize') &&
             _total(data['pageSize']) != pageSize)) {
@@ -679,17 +839,67 @@ class XmlyClient {
     }
     if (data['list'] is! List ||
         (data['list'] as List).length > pageSize ||
-        (cached &&
-            ((data['list'] as List).length > total ||
-                (total > 0 && (data['list'] as List).isEmpty)))) {
+        (data['list'] as List).length >
+            (total - (page - 1) * pageSize).clamp(0, pageSize) ||
+        (cached && total > 0 && (data['list'] as List).isEmpty))
       throw const XmlyException('invalid_catalogue', '专辑列表无效');
+    for (final source in [xmlyMap(response['album']), data]) {
+      for (final key in ['albumId', if (!identical(source, data)) 'id']) {
+        if (source[key] != null && xmlyIdentifier('${source[key]}') != number)
+          throw const XmlyException('id_mismatch', '专辑信息不匹配');
+      }
+    }
+    final identifiers = <String>{};
+    final orders = <int>{};
+    int? previousOrder;
+    for (final raw in data['list'] as List) {
+      if (raw is! Map)
+        throw const XmlyException('invalid_catalogue', '专辑声音信息无效');
+      if (cached && raw['albumId'] == null && raw['album_id'] == null)
+        throw const XmlyException('invalid_catalogue', '历史目录缺少专辑信息');
+      for (final key in ['albumId', 'album_id']) {
+        if (raw[key] != null && xmlyIdentifier('${raw[key]}') != number)
+          throw const XmlyException('id_mismatch', '专辑包含其他专辑的声音');
+      }
+      final id = xmlyIdentifier('${raw['trackId'] ?? raw['id'] ?? ''}');
+      if (!identifiers.add(id))
+        throw const XmlyException('duplicate_page', '专辑声音重复，请刷新重试');
+      final order = _albumOrder(xmlyMap(raw));
+      if (order != null) {
+        if (!orders.add(order) ||
+            (previousOrder != null &&
+                (ascending ? order <= previousOrder : order >= previousOrder)))
+          throw const XmlyException('invalid_catalogue', '专辑声音序号冲突');
+        previousOrder = order;
+      }
+    }
+    return data;
+  }
+
+  Future<AlbumPage> _readAlbumPage(
+    Map<String, dynamic> response,
+    String number, {
+    required int page,
+    required int pageSize,
+    required bool ascending,
+    bool cached = false,
+  }) async {
+    final data = _albumPageData(
+      response,
+      number,
+      page,
+      pageSize,
+      ascending,
+      cached: cached,
+    );
+    final total = _total(cached ? data['totalCount'] : data['totalCount'] ?? 0);
+    if (cached) {
+      pageSize = _total(data['pageSize']);
+    } else if ((data['list'] as List).length !=
+        (total - (page - 1) * pageSize).clamp(0, pageSize)) {
+      throw const XmlyException('incomplete_catalogue', '专辑分页不完整，请刷新重试');
     }
     final albumData = xmlyMap(response['album']);
-    for (final key in ['albumId', 'id']) {
-      if (albumData[key] != null &&
-          xmlyIdentifier('${albumData[key]}') != number)
-        throw const XmlyException('id_mismatch', '专辑信息不匹配');
-    }
     var album = Album.fromApi({
       ...?_albums[number]?.raw,
       ...albumData,
@@ -733,16 +943,7 @@ class XmlyClient {
       );
     }
     final tracks = <Track>[];
-    final identifiers = <String>{};
     for (final raw in data['list'] as List) {
-      if (raw is! Map)
-        throw const XmlyException('invalid_catalogue', '专辑声音信息无效');
-      if (cached && raw['albumId'] == null && raw['album_id'] == null)
-        throw const XmlyException('invalid_catalogue', '历史目录缺少专辑信息');
-      for (final key in ['albumId', 'album_id']) {
-        if (raw[key] != null && xmlyIdentifier('${raw[key]}') != number)
-          throw const XmlyException('id_mismatch', '专辑包含其他专辑的声音');
-      }
       final position = (page - 1) * pageSize + tracks.length + 1;
       final value = Track.fromApi(
         xmlyMap(raw),
@@ -751,8 +952,6 @@ class XmlyClient {
             ? position
             : (total > 0 ? total - position + 1 : null),
       );
-      if (!identifiers.add(value.id))
-        throw const XmlyException('duplicate_page', '专辑声音重复，请刷新重试');
       tracks.add(value);
     }
     _albums[number] = album;
@@ -898,10 +1097,10 @@ class XmlyClient {
       );
   }
 
-  Future<Track> track(String trackId) async {
+  Future<Track> track(String trackId, {bool force = false}) async {
     final number = xmlyIdentifier(trackId);
     final cached = _metadata[number];
-    if (cached != null) return cached;
+    if (!force && cached != null) return cached;
     final info = await _info(number);
     _matchingId(info, number);
     final value = Track.fromApi(info);
@@ -1178,7 +1377,34 @@ class XmlyClient {
     bool force = false,
     bool preferCached = false,
     String? quality,
+    int mediaAuthRetries = 3,
+    bool Function()? isActive,
   }) => _resolveLock.synchronized(() async {
+    if (mediaAuthRetries < 0 || mediaAuthRetries > 3)
+      throw const XmlyException('invalid_retry', '音频授权重试次数无效');
+    for (var attempt = 0; ; attempt++) {
+      if (isActive != null && !isActive())
+        throw const XmlyException('cache_source_changed', '音频来源已变化');
+      try {
+        return await _resolveOnce(
+          trackId,
+          force: force || attempt > 0,
+          preferCached: preferCached && attempt == 0,
+          quality: quality,
+        );
+      } on XmlyException catch (error) {
+        if (error.code != 'media_unauthorized' || attempt >= mediaAuthRetries)
+          rethrow;
+      }
+    }
+  });
+
+  Future<ResolvedAudio> _resolveOnce(
+    String trackId, {
+    required bool force,
+    required bool preferCached,
+    String? quality,
+  }) async {
     if (_closed)
       throw const XmlyException('client_closed', '连接已关闭', definitive: true);
     final requestedQuality = quality ?? this.quality;
@@ -1340,7 +1566,7 @@ class XmlyClient {
       if (entry.verified) _saveUrlCache();
     }
     return await _resolvedAudio(entry, track, reward != null);
-  });
+  }
 
   Future<ResolvedAudio> _resolvedAudio(
     _CachedAudioUrl entry,
@@ -1439,7 +1665,9 @@ class XmlyClient {
             }
             if (!successful)
               throw XmlyException(
-                'media_http',
+                status == 401 || status == 403
+                    ? 'media_unauthorized'
+                    : 'media_http',
                 status == 401 || status == 403
                     ? '音频授权已失效，请重新获取'
                     : '音频请求返回 HTTP $status',

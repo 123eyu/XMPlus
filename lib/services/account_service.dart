@@ -235,7 +235,6 @@ class AccountService {
   Future<void> restoreArchive({
     Map<String, dynamic>? settings,
     Map<String, dynamic>? library,
-    Map<String, dynamic>? history,
     List<Map<String, dynamic>>? importedAccounts,
     String? primaryAccountId,
     List<dynamic>? downloads,
@@ -315,7 +314,6 @@ class AccountService {
       await storage.transaction((state) {
         if (settings != null) state['settings'] = settings;
         if (library != null) state['library'] = library;
-        if (history != null) state['history'] = history;
         if (downloads != null) {
           state['downloads'] = downloads;
           state['downloadAlbums'] = <dynamic>[];

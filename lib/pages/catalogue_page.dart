@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
 import '../api/xmly_catalogue.dart';
+import '../api/xmly_client.dart';
+import '../api/xmly_experience.dart';
 import '../common/widgets/adaptive_text.dart';
 import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
@@ -269,6 +271,12 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   bool _showSearch = false, _selectionMode = false, _cachedView = false;
   String? _error;
   String _filter = '';
+  XmlyClient? _libraryClient;
+  String? _libraryKey, _subscriptionError;
+  int _libraryRevision = -1, _subscriptionRequest = 0, _accountEpoch = 0;
+  bool? _subscribed;
+  bool _subscriptionBusy = false, _favoriteBusy = false;
+  bool _subscriptionMutating = false;
   static const _pageSize = xmlyAlbumPageSize;
 
   @override
@@ -279,6 +287,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     _restoreCache();
     _loadPage(1);
     _scanUpdates();
+    _loadSubscription();
   }
 
   @override
@@ -292,6 +301,13 @@ class _AlbumPageViewState extends State<AlbumPageView> {
 
   void _runtimeChanged() {
     if (!mounted) return;
+    final client = widget.runtime.client;
+    final accountChanged =
+        !identical(client, _libraryClient) ||
+        client.cacheIdentity != _libraryKey;
+    if (accountChanged) _accountEpoch++;
+    final libraryChanged = widget.runtime.libraryRevision != _libraryRevision;
+    _libraryRevision = widget.runtime.libraryRevision;
     final downloads = widget.runtime.downloads.tasks;
     final cached = widget.runtime.albumCache[widget.albumId];
     setState(() {
@@ -305,6 +321,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         if (_cachedView) _showCached(_page);
       }
     });
+    if (accountChanged || (libraryChanged && !_subscriptionMutating)) {
+      _loadSubscription();
+    }
   }
 
   List<Track> _cachedTracks() {
@@ -397,13 +416,108 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     _selectionMode = false;
   }
 
-  bool _favorite(Track track) {
-    final library =
-        (widget.runtime.storage.state['library']
-                as Map?)?[widget.runtime.player.libraryIdentity]
-            as Map?;
-    return (library?['favorites'] as Map?)?.containsKey(track.id) == true;
+  bool _sameAccount(XmlyClient client, String key) =>
+      mounted &&
+      identical(client, widget.runtime.client) &&
+      key == widget.runtime.client.cacheIdentity;
+
+  Future<void> _loadSubscription() async {
+    final client = widget.runtime.client,
+        key = widget.runtime.client.cacheIdentity;
+    final request = ++_subscriptionRequest;
+    _libraryClient = client;
+    _libraryKey = key;
+    _libraryRevision = widget.runtime.libraryRevision;
+    setState(() {
+      _subscribed = null;
+      _subscriptionError = null;
+      _subscriptionBusy = client.accountAvailable;
+      _subscriptionMutating = false;
+    });
+    if (!client.accountAvailable) return;
+    try {
+      final subscribed = await XmlyExperience(client)
+          .isSubscribed(widget.albumId);
+      if (_sameAccount(client, key) && request == _subscriptionRequest) {
+        setState(() => _subscribed = subscribed);
+      }
+    } catch (error) {
+      if (_sameAccount(client, key) && request == _subscriptionRequest) {
+        setState(() => _subscriptionError = _safeError(error));
+      }
+    } finally {
+      if (_sameAccount(client, key) && request == _subscriptionRequest) {
+        setState(() => _subscriptionBusy = false);
+      }
+    }
   }
+
+  Future<void> _changeSubscription() async {
+    if (_subscriptionBusy) return;
+    final client = widget.runtime.client,
+        key = widget.runtime.client.cacheIdentity;
+    if (!client.accountAvailable) {
+      setState(() => _subscriptionError = '请先登录后订阅专辑');
+      return;
+    }
+    final subscribed = _subscribed;
+    if (subscribed == null) return _loadSubscription();
+    final desired = !subscribed, request = ++_subscriptionRequest;
+    var attempted = false;
+    setState(() {
+      _subscriptionBusy = true;
+      _subscriptionMutating = true;
+      _subscriptionError = null;
+    });
+    try {
+      await widget.runtime.accounts.runWithAccount(client.identity, (
+        admitted,
+      ) async {
+        if (!_sameAccount(client, key) || !identical(admitted, client)) {
+          throw const XmlyException('account_changed', '账号已变更，请重试');
+        }
+        attempted = true;
+        await XmlyExperience(client)
+            .setSubscribed(widget.albumId, subscribed: desired);
+      });
+      widget.runtime.libraryChanged();
+      if (_sameAccount(client, key) && request == _subscriptionRequest) {
+        setState(() => _subscribed = desired);
+      }
+    } catch (error) {
+      if (attempted) widget.runtime.libraryChanged();
+      if (!_sameAccount(client, key) || request != _subscriptionRequest) return;
+      setState(() {
+        _subscribed = null;
+        _subscriptionError = _safeError(error);
+      });
+      try {
+        final value = await XmlyExperience(client).isSubscribed(widget.albumId);
+        if (_sameAccount(client, key) && request == _subscriptionRequest) {
+          setState(() => _subscribed = value);
+        }
+      } catch (_) {
+        // Keep the unknown state and offer an explicit status retry.
+      }
+    } finally {
+      if (_sameAccount(client, key) && request == _subscriptionRequest) {
+        setState(() {
+          _subscriptionBusy = false;
+          _subscriptionMutating = false;
+        });
+      }
+    }
+  }
+
+  String get _subscriptionLabel => _subscriptionBusy
+      ? '正在读取订阅状态'
+      : !widget.runtime.client.accountAvailable
+      ? '订阅（需登录）'
+      : _subscribed == null
+      ? '重试订阅状态'
+      : _subscribed!
+      ? '取消订阅'
+      : '订阅专辑';
 
   void _scanUpdates() {
     for (final identity in widget.runtime.accounts.accountIds) {
@@ -603,39 +717,128 @@ class _AlbumPageViewState extends State<AlbumPageView> {
             await deleteDownloadedAudio(context, widget.runtime, task)) {
           _fileChecks.remove(track.id);
         }
-      case 'favorite':
-        await widget.runtime.player.toggleFavorite(track);
     }
     if (mounted) setState(() {});
   }
 
-  Widget _menu(Track track) => FutureBuilder<DownloadTask?>(
-    future: _fileChecks.putIfAbsent(track.id, () => _localDownload(track)),
-    builder: (context, snapshot) => PopupMenuButton<String>(
+  Widget _menu(Track track) => Builder(
+    builder: (menuContext) => IconButton(
       tooltip: '声音操作',
-      enabled: !_busy,
-      onSelected: (value) => unawaited(
-        _trackAction(track, value).catchError((error) {
-          if (mounted) setState(() => _error = _safeError(error));
-        }),
-      ),
-      itemBuilder: (_) => [
-        const PopupMenuItem(value: 'play', child: Text('播放')),
-        const PopupMenuItem(value: 'queue', child: Text('加入播放队列')),
-        if (snapshot.data != null)
-          const PopupMenuItem(value: 'delete', child: Text('删除已下载文件'))
-        else if (!_downloaded.contains(track.id))
-          const PopupMenuItem(value: 'download', child: Text('下载')),
-        PopupMenuItem(
-          value: 'favorite',
-          child: Text(_favorite(track) ? '取消收藏' : '收藏'),
-        ),
-      ],
+      icon: const Icon(Icons.more_vert),
+      onPressed: _busy || _favoriteBusy
+          ? null
+          : () => _openTrackMenu(menuContext, track),
     ),
   );
 
+  Future<void> _openTrackMenu(BuildContext menuContext, Track track) async {
+    final client = widget.runtime.client,
+        key = widget.runtime.client.cacheIdentity;
+    final epoch = _accountEpoch;
+    bool current() => _sameAccount(client, key) && epoch == _accountEpoch;
+    final anchor = menuContext.findRenderObject()! as RenderBox;
+    final overlay =
+        Overlay.of(menuContext).context.findRenderObject()! as RenderBox;
+    final position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        anchor.localToGlobal(Offset.zero, ancestor: overlay),
+        anchor.localToGlobal(
+          anchor.size.bottomRight(Offset.zero),
+          ancestor: overlay,
+        ),
+      ),
+      Offset.zero & overlay.size,
+    );
+    bool? favorite;
+    String? statusError;
+    setState(() => _favoriteBusy = true);
+    try {
+      if (client.accountAvailable) {
+        try {
+          favorite = await XmlyExperience(client).isFavorite(track.id);
+        } catch (error) {
+          statusError = _safeError(error);
+        }
+      }
+      final task = await _fileChecks.putIfAbsent(
+        track.id,
+        () => _localDownload(track),
+      );
+      if (!current()) return;
+      if (statusError != null) setState(() => _error = statusError);
+      final action = await showMenu<String>(
+        context: context,
+        position: position,
+        items: [
+          const PopupMenuItem(value: 'play', child: Text('播放')),
+          const PopupMenuItem(value: 'queue', child: Text('加入播放队列')),
+          if (task != null)
+            const PopupMenuItem(value: 'delete', child: Text('删除已下载文件'))
+          else if (!_downloaded.contains(track.id))
+            const PopupMenuItem(value: 'download', child: Text('下载')),
+          PopupMenuItem(
+            value: favorite == true ? 'unfavorite' : 'favorite',
+            child: Text(
+              !client.accountAvailable
+                  ? '收藏（需登录）'
+                  : favorite == null
+                  ? '重试收藏状态'
+                  : favorite
+                  ? '取消收藏'
+                  : '收藏',
+            ),
+          ),
+        ],
+      );
+      if (!current() || action == null) return;
+      if (action != 'favorite' && action != 'unfavorite') {
+        await _trackAction(track, action);
+        return;
+      }
+      if (!client.accountAvailable) {
+        setState(() => _error = '请先登录后收藏声音');
+        return;
+      }
+      if (favorite == null) {
+        setState(() => _favoriteBusy = false);
+        if (menuContext.mounted) await _openTrackMenu(menuContext, track);
+        return;
+      }
+      final desired = action == 'favorite';
+      var attempted = false;
+      try {
+        await widget.runtime.accounts.runWithAccount(client.identity, (
+          admitted,
+        ) async {
+          if (!current() || !identical(admitted, client)) {
+            throw const XmlyException('account_changed', '账号已变更，请重试');
+          }
+          attempted = true;
+          await XmlyExperience(client).setFavorite(track, favorite: desired);
+        });
+        widget.runtime.libraryChanged();
+      } catch (error) {
+        if (attempted) widget.runtime.libraryChanged();
+        if (!current()) return;
+        setState(() => _error = _safeError(error));
+        // Reconcile an uncertain write without replaying the mutation.
+        if (attempted) {
+          try {
+            await XmlyExperience(client).isFavorite(track.id);
+          } catch (_) {}
+        }
+      }
+    } catch (error) {
+      if (current()) setState(() => _error = _safeError(error));
+    } finally {
+      if (mounted) setState(() => _favoriteBusy = false);
+    }
+  }
+
   void _albumAction(String action) {
     switch (action) {
+      case 'subscribe':
+        _changeSubscription();
       case 'refresh':
         _offline = false;
         _filter = '';
@@ -695,6 +898,11 @@ class _AlbumPageViewState extends State<AlbumPageView> {
               tooltip: '更多操作',
               onSelected: _albumAction,
               itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'subscribe',
+                  enabled: !_subscriptionBusy,
+                  child: Text(_subscriptionLabel),
+                ),
                 if (_offline)
                   PopupMenuItem(
                     value: 'refresh',
@@ -780,6 +988,26 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                                         ),
                                       if (_cachedView)
                                         const Text('离线缓存（仅显示已观察目录与已下载声音）'),
+                                      OutlinedButton.icon(
+                                        onPressed: _subscriptionBusy
+                                            ? null
+                                            : _changeSubscription,
+                                        icon: Icon(
+                                          _subscribed == true
+                                              ? Icons.check_circle_outline
+                                              : Icons.add_circle_outline,
+                                        ),
+                                        label: Text(_subscriptionLabel),
+                                      ),
+                                      if (_subscriptionError != null)
+                                        Text(
+                                          _subscriptionError!,
+                                          style: TextStyle(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .error,
+                                          ),
+                                        ),
                                     ],
                                   ),
                                 ),
