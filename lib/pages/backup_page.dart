@@ -183,7 +183,7 @@ class _BackupPageState extends State<BackupPage> {
               children: [
                 SwitchListTile(
                   title: const Text('包含登录信息'),
-                  subtitle: const Text('默认只备份设置、书架和历史，不包含音频'),
+                  subtitle: const Text('默认备份设置、书签和任务记录，不包含音频或云端收藏、历史'),
                   value: _includeAccount,
                   onChanged: _busy
                       ? null

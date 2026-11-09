@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../api/xmly_client.dart';
+import '../api/xmly_experience.dart';
 import '../common/widgets/adaptive_text.dart';
 import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
@@ -37,9 +40,172 @@ class _PlayerPanelState extends State<PlayerPanel> {
   bool _busy = false;
   double? _dragPosition;
   String? _error;
+  XmlyClient? _favoriteClient;
+  String? _favoriteKey, _favoriteTrackId, _favoriteError;
+  bool? _favorite;
+  bool _favoriteBusy = false, _favoriteMutating = false;
+  int _favoriteRequest = 0, _libraryRevision = -1;
   AppRuntime get _runtime => widget.runtime;
   NavigatorState get _navigator =>
       widget.navigatorKey?.currentState ?? Navigator.of(context);
+
+  @override
+  void initState() {
+    super.initState();
+    _runtime.addListener(_favoriteContextChanged);
+    if (widget.expanded) unawaited(_refreshFavorite());
+  }
+
+  @override
+  void didUpdateWidget(covariant PlayerPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.runtime != _runtime) {
+      oldWidget.runtime.removeListener(_favoriteContextChanged);
+      _runtime.addListener(_favoriteContextChanged);
+    }
+    if (widget.expanded &&
+        (oldWidget.runtime != _runtime || !oldWidget.expanded)) {
+      unawaited(_refreshFavorite());
+    }
+  }
+
+  @override
+  void dispose() {
+    _runtime.removeListener(_favoriteContextChanged);
+    _favoriteRequest++;
+    super.dispose();
+  }
+
+  void _favoriteContextChanged() {
+    if (!widget.expanded || !mounted) return;
+    final client = _runtime.client;
+    final changed =
+        !identical(client, _favoriteClient) ||
+        client.cacheIdentity != _favoriteKey ||
+        _runtime.player.current?.id != _favoriteTrackId;
+    final revised = _libraryRevision != _runtime.libraryRevision;
+    _libraryRevision = _runtime.libraryRevision;
+    if (changed || (revised && !_favoriteMutating)) {
+      unawaited(_refreshFavorite());
+    }
+  }
+
+  bool _favoriteCurrent(
+    XmlyClient client,
+    String key,
+    String trackId,
+    int request,
+  ) =>
+      mounted &&
+      request == _favoriteRequest &&
+      identical(client, _runtime.client) &&
+      key == _runtime.client.cacheIdentity &&
+      trackId == _runtime.player.current?.id;
+
+  Future<void> _refreshFavorite() async {
+    final client = _runtime.client, key = _runtime.client.cacheIdentity;
+    final track = _runtime.player.current;
+    final request = ++_favoriteRequest;
+    _favoriteClient = client;
+    _favoriteKey = key;
+    _favoriteTrackId = track?.id;
+    _libraryRevision = _runtime.libraryRevision;
+    setState(() {
+      _favorite = null;
+      _favoriteError = null;
+      _favoriteBusy = track != null && client.accountAvailable;
+      _favoriteMutating = false;
+    });
+    if (track == null || !client.accountAvailable) return;
+    try {
+      final favorite = await XmlyExperience(client).isFavorite(track.id);
+      if (_favoriteCurrent(client, key, track.id, request)) {
+        setState(() => _favorite = favorite);
+      }
+    } catch (error) {
+      if (_favoriteCurrent(client, key, track.id, request)) {
+        setState(
+          () => _favoriteError = error is XmlyException
+              ? error.message
+              : '收藏状态读取失败，请重试',
+        );
+      }
+    } finally {
+      if (_favoriteCurrent(client, key, track.id, request)) {
+        setState(() => _favoriteBusy = false);
+      }
+    }
+  }
+
+  Future<void> _favoriteAction(Track track) async {
+    if (_favoriteBusy || track.id != _runtime.player.current?.id) return;
+    final client = _runtime.client, key = _runtime.client.cacheIdentity;
+    if (!client.accountAvailable) {
+      setState(() => _favoriteError = '请先登录后收藏声音');
+      return;
+    }
+    final favorite = _favorite;
+    if (favorite == null) return _refreshFavorite();
+    final request = ++_favoriteRequest, desired = !favorite;
+    var attempted = false;
+    setState(() {
+      _favoriteBusy = true;
+      _favoriteMutating = true;
+      _favoriteError = null;
+    });
+    try {
+      if (favorite && !await _confirm(context, '取消收藏此声音？')) return;
+      if (!_favoriteCurrent(client, key, track.id, request)) return;
+      await _runtime.accounts.runWithAccount(client.identity, (admitted) async {
+        if (!_favoriteCurrent(client, key, track.id, request) ||
+            !identical(admitted, client)) {
+          throw const XmlyException('account_changed', '账号已变更，请重试');
+        }
+        attempted = true;
+        await XmlyExperience(client).setFavorite(track, favorite: desired);
+      });
+      _runtime.libraryChanged();
+      if (_favoriteCurrent(client, key, track.id, request)) {
+        setState(() => _favorite = desired);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(desired ? '已收藏声音' : '已取消收藏')));
+      }
+    } catch (error) {
+      if (attempted) _runtime.libraryChanged();
+      if (!_favoriteCurrent(client, key, track.id, request)) return;
+      setState(() {
+        _favorite = null;
+        _favoriteError = error is XmlyException ? error.message : '收藏操作未完成，请重试';
+      });
+      if (attempted) {
+        try {
+          final value = await XmlyExperience(client).isFavorite(track.id);
+          if (_favoriteCurrent(client, key, track.id, request)) {
+            setState(() => _favorite = value);
+          }
+        } catch (_) {
+          // Do not infer an outcome or replay an uncertain mutation.
+        }
+      }
+    } finally {
+      if (_favoriteCurrent(client, key, track.id, request)) {
+        setState(() {
+          _favoriteBusy = false;
+          _favoriteMutating = false;
+        });
+      }
+    }
+  }
+
+  String get _favoriteLabel => _favoriteBusy
+      ? '正在读取收藏状态'
+      : !_runtime.client.accountAvailable
+      ? '收藏（需登录）'
+      : _favorite == null
+      ? '重试收藏状态'
+      : _favorite!
+      ? '取消收藏'
+      : '收藏';
 
   Future<void> _act(Future<void> Function() command) async {
     if (_busy) return;
@@ -302,14 +468,10 @@ class _PlayerPanelState extends State<PlayerPanel> {
       final position = (_dragPosition ?? player.position)
           .clamp(0.0, max)
           .toDouble();
-      final favorites =
-          (((_runtime.storage.state['library'] as Map)[player.libraryIdentity]
-                  as Map?)?['favorites']
-              as Map?) ??
-          const {};
-      final favorite = track != null && favorites.containsKey(track.id);
+      final favorite = _favorite == true;
       final settings = player.effectiveSettings;
-      final message = _error ?? player.error ?? player.warning;
+      final message =
+          _error ?? _favoriteError ?? player.error ?? player.warning;
       final play = track == null
           ? null
           : player.playing
@@ -440,24 +602,13 @@ class _PlayerPanelState extends State<PlayerPanel> {
                 ),
               ),
               _button(
-                favorite ? '取消收藏' : '收藏',
+                _favoriteLabel,
                 favorite
                     ? Icons.favorite_rounded
                     : Icons.favorite_border_rounded,
-                track == null
+                track == null || _favoriteBusy
                     ? null
-                    : () async {
-                        if (!favorite || await _confirm(context, '取消收藏此声音？')) {
-                          await player.toggleFavorite();
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(favorite ? '已取消本地收藏' : '已加入本地收藏'),
-                              ),
-                            );
-                          }
-                        }
-                      },
+                    : () => _favoriteAction(track),
               ),
               _button(
                 '添加书签',
