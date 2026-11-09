@@ -181,7 +181,7 @@ class _GeetestDialogState extends State<GeetestDialog> {
     final id = jsonEncode(widget.captchaId), nonce = jsonEncode(_nonce);
     return '''<!doctype html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; connect-src https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; img-src data: blob: https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; style-src 'unsafe-inline' https://*.geetest.com; font-src data: https://*.geetest.com; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; connect-src https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; img-src data: blob: https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; style-src 'unsafe-inline' https://*.geetest.com; font-src data: https://*.geetest.com; frame-src https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; object-src 'none'; base-uri 'none'; form-action 'none'">
 <style>body{font:16px sans-serif;text-align:center;padding:20px}button{font:inherit;padding:12px}</style>
 </head><body><p id="status">正在加载安全验证…</p><button id="verify" hidden>开始验证</button>
 <script>
@@ -191,7 +191,7 @@ class _GeetestDialogState extends State<GeetestDialog> {
   const fail=()=>{document.getElementById('status').textContent='安全验证加载失败，请关闭后重试';emit('error',null);};
   const start=()=>{
     if(typeof initGeetest4!=='function'){fail();return;}
-    initGeetest4({captchaId:$id,product:'bind',language:'zho',https:true,onError:fail,offlineCb:fail},captcha=>{
+    initGeetest4({captchaId:$id,product:'bind',language:'zho',protocol:'https://',onError:fail,offlineCb:fail},captcha=>{
       captcha.onReady(()=>{
         document.getElementById('status').textContent='请完成安全验证';
         const button=document.getElementById('verify');button.hidden=false;
@@ -200,8 +200,8 @@ class _GeetestDialogState extends State<GeetestDialog> {
       }).onSuccess(()=>{
         const v=captcha.getValidate();
         if(!v){fail();return;}
-        const out={};
-        ['captcha_id','lot_number','pass_token','gen_time','captcha_output'].forEach(k=>out[k]=v[k]);
+        const out={captcha_id:$id};
+        ['lot_number','pass_token','gen_time','captcha_output'].forEach(k=>out[k]=v[k]);
         emit('success',out);
       }).onError(fail).onClose(()=>emit('close',null));
     });
@@ -348,6 +348,9 @@ class _GeetestDialogState extends State<GeetestDialog> {
                 ),
                 onWebViewCreated: _created,
                 shouldOverrideUrlLoading: (_, action) async {
+                  if (!action.isForMainFrame) {
+                    return NavigationActionPolicy.ALLOW;
+                  }
                   final url = action.request.url?.toString();
                   return url == 'about:blank' ||
                           (Platform.isAndroid &&
