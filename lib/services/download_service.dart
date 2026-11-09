@@ -47,6 +47,8 @@ class DownloadControl {
   bool _paused = false, _cancelled = false;
   bool get paused => _paused;
   bool get cancelled => _cancelled;
+  /// Allows backends to interrupt waits that do not reach a checkpoint.
+  Future<void> get stopped => _stopped.future;
   Future<void> checkpoint() async {
     if (_paused || _cancelled) throw const DownloadStopped();
   }

@@ -158,7 +158,12 @@ class MediaPipeline {
     try {
       var source = await _verifiedSource(directory, task);
       if (source == null) {
-        await cache.ensureComplete();
+        // Cache cooldowns and queued account refreshes may not checkpoint until
+        // they finish. A stop reaches the finally block, which drains the cache.
+        await Future.any<void>([
+          cache.ensureComplete(),
+          control.stopped.then((_) => throw const DownloadStopped()),
+        ]);
         await control.checkpoint();
         final extension = cache.sourceFormat;
         if (!const {
