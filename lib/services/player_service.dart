@@ -877,9 +877,9 @@ class PlayerService {
 
   Future<void> playLocal(String taskId) => _run(() async {
     final task = downloads.task(taskId);
-    // Check before replacing the user's queue.
-    await _local(task);
     final request = _newRequest();
+    // Check before replacing the user's queue.
+    await _admission(request, () => _local(task));
     ++generation;
     await _commands.synchronized(() async {
       if (request != _request) return;
@@ -935,9 +935,10 @@ class PlayerService {
   Future<void> switchToLocal() => _run(() async {
     final track = current;
     if (track == null) return;
-    final task = await _downloaded(track);
+    final request = _newRequest();
+    final task = await _admission(request, () => _downloaded(track));
     if (task == null) throw const XmlyException('file_missing', '请先下载本集');
-    final request = _newRequest(), saved = position;
+    final saved = position;
     await _commands.synchronized(
       () => _openCurrent(request, resumePosition: saved, localTaskId: task.id),
     );
