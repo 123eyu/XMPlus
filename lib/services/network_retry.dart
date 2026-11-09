@@ -46,7 +46,7 @@ Duration retryDelay(int attempt, String? retryAfter) {
   } else if (retryAfter != null) {
     try {
       server = HttpDate.parse(retryAfter).difference(DateTime.now().toUtc());
-    } on FormatException {
+    } on HttpException {
       // An invalid header cannot shorten the normal cooldown.
     }
   }

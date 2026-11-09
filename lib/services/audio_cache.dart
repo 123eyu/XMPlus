@@ -585,7 +585,7 @@ class AudioCache {
             final duration = HttpDate.parse(header)
                 .difference(DateTime.now().toUtc());
             if (!duration.isNegative) wait = duration;
-          } on FormatException {
+          } on HttpException {
             /* Use the documented five-minute cooldown. */
           }
         }
