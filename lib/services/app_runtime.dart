@@ -138,6 +138,21 @@ class AppRuntime extends ChangeNotifier {
 
   XmlyClient get client => accounts.activeClient ?? anonymous;
   Future<void> load() async {
+    try {
+      await _loadServices();
+    } catch (_) {
+      try {
+        await _abortStartup();
+      } catch (_) {
+        // All cleanup operations have been attempted; retain the load error.
+      }
+      rethrow;
+    }
+    unawaited(autoDownloads.scanAll());
+    _configureRewards();
+  }
+
+  Future<void> _loadServices() async {
     await anonymous.flushUrlCache();
     await accounts.load();
     await ledger.load();
@@ -163,8 +178,38 @@ class AppRuntime extends ChangeNotifier {
       notifyListeners();
     });
     _automaticChanges = autoDownloads.changes.listen((_) => notifyListeners());
-    unawaited(autoDownloads.scanAll());
-    _configureRewards();
+  }
+
+  Future<void> _abortStartup() async {
+    closing = true;
+    autoDownloads.suspend();
+    albumCache.removeListener(_albumCacheChanged);
+    // No automatic work starts until every service has loaded. Release these
+    // idle resources without settling accounts or saving an unloaded queue.
+    // Wait for every cleanup even if one fails, before the caller closes storage.
+    try {
+      await Future.wait<void>([
+        if (_systemMedia != null) _systemMedia!.close(),
+        if (_androidBackground != null) _androidBackground!.close(),
+        player.close(quiesced: true),
+        if (_playerChanges != null) _playerChanges!.cancel(),
+        if (_downloadChanges != null) _downloadChanges!.cancel(),
+        if (_automaticChanges != null) _automaticChanges!.cancel(),
+        autoDownloads.close(),
+        downloads.close(),
+        accounts.close(preserveState: true),
+        albumCache.close(),
+        pipeline.close(),
+        () async {
+          anonymous.close();
+          await anonymous.flushUrlCache();
+        }(),
+        // This singleton remains available to a subsequent startup attempt.
+        RequestDiagnostics.instance.flush(),
+      ]);
+    } finally {
+      _closed = true;
+    }
   }
 
   void _albumCacheChanged() => notifyListeners();
