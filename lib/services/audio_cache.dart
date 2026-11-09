@@ -35,7 +35,8 @@ class AudioCache {
   Object? _failure;
   StackTrace? _failureStack;
   bool _closed = false, _paused = false, _background = false;
-  bool _validated = false, _ranges = true, _refreshed = false;
+  bool _validated = false, _ranges = true;
+  int _refreshAttempts = 0;
   int? _length;
   int _generation = 0, _revision = 0;
   int? _partialBlock;
@@ -91,7 +92,7 @@ class AudioCache {
     }
     _validateUri(audio.uri);
     _audio = audio;
-    _refreshed = false;
+    _refreshAttempts = 0;
   }
 
   int get downloadedBytes =>
@@ -278,7 +279,13 @@ class AudioCache {
           }
         }
         if (next == null) break;
-        await _fetchWithRetry(next, epoch);
+        try {
+          await _fetchWithRetry(next, epoch);
+        } on XmlyException catch (error) {
+          if (error.code != 'media_unauthorized') rethrow;
+          await _refreshAuthorization(epoch);
+          continue;
+        }
         for (final index in _waiting.keys.toList()) {
           if (_validated &&
               (_blocks.containsKey(index) ||
@@ -305,6 +312,44 @@ class AudioCache {
     } finally {
       _running = null;
       _signal();
+    }
+  }
+
+  Future<void> _refreshAuthorization(int epoch) async {
+    final generation = _generation;
+    bool isActive() =>
+        !_closed &&
+        !_paused &&
+        epoch == _producerEpoch &&
+        generation == _generation;
+    while (true) {
+      _checkProducer(epoch);
+      if (_refresh == null || _refreshAttempts >= 3) {
+        throw const XmlyException('media_unauthorized', '音频授权仍然失效，自动重新获取次数已用尽');
+      }
+      // One budget for the entire cache authorization, not one per block.
+      _refreshAttempts++;
+      late ResolvedAudio audio;
+      try {
+        // API requests own their network retries; do not wrap this in the CDN
+        // transport retry loop and multiply retries for a failed resolution.
+        audio = await _whileActive(epoch, () => _refresh(isActive));
+      } on XmlyException catch (error) {
+        if (error.code != 'media_unauthorized') rethrow;
+        continue;
+      }
+      if (!isActive())
+        throw const XmlyException('cache_source_changed', '音频来源已变化');
+      if (audio.accountIdentity != _audio.accountIdentity ||
+          audio.track.id != _audio.track.id) {
+        throw const XmlyException('cache_identity', '重新授权的账号或声音不一致');
+      }
+      _validateUri(audio.uri);
+      _audio = audio;
+      // Keep validators and hashes, but verify block zero before reusing bytes
+      // from a different URL. The producer then resumes missing blocks.
+      _validated = false;
+      return;
     }
   }
 
@@ -546,33 +591,8 @@ class AudioCache {
       }
       if (response.statusCode == 401 || response.statusCode == 403) {
         _audio.invalidateCachedUri();
-        if (_refreshed || _refresh == null)
-          throw const XmlyException('media_http', '音频授权已失效，请重新获取');
-        _refreshed = true;
-        final generation = _generation;
-        bool isActive() =>
-            !_closed &&
-            !_paused &&
-            epoch == _producerEpoch &&
-            generation == _generation;
-        late ResolvedAudio audio;
-        try {
-          audio = await _whileActive(epoch, () => _refresh(isActive));
-        } catch (_) {
-          if (!isActive()) _refreshed = false;
-          rethrow;
-        }
-        if (!isActive())
-          throw const XmlyException('cache_source_changed', '音频来源已变化');
-        if (audio.accountIdentity != _audio.accountIdentity ||
-            audio.track.id != _audio.track.id) {
-          throw const XmlyException('cache_identity', '重新授权的账号或声音不一致');
-        }
-        _validateUri(audio.uri);
-        _audio = audio;
-        uri = audio.uri;
-        redirects = -1;
-        continue;
+        _validated = false;
+        throw const XmlyException('media_unauthorized', '音频授权已失效');
       }
       if (response.statusCode == 429) {
         final header = response.headers.value(HttpHeaders.retryAfterHeader);
