@@ -565,6 +565,7 @@ class _SleepTimerPage extends StatefulWidget {
 class _SleepTimerPageState extends State<_SleepTimerPage> {
   final _form = GlobalKey<FormState>();
   late final TextEditingController _minutes;
+  late final int _storedMinutes;
   late SleepMode _mode;
   late SleepAction _action;
   late bool _wait;
@@ -581,6 +582,7 @@ class _SleepTimerPageState extends State<_SleepTimerPage> {
     } on FormatException {
       request = SleepRequest();
     }
+    _storedMinutes = request.minutes;
     _minutes = TextEditingController(text: '${request.minutes}');
     _mode = request.mode;
     _action = request.action;
@@ -600,10 +602,16 @@ class _SleepTimerPageState extends State<_SleepTimerPage> {
       _error = null;
     });
     try {
+      final enteredMinutes = int.tryParse(_minutes.text);
       final request = SleepRequest(
         mode: _mode,
         action: _action,
-        minutes: int.parse(_minutes.text),
+        minutes:
+            enteredMinutes != null &&
+                enteredMinutes >= 1 &&
+                enteredMinutes <= 1440
+            ? enteredMinutes
+            : _storedMinutes,
         waitForEnd: _wait,
       );
       await widget.runtime.storage.transaction(
