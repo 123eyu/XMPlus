@@ -216,7 +216,6 @@ class DownloadService {
   final Set<String> _stopping = {};
   final Map<String, bool Function()> _automaticGuards = {};
   bool _loaded = false, _closed = false, _suspended = false;
-  int _parallelism = 3;
   String? _priority;
 
   Stream<void> get changes => _changes.stream;
@@ -264,7 +263,7 @@ class DownloadService {
     }
     await _save(restored);
     _tasks.addAll(restored);
-    _parallelism = _option(
+    _option(
       storage.state['settings'] as Map,
       'parallelism',
       3,
@@ -822,7 +821,7 @@ class DownloadService {
       throw const XmlyException('batch_invalid', '下载确认已失效');
     if (!confirmed) return;
     await _checkRoot(batch.rootDirectory, batch.settings);
-    final parallelism = _option(batch.settings, 'parallelism', 3, 1, 6);
+    _option(batch.settings, 'parallelism', 3, 1, 6);
     await _reconcileOutputs(batch.items.map((item) => item.track.id).toSet());
     Future<void> admit(XmlyClient _) => _updates.synchronized(() async {
       _ensureOpen();
@@ -934,7 +933,6 @@ class DownloadService {
         ..clear()
         ..addAll(next);
       if (album != null) _albums[album.id] = album;
-      _parallelism = parallelism;
       _suspended = false;
       _notify();
     });
@@ -1236,8 +1234,18 @@ class DownloadService {
     _pump();
   }
 
+  /// Apply a saved global limit without resuming a paused queue or stopping work.
+  void settingsChanged() => _pump();
+
   void _pump() {
     if (_closed || _suspended || !_loaded) return;
+    final parallelism = _option(
+      storage.state['settings'] as Map,
+      'parallelism',
+      3,
+      1,
+      6,
+    );
     _pumpAlbums();
     for (final item in tasks.where(
       (item) =>
@@ -1269,7 +1277,7 @@ class DownloadService {
       if (index > 0) pending.insert(0, pending.removeAt(index));
     }
     for (final item in pending) {
-      if (_workers.length >= _parallelism) break;
+      if (_workers.length >= parallelism) break;
       final control = DownloadControl._(
         (received, total, rate) {
           final current = task(item.id);

@@ -199,6 +199,7 @@ class AppRuntime extends ChangeNotifier {
   }
 
   void changed() {
+    downloads.settingsChanged();
     _configureRewards();
     notifyListeners();
   }
