@@ -1352,13 +1352,7 @@ class DownloadService {
             await control.processing();
             path = await process(task(id), control);
           } else {
-            final audio = await _admissionOrder
-                .putIfAbsent(task(id).accountIdentity, Lock.new)
-                .synchronized(() async {
-                  await control.checkpoint();
-                  await _checkRoot(task(id).rootDirectory, task(id).settings);
-                  return _admit(id, control);
-                });
+            final audio = await _orderedAdmission(id, control);
             await control.checkpoint();
             await _change(
               id,
@@ -1492,6 +1486,34 @@ class DownloadService {
       return true;
     }
     return false;
+  }
+
+  Future<ResolvedAudio> _orderedAdmission(String id, DownloadControl control) {
+    // A stopped worker must not wait for another task's admission while holding
+    // the command lock. Once entered, keep waiting for any debit to be journaled.
+    var entered = false;
+    final result = Completer<ResolvedAudio>();
+    final admission = _admissionOrder
+        .putIfAbsent(task(id).accountIdentity, Lock.new)
+        .synchronized(() async {
+          entered = true;
+          await control.checkpoint();
+          await _checkRoot(task(id).rootDirectory, task(id).settings);
+          return _admit(id, control);
+        });
+    admission.then(
+      (audio) {
+        if (!result.isCompleted) result.complete(audio);
+      },
+      onError: (Object error, StackTrace stack) {
+        if (!result.isCompleted) result.completeError(error, stack);
+      },
+    );
+    control.stopped.then((_) {
+      if (!entered && !result.isCompleted)
+        result.completeError(const DownloadStopped());
+    });
+    return result.future;
   }
 
   Future<ResolvedAudio> _admit(String id, DownloadControl control) async {
