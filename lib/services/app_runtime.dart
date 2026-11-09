@@ -57,7 +57,10 @@ class AppRuntime extends ChangeNotifier {
       loadCatalogue: (identity, albumId) =>
           XmlyCatalogue(accounts.clientFor(identity)).album(albumId),
       hasTask: (identity, trackId) => downloads.tasks.any(
-        (task) => task.accountIdentity == identity && task.track.id == trackId,
+        (task) =>
+            task.track.id == trackId &&
+            (task.accountIdentity == identity ||
+                task.state == DownloadState.completed),
       ),
       enqueueNew: (identity, track, allowed) async {
         _checkAutomaticAccount(identity);
