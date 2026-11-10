@@ -601,6 +601,7 @@ class ConfigArchive {
       _range(value, 'seekBackwardSeconds', 1, 300);
       _range(value, 'seekForwardSeconds', 1, 300);
       _range(value, 'volume', 0, 100);
+      _range(value, 'masterVolume', 0, 100);
       for (final key in ['autoNext', 'listenAndDownload']) {
         if (value.containsKey(key) && value[key] is! bool)
           throw const FormatException();

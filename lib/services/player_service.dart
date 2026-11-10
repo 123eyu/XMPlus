@@ -656,7 +656,7 @@ class PlayerService {
       );
       warning = policy.warning ?? warning;
       rate = settings.speed;
-      volume = settings.volume;
+      volume = settings.outputVolume;
       await _driver.open(source.uri, epoch: epoch);
       await _driver.setRate(rate);
       await _driver.setVolume(volume);
@@ -1374,6 +1374,26 @@ class PlayerService {
     _notify();
   }
 
+  Future<void> setMasterVolume(double value) => _run(
+    () => _commands.synchronized(() async {
+      if (!value.isFinite || value < 0 || value > 100) {
+        throw const FormatException('主音量必须在 0–100 之间');
+      }
+      await storage.transaction((state) {
+        final settings = state['settings'] as Map;
+        final playback =
+            settings.putIfAbsent('playback', () => <String, dynamic>{}) as Map;
+        playback['masterVolume'] = value;
+      });
+      final settings = effectiveSettings;
+      policy.updateSettings(settings);
+      final nextVolume = settings.outputVolume;
+      await _driver.setVolume(nextVolume);
+      volume = nextVolume;
+      _notify();
+    }),
+  );
+
   Future<void> applySettings() => _run(
     () => _commands.synchronized(() async {
       final settings = effectiveSettings;
@@ -1385,7 +1405,7 @@ class PlayerService {
         speed: settings.speed,
       );
       rate = settings.speed;
-      volume = settings.volume;
+      volume = settings.outputVolume;
       await _driver.setRate(rate);
       await _driver.setVolume(volume);
       if (_source != null && settings.listenAndDownload && !wasDownload) {
