@@ -15,6 +15,7 @@ import '../services/request_diagnostics.dart';
 import 'xmly_crypto.dart';
 
 class XmlyClient {
+  static final Map<String, _BalanceChanges> _balanceChanges = {};
   static final _readPolicyKey = Object();
   static const mobile = 'https://mobile.ximalaya.com';
   static const cachedAlbumOrigin = 'https://mobwsa.ximalaya.com';
@@ -63,6 +64,18 @@ class XmlyClient {
   }
   String get identity => credentials?.identity ?? 'anonymous';
   String get cacheIdentity => credentials?.cacheIdentity ?? 'anonymous';
+  /// Serializes balance mutations for one account/device, including clients
+  /// using refreshed credentials. Callers acquire account/ledger locks first.
+  Future<T> withBalanceChange<T>(Future<T> Function() action) async {
+    final key = _requireAccount().identity;
+    final changes = _balanceChanges.putIfAbsent(key, _BalanceChanges.new);
+    changes.users++;
+    try {
+      return await changes.lock.synchronized(action);
+    } finally {
+      if (--changes.users == 0) _balanceChanges.remove(key);
+    }
+  }
   bool get accountAvailable => credentials != null && !_expired;
   Map<String, String> context() {
     final value = _requireAccount();
@@ -1984,6 +1997,11 @@ class _ReadPolicy {
   late final Future<void>? cancelled;
   final Future<void> Function()? checkpoint;
   bool stopped = false;
+}
+
+class _BalanceChanges {
+  final lock = Lock();
+  int users = 0;
 }
 
 class _CachedAudioUrl {
