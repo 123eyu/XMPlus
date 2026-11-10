@@ -105,6 +105,7 @@ class PlayerService {
   late final StreamSubscription<void> _downloadEvents;
   Timer? _timer;
   AudioProxy? _proxy;
+  Future<AudioProxy>? _proxyOpening;
   PlaybackSource? _source;
   List<Track> _queue = [];
   Completer<void> _requestChanged = Completer<void>();
@@ -701,6 +702,27 @@ class PlayerService {
     return null;
   }
 
+  Future<AudioProxy> _playbackProxy() {
+    if (_closed) throw const DownloadStopped();
+    final ready = _proxy;
+    if (ready != null) return Future.value(ready);
+    // Cancelled admissions can still finish alongside a newer preparation.
+    // Keep one owner for their shared listener, including during shutdown.
+    return _proxyOpening ??= () async {
+      try {
+        final proxy = await AudioProxy.start();
+        if (_closed) {
+          await proxy.close();
+          throw const DownloadStopped();
+        }
+        _proxy = proxy;
+        return proxy;
+      } finally {
+        _proxyOpening = null;
+      }
+    }();
+  }
+
   Future<PlaybackSource> _prepare(
     Track track,
     bool save,
@@ -762,15 +784,16 @@ class PlayerService {
       },
     );
     try {
-      _proxy ??= await AudioProxy.start();
+      final proxy = await _playbackProxy();
+      if (_closed || request != _request) throw const DownloadStopped();
       return PlaybackSource(
-        uri: _proxy!.mount(cache),
+        uri: proxy.mount(cache),
         identity: identity,
         kind: 'online',
         requiresReward: reward,
         cache: cache,
         release: () async {
-          await _proxy?.unmount(cache);
+          await proxy.unmount(cache);
           await cache.close();
           final folder = Directory(directory);
           if (await folder.exists()) await folder.delete(recursive: true);
@@ -861,17 +884,18 @@ class PlayerService {
           throw const XmlyException('download_stopped', '下载尚未就绪，请检查任务');
         await Future<void>.delayed(const Duration(milliseconds: 25));
       }
-      _proxy ??= await AudioProxy.start();
+      final proxy = await _playbackProxy();
+      if (_closed || request != _request) throw const DownloadStopped();
       final leased = retained!;
       final mounted = cache!;
       final source = PlaybackSource(
-        uri: _proxy!.mount(mounted),
+        uri: proxy.mount(mounted),
         identity: task.accountIdentity,
         kind: 'prepaid',
         taskId: task.id,
         cache: mounted,
         release: () async {
-          await _proxy?.unmount(mounted);
+          await proxy.unmount(mounted);
           await pipeline.releaseTask(leased);
         },
       );
@@ -1573,6 +1597,11 @@ class PlayerService {
     await _driverEvents.cancel();
     await _downloadEvents.cancel();
     await _driver.close();
+    try {
+      await _proxyOpening;
+    } catch (_) {
+      // Preparation observes startup failures; no listener remains to close.
+    }
     await _proxy?.close();
     await _changes.close();
   }
