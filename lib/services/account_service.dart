@@ -284,6 +284,7 @@ class AccountService {
     List<Map<String, dynamic>>? importedAccounts,
     String? primaryAccountId,
     List<dynamic>? downloads,
+    List<dynamic>? downloadAlbums,
     Map<String, dynamic>? queue,
     required bool sameOrigin,
   }) => _accounts.synchronized(() async {
@@ -367,7 +368,7 @@ class AccountService {
         if (library != null) state['library'] = library;
         if (restoredDownloads != null) {
           state['downloads'] = restoredDownloads;
-          state['downloadAlbums'] = <dynamic>[];
+          state['downloadAlbums'] = downloadAlbums ?? <dynamic>[];
         }
         if (queue != null) state['queue'] = queue;
         final records = state['accounts'] as Map<String, dynamic>;
@@ -718,25 +719,26 @@ class AccountService {
   /// Does not own AppStorage; caller closes storage after all services finish.
   /// A failed settlement leaves this service available for manual resolution.
   /// Startup rollback preserves state because no work has been admitted yet.
-  Future<void> close({bool preserveState = false}) => _accounts.synchronized(() async {
-    if (_closed) return;
-    if (!preserveState && _loaded && _clients.isNotEmpty) {
-      try {
-        await _prepareChange();
-      } catch (_) {
-        _admissionPaused = false;
-        rethrow;
-      }
-    }
-    if (!preserveState) await _cleanupSecrets();
-    for (final client in _clients.values) {
-      client.close();
-    }
-    for (final client in _clients.values) {
-      await client.flushUrlCache();
-    }
-    _clients.clear();
-    _closed = true;
-    _admissionPaused = true;
-  });
+  Future<void> close({bool preserveState = false}) =>
+      _accounts.synchronized(() async {
+        if (_closed) return;
+        if (!preserveState && _loaded && _clients.isNotEmpty) {
+          try {
+            await _prepareChange();
+          } catch (_) {
+            _admissionPaused = false;
+            rethrow;
+          }
+        }
+        if (!preserveState) await _cleanupSecrets();
+        for (final client in _clients.values) {
+          client.close();
+        }
+        for (final client in _clients.values) {
+          await client.flushUrlCache();
+        }
+        _clients.clear();
+        _closed = true;
+        _admissionPaused = true;
+      });
 }
