@@ -257,7 +257,7 @@ class MediaProcessor {
         ? await _audioHash(source, checkpoint, details: input)
         : null;
     final warnings = <String>[];
-    return _outputs.synchronized(() async {
+    return _withOutputLock(() async {
       await checkpoint?.call();
       final conflict = download['conflict'] ?? 'skip';
       if (conflict is! String)
@@ -491,7 +491,48 @@ class MediaProcessor {
           /* Only disposable processor output. */
         }
       }
-    });
+    }, checkpoint);
+  }
+
+  Future<T> _withOutputLock<T>(
+    Future<T> Function() operation,
+    Future<void> Function()? checkpoint,
+  ) async {
+    final result = Completer<T>();
+    var entered = false, checking = false;
+    Timer? timer;
+    // Abandon a cancelled waiter; never let its later lock callback touch files.
+    unawaited(
+      _outputs.synchronized(() async {
+        if (result.isCompleted) return;
+        entered = true;
+        timer?.cancel();
+        try {
+          result.complete(await operation());
+        } catch (error, stack) {
+          result.completeError(error, stack);
+        }
+      }),
+    );
+    if (!entered) {
+      timer = Timer.periodic(const Duration(milliseconds: 100), (_) async {
+        if (entered || result.isCompleted || checking) return;
+        checking = true;
+        try {
+          await checkpoint?.call();
+        } catch (error, stack) {
+          if (!entered && !result.isCompleted)
+            result.completeError(error, stack);
+        } finally {
+          checking = false;
+        }
+      });
+    }
+    try {
+      return await result.future;
+    } finally {
+      timer?.cancel();
+    }
   }
 
   Future<Map<String, dynamic>?> _existing(
