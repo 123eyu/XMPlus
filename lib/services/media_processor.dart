@@ -297,8 +297,10 @@ class MediaProcessor {
               FileSystemEntityType.notFound) {
         throw const XmlyException('destination_exists', '同名文件无法验证，请选择覆盖或添加编号');
       }
-      final temporary = await Directory(p.dirname(destination))
-          .createTemp('.xmplus-media-');
+      // Keep processing on the destination volume without appending another
+      // directory to an already shortened, near-limit album path.
+      final temporary = await Directory(task.rootDirectory)
+          .createTemp(DownloadPaths.mediaTemporaryPrefix);
       try {
         final output = p.join(temporary.path, 'output.$extension');
         String? cover;
@@ -473,7 +475,7 @@ class MediaProcessor {
         try {
           await _paths.commit(
             manifest.path,
-            '$destination.xmplus-media.json',
+            '$destination${DownloadPaths.mediaManifestSuffix}',
             overwrite: true,
           );
         } catch (_) {
