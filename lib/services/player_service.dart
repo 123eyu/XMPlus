@@ -1451,6 +1451,28 @@ class PlayerService {
     }),
   );
 
+  Future<void> playNext(Track track) => _run(
+    () => _commands.synchronized(() async {
+      final selected = current?.id;
+      if (track.id == selected) return;
+      final next = List<Track>.from(_queue);
+      final existing = next.indexWhere((item) => item.id == track.id);
+      if (existing < 0 && next.length >= 5000) {
+        throw const XmlyException('queue_full', '队列最多 5000 集');
+      }
+      final target = existing < 0 ? track : next.removeAt(existing);
+      final index = next.indexWhere((item) => item.id == selected);
+      next.insert(index + 1, target);
+      final cursorIndex = index < 0 ? 0 : index;
+      await _saveQueue(next, cursorIndex, '');
+      _queue = next;
+      cursor = cursorIndex;
+      sourceAlbumId = '';
+      ++generation;
+      _notify();
+    }),
+  );
+
   Future<void> addToQueue(Track track) => _run(
     () => _commands.synchronized(() async {
       if (_queue.any((item) => item.id == track.id)) return;

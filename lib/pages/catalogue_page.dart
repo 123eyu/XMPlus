@@ -707,6 +707,8 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         await _play(track);
       case 'queue':
         await widget.runtime.player.addToQueue(track);
+      case 'next':
+        await widget.runtime.player.playNext(track);
       case 'download':
         if (!_completedTrackIds().contains(track.id))
           await requestDownloads(context, widget.runtime, [track]);
@@ -772,6 +774,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         items: [
           const PopupMenuItem(value: 'play', child: Text('播放')),
           const PopupMenuItem(value: 'queue', child: Text('加入播放队列')),
+          const PopupMenuItem(value: 'next', child: Text('下一集播放')),
           if (task != null)
             const PopupMenuItem(value: 'delete', child: Text('删除已下载文件'))
           else if (!_downloaded.contains(track.id))

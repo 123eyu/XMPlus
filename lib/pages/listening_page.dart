@@ -496,6 +496,9 @@ class _ListeningPageState extends State<ListeningPage> {
             case 'queue':
               _act(() => _runtime.player.addToQueue(track));
               break;
+            case 'next':
+              _act(() => _runtime.player.playNext(track));
+              break;
             case 'download':
               _act(() => widget.onDownload([track]));
               break;
@@ -511,6 +514,7 @@ class _ListeningPageState extends State<ListeningPage> {
           if (play != null)
             const PopupMenuItem(value: 'play', child: Text('播放')),
           const PopupMenuItem(value: 'queue', child: Text('加入播放队列')),
+          const PopupMenuItem(value: 'next', child: Text('下一集播放')),
           const PopupMenuItem(value: 'download', child: Text('下载')),
           if (track.albumId.isNotEmpty)
             const PopupMenuItem(value: 'album', child: Text('查看专辑')),

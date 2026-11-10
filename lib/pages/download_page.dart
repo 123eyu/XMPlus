@@ -801,6 +801,8 @@ class _DownloadPageState extends State<DownloadPage> {
           switch (action) {
             case 'play':
               await widget.runtime.player.playLocal(task.id);
+            case 'next':
+              await widget.runtime.player.playNext(task.track);
             case 'open':
               await _open(task);
             case 'delete':
@@ -809,6 +811,8 @@ class _DownloadPageState extends State<DownloadPage> {
         }),
         itemBuilder: (_) => [
           if (available) const PopupMenuItem(value: 'play', child: Text('播放')),
+          if (available)
+            const PopupMenuItem(value: 'next', child: Text('下一集播放')),
           const PopupMenuItem(value: 'open', child: Text('打开目录')),
           if (available)
             const PopupMenuItem(value: 'delete', child: Text('删除音频')),
