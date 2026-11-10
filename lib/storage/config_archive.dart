@@ -582,6 +582,10 @@ class ConfigArchive {
         settings['showRequestFailureBanner'] is! bool)
       throw const FormatException();
     final appearance = settings['appearance'];
+    if (settings.containsKey('catalogueAscending') &&
+        settings['catalogueAscending'] is! bool) {
+      throw const FormatException();
+    }
     if (appearance != null) {
       final value = _map(appearance);
       if (value.containsKey('themeMode') &&

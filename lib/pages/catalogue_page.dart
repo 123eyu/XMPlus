@@ -380,11 +380,16 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   bool? _subscribed;
   bool _subscriptionBusy = false, _favoriteBusy = false;
   bool _subscriptionMutating = false;
+  bool _ascending = true;
   static const _pageSize = xmlyAlbumPageSize;
 
   @override
   void initState() {
     super.initState();
+    _ascending =
+        (widget.runtime.storage.state['settings']
+            as Map)['catalogueAscending'] !=
+        false;
     widget.runtime.addListener(_runtimeChanged);
     _downloaded = _completedTrackIds();
     _restoreCache();
@@ -463,7 +468,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
 
   void _showCached(int page) {
     _cachedView = true;
-    final tracks = _cachedTracks()
+    final tracks = _orderedForDisplay(_cachedTracks())
         .where(
           (track) => track.title.toLowerCase().contains(_filter.toLowerCase()),
         )
@@ -704,7 +709,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         page = (_trackOrdinal(located)! - 1) ~/ _pageSize + 1;
       }
       if (_filter.isNotEmpty && _complete != null) {
-        final filtered = _complete!
+        final filtered = _orderedForDisplay(_complete!)
             .where(
               (track) =>
                   track.title.toLowerCase().contains(_filter.toLowerCase()),
@@ -725,6 +730,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           widget.albumId,
           page: page,
           pageSize: _pageSize,
+          ascending: _ascending,
         );
         if (_sameAccount(client, key) && generation == _generation) {
           setState(() {
@@ -770,6 +776,50 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       // Optional cache failures never delay or replace the live catalogue.
     }
   }
+
+  List<Track> _orderedForDisplay(List<Track> tracks) =>
+      _ascending ? tracks : tracks.reversed.toList();
+
+  Future<void> _setOrder(bool ascending) async {
+    if (_busy || _ascending == ascending) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.runtime.storage.transaction((state) {
+        (state['settings'] as Map)['catalogueAscending'] = ascending;
+      });
+      if (!mounted) return;
+      setState(() {
+        _ascending = ascending;
+        _selected.clear();
+      });
+      await _loadPage(1);
+      if (mounted && _albumScroll.hasClients) {
+        _albumScroll.jumpTo(_albumScroll.position.minScrollExtent);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = '目录排序保存失败，请重试');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  List<PopupMenuEntry<String>> _orderMenu() => [
+    CheckedPopupMenuItem(
+      value: 'ascending',
+      checked: _ascending,
+      enabled: !_busy,
+      child: const Text('最早在前'),
+    ),
+    CheckedPopupMenuItem(
+      value: 'descending',
+      checked: !_ascending,
+      enabled: !_busy,
+      child: const Text('最新在前'),
+    ),
+  ];
 
   Future<List<Track>> _all() async {
     if (_complete != null) return _complete!;
@@ -858,7 +908,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         widget.albumId,
         track.id,
         page: position == null
-            ? (_filter.isEmpty ? _page : null)
+            ? (_filter.isEmpty && _ascending ? _page : null)
             : (position - 1) ~/ _pageSize + 1,
         track: track,
       );
@@ -988,6 +1038,10 @@ class _AlbumPageViewState extends State<AlbumPageView> {
 
   void _albumAction(String action) {
     switch (action) {
+      case 'ascending':
+        _setOrder(true);
+      case 'descending':
+        _setOrder(false);
       case 'subscribe':
         _changeSubscription();
       case 'refresh':
@@ -1048,6 +1102,8 @@ class _AlbumPageViewState extends State<AlbumPageView> {
               tooltip: '更多操作',
               onSelected: _albumAction,
               itemBuilder: (_) => [
+                ..._orderMenu(),
+                const PopupMenuDivider(),
                 PopupMenuItem(
                   value: 'subscribe',
                   enabled: !_subscriptionBusy,
@@ -1064,6 +1120,12 @@ class _AlbumPageViewState extends State<AlbumPageView> {
               ],
             )
           else ...[
+            PopupMenuButton<String>(
+              tooltip: '目录排序：${_ascending ? "最早在前" : "最新在前"}',
+              icon: const Icon(Icons.sort),
+              onSelected: _albumAction,
+              itemBuilder: (_) => _orderMenu(),
+            ),
             IconButton(
               tooltip: '专辑标签',
               icon: const Icon(Icons.edit_note),
@@ -1227,6 +1289,12 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                               ],
                             ),
                           ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            '${_ascending ? "最早在前" : "最新在前"} · 连播按集数正序',
+                          ),
+                        ),
                         if (_showSearch)
                           Padding(
                             padding: EdgeInsets.symmetric(
