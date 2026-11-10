@@ -929,6 +929,7 @@ class PlayerService {
       _official.start('player', current!, _progressIdentity);
       _manualPaused = false;
       await _driver.play();
+      error = null;
       _notify();
     });
   });
