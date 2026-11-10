@@ -148,7 +148,7 @@ class PlayerService {
   String get libraryIdentity => accounts.activeClient?.identity ?? 'anonymous';
   String get _progressIdentity => _source?.identity ?? libraryIdentity;
   XmlyClient? get _historyClient {
-    final identity = _source?.identity;
+    final identity = _source?.identity ?? accounts.activeClient?.identity;
     if (identity == null || identity == 'anonymous') return null;
     try {
       return accounts.clientFor(identity);
