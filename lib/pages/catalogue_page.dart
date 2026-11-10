@@ -590,6 +590,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           setState(() {
             _offline = false;
             _cachedView = false;
+            _complete = null;
             _album = result.album;
             _page = page;
             _total = result.total;
@@ -615,8 +616,15 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     if (_offline) {
       throw const XmlyException('offline_catalogue', '离线目录不完整，无法按完整专辑下载');
     }
-    final tracks = await XmlyCatalogue(widget.runtime.client)
-        .album(widget.albumId);
+    final generation = _generation, client = widget.runtime.client;
+    final identity = client.cacheIdentity;
+    final tracks = await XmlyCatalogue(client).album(widget.albumId);
+    if (!mounted ||
+        generation != _generation ||
+        !identical(client, widget.runtime.client) ||
+        identity != widget.runtime.client.cacheIdentity) {
+      throw const XmlyException('catalogue_changed', '专辑目录已变化，请重新操作');
+    }
     _complete = tracks;
     return tracks;
   }
@@ -841,6 +849,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         _changeSubscription();
       case 'refresh':
         _offline = false;
+        _complete = null;
         _filter = '';
         _search.clear();
         _loadPage(1);
