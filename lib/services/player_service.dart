@@ -568,6 +568,7 @@ class PlayerService {
     int request, {
     double? resumePosition,
     bool manualReplay = false,
+    bool startPlaying = true,
     String? localTaskId,
   }) async {
     if (current == null || request != _request) return;
@@ -577,6 +578,7 @@ class PlayerService {
         request,
         resumePosition: resumePosition,
         manualReplay: manualReplay,
+        startPlaying: startPlaying,
         localTaskId: localTaskId,
       );
     } finally {
@@ -589,6 +591,7 @@ class PlayerService {
     int request, {
     double? resumePosition,
     bool manualReplay = false,
+    bool startPlaying = true,
     String? localTaskId,
   }) async {
     final track = current;
@@ -651,7 +654,7 @@ class PlayerService {
       _atEnd = false;
       _actual = false;
       _sleepStopped = false;
-      _manualPaused = false;
+      _manualPaused = !startPlaying;
       _checkedEpochs.clear();
       final epoch = ++_epoch;
       duration = track.duration;
@@ -675,7 +678,7 @@ class PlayerService {
         return;
       }
       _official.start('player', track, source.identity);
-      await _driver.play();
+      if (startPlaying) await _driver.play();
       status = source.supportsRanges ? null : '此音频暂不支持快速跳转，跳转时可能需要等待';
       _notify();
     } catch (_) {
@@ -1403,10 +1406,15 @@ class PlayerService {
       await _driver.setRate(rate);
       await _driver.setVolume(volume);
       if (_source != null && settings.listenAndDownload && !wasDownload) {
-        final saved = position;
+        final saved = position, wasPlaying = playing;
         await _pause();
         await ledger.stopWatch();
-        await _openCurrent(_newRequest(), resumePosition: saved);
+        await _openCurrent(
+          _newRequest(),
+          resumePosition: saved,
+          manualReplay: _manualChapterPosition,
+          startPlaying: wasPlaying,
+        );
       }
       _notify();
     }),
