@@ -218,6 +218,10 @@ class OfficialProgress {
         final album = track.albumId.isNotEmpty
             ? track.albumId
             : '${track.raw['album_id'] ?? ''}';
+        if (album.isEmpty) {
+          _error = '部分声音缺少专辑信息，已保留待同步记录；其他进度继续同步';
+          continue;
+        }
         final official = await history.progress(
           albumId: album,
           trackId: album.isEmpty ? track.id : '',
@@ -226,20 +230,23 @@ class OfficialProgress {
         if (official != null &&
             (official['updated_at'] as num) * 1000 > ended) {
           await _removeIfUnchanged(identity, key, entry);
-          _error = '';
           continue;
         }
         await history.sync(track, position, started, ended);
         if (!identical(client, _client())) continue;
         await _removeIfUnchanged(identity, key, entry);
         _lastSyncedAt = ended;
-        _error = '';
       } on Exception {
         // Preserve the original absolute wall-clock bounds and pending record.
         _error = '收听进度同步失败，已保留待同步云进度';
       } on TypeError {
         _error = '待同步云进度格式无效，已保留记录';
+      } on ArgumentError {
+        _error = '待同步声音或进度信息无效，已保留记录；其他进度继续同步';
       }
+    }
+    if (identical(client, _client()) && _readPending(identity).isEmpty) {
+      _error = '';
     }
   });
 
