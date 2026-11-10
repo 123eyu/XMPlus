@@ -90,10 +90,12 @@ class _PlaybackSpeedControlState extends State<PlaybackSpeedControl> {
                   divisions: 50,
                   label: _label(current),
                   semanticFormatterCallback: _label,
-                  onChanged: _saving
-                      ? null
-                      : (value) => setState(() => _draft = value),
-                  onChangeEnd: _saving ? null : _save,
+                  // Keep keyboard focus while saving without admitting a
+                  // second edit until the current value has been applied.
+                  onChanged: (value) {
+                    if (!_saving) setState(() => _draft = value);
+                  },
+                  onChangeEnd: _save,
                 ),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
