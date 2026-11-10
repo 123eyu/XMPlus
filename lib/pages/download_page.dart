@@ -852,6 +852,27 @@ class _DownloadPageState extends State<DownloadPage> {
         continue;
       groups.putIfAbsent(task.track.albumId, () => []).add(task);
     }
+    if (downloaded) {
+      for (final group in groups.entries) {
+        if (group.key.isEmpty) continue;
+        final originalOrder = {
+          for (var index = 0; index < group.value.length; index++)
+            group.value[index].id: index,
+        };
+        int? position(DownloadTask task) =>
+            task.track.officialPosition ??
+            xmlyPositive(task.track.orderNo) ??
+            xmlyPositive(task.track.episode);
+        group.value.sort((a, b) {
+          final left = position(a), right = position(b);
+          if (left != null && right != null && left != right) {
+            return left.compareTo(right);
+          }
+          if ((left == null) != (right == null)) return left == null ? 1 : -1;
+          return originalOrder[a.id]!.compareTo(originalOrder[b.id]!);
+        });
+      }
+    }
     final albums = groups.entries.toList();
     final jobs = _service.albumJobs
         .where((job) => job.state != 'completed' && job.state != 'cancelled')
