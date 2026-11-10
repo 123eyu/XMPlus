@@ -830,14 +830,14 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   }
 
   Future<void> _play(Track track) async {
-    final task = await _localDownload(track);
-    if (!mounted) return;
-    if (task != null) {
+    if (_offline) {
+      final task = await _localDownload(track);
+      if (!mounted) return;
+      if (task == null)
+        throw const XmlyException('offline_playback', '此声音本地文件不存在，请重新下载后播放');
       await widget.runtime.player.playLocal(task.id);
       return;
     }
-    if (_offline)
-      throw const XmlyException('offline_playback', '此声音本地文件不存在，请重新下载后播放');
     if (widget.onPlayAlbum != null) {
       final position = track.officialPosition;
       await widget.onPlayAlbum!(
