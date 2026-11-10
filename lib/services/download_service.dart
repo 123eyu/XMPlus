@@ -454,6 +454,17 @@ class DownloadService {
         job.taskIds.any((id) => _workers.containsKey(id) || task(id).active)) {
       throw const XmlyException('task_changed', '专辑任务已变化，请重新刷新并确认');
     }
+    if (job.taskIds.any(
+      (id) => !const {
+        DownloadState.completed,
+        DownloadState.cancelled,
+      }.contains(task(id).state),
+    )) {
+      throw const XmlyException(
+        'album_tasks_pending',
+        '请先继续或重试专辑中的未完成单集，再刷新目录',
+      );
+    }
   }
 
   Future<AlbumPage> _albumPage(
@@ -969,14 +980,15 @@ class DownloadService {
         if (replaced != null) {
           // Detached episodes remain in the global queue with their receipts.
           // The new job may only own tasks in its current durable seen prefix.
-          album.taskIds = {...replaced.taskIds, ...admitted.map((item) => item.id)}
-              .where(
-                (id) =>
-                    next.containsKey(id) &&
-                    albumTracks.contains(next[id]!.track.id) &&
-                    next[id]!.state != DownloadState.cancelled,
-              )
-              .toList();
+          album.taskIds =
+              {...replaced.taskIds, ...admitted.map((item) => item.id)}
+                  .where(
+                    (id) =>
+                        next.containsKey(id) &&
+                        albumTracks.contains(next[id]!.track.id) &&
+                        next[id]!.state != DownloadState.cancelled,
+                  )
+                  .toList();
         }
         album.state = 'running';
         album.error = null;
