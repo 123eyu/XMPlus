@@ -8,6 +8,7 @@ import '../api/xmly_experience.dart';
 import '../common/widgets/adaptive_text.dart';
 import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
+import 'catalogue_page.dart';
 import 'playback_settings_page.dart';
 
 String playbackTime(double seconds) {
@@ -240,6 +241,15 @@ class _PlayerPanelState extends State<PlayerPanel> {
           albumId: track?.albumId.isNotEmpty == true ? track!.albumId : null,
           albumTitle: track?.album,
         ),
+      ),
+    );
+  }
+
+  void _openAlbum(String albumId) {
+    if (albumId.isEmpty) return;
+    _navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => AlbumPageView(runtime: _runtime, albumId: albumId),
       ),
     );
   }
@@ -575,17 +585,45 @@ class _PlayerPanelState extends State<PlayerPanel> {
             ),
           ),
           if (track != null &&
-              (track.album.isNotEmpty || track.artist.isNotEmpty)) ...[
+              (track.albumId.isNotEmpty ||
+                  track.album.isNotEmpty ||
+                  track.artist.isNotEmpty)) ...[
             SizedBox(height: compact ? 4 : 10),
-            AdaptiveText(
-              [
+            if (track.albumId.isNotEmpty)
+              TextButton(
+                key: const ValueKey('playerAlbumLink'),
+                onPressed: () => _openAlbum(track.albumId),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  alignment: Alignment.centerLeft,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: AdaptiveText(
+                        track.album.isEmpty ? '查看专辑' : track.album,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right, size: 18),
+                  ],
+                ),
+              )
+            else if (track.album.isNotEmpty)
+              AdaptiveText(
                 track.album,
-                track.artist,
-              ].where((text) => text.isNotEmpty).join(' · '),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colors.onSurfaceVariant,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
               ),
-            ),
+            if (track.artist.isNotEmpty)
+              AdaptiveText(
+                track.artist,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
           ],
           SizedBox(height: compact ? 4 : 16),
           Wrap(
@@ -802,6 +840,8 @@ class _PlayerPanelState extends State<PlayerPanel> {
                 switch (value) {
                   case 'settings':
                     _settings();
+                  case 'album':
+                    if (track != null) _openAlbum(track.albumId);
                   case 'replay':
                     _act(player.replay);
                   case 'local':
@@ -814,6 +854,8 @@ class _PlayerPanelState extends State<PlayerPanel> {
               },
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'settings', child: Text('播放设置')),
+                if (track?.albumId.isNotEmpty == true)
+                  const PopupMenuItem(value: 'album', child: Text('查看专辑')),
                 PopupMenuItem(
                   value: 'replay',
                   enabled: track != null && !_busy,
