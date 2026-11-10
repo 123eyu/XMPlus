@@ -164,7 +164,7 @@ class _BackupPageState extends State<BackupPage> {
       if (mounted) setState(() => _message = '备份已保存，但任务加载未完成；请保留资料目录后重试');
       return;
     }
-    if (mounted) setState(() => _message = '备份已恢复，任务保持暂停');
+    if (mounted) setState(() => _message = '备份已恢复，未完成任务保持暂停');
   });
 
   @override

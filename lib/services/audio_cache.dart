@@ -11,6 +11,8 @@ import 'package:synchronized/synchronized.dart';
 
 import '../api/xmly_client.dart';
 import '../models/xmly_models.dart';
+import 'file_paths.dart';
+import 'network_retry.dart';
 import 'request_diagnostics.dart';
 
 /// The sole upstream byte producer for one account/track/task directory.
@@ -23,6 +25,8 @@ class AudioCache {
   final Future<ResolvedAudio> Function(bool Function() isActive)? _refresh;
   final Future<void> Function()? _checkpoint;
   final void Function(int, int?, double)? _onProgress;
+  final int? _rateLimitRetries;
+  final Duration _minimumRateLimitDelay;
   final _blocks = <int, String>{};
   final _waiting = <int, Completer<void>>{};
   final _priority = LinkedHashSet<int>();
@@ -53,6 +57,8 @@ class AudioCache {
     this._refresh,
     this._checkpoint,
     this._onProgress,
+    this._rateLimitRetries,
+    this._minimumRateLimitDelay,
   );
 
   static Future<AudioCache> open({
@@ -61,12 +67,27 @@ class AudioCache {
     Future<ResolvedAudio> Function(bool Function() isActive)? refresh,
     Future<void> Function()? checkpoint,
     void Function(int received, int? total, double rate)? onProgress,
+    int? rateLimitRetries,
+    Duration minimumRateLimitDelay = Duration.zero,
   }) async {
-    final path = p.normalize(p.absolute(directory));
+    if ((rateLimitRetries != null &&
+            (rateLimitRetries < 0 || rateLimitRetries > 1000)) ||
+        minimumRateLimitDelay.isNegative) {
+      throw const XmlyException('invalid_retry', '限流重试设置无效');
+    }
+    final path = absoluteFilePath(directory);
     if (!_openDirectories.add(Platform.isWindows ? path.toLowerCase() : path)) {
       throw const XmlyException('cache_in_use', '此缓存正在使用');
     }
-    final cache = AudioCache._(path, audio, refresh, checkpoint, onProgress);
+    final cache = AudioCache._(
+      path,
+      audio,
+      refresh,
+      checkpoint,
+      onProgress,
+      rateLimitRetries,
+      minimumRateLimitDelay,
+    );
     try {
       cache._validateUri(audio.uri);
       await Directory(path).create(recursive: true);
@@ -78,6 +99,7 @@ class AudioCache {
     }
   }
 
+  String get accountIdentity => _audio.accountIdentity;
   int? get length => _length;
   bool get supportsRanges => _ranges;
   String get sourceFormat => _format;
@@ -92,6 +114,9 @@ class AudioCache {
     }
     _validateUri(audio.uri);
     _audio = audio;
+    // A resumed authorization can name a different version of the same track.
+    // Complete caches are already coherent and require no further transport.
+    if (!complete) _validated = false;
     _refreshAttempts = 0;
   }
 
@@ -280,7 +305,11 @@ class AudioCache {
         }
         if (next == null) break;
         try {
+          final before = downloadedBytes;
           await _fetchWithRetry(next, epoch);
+          // Verification of an already cached prefix is not forward progress:
+          // repeatedly authorizing only that prefix must still hit the limit.
+          if (downloadedBytes > before) _refreshAttempts = 0;
         } on XmlyException catch (error) {
           if (error.code != 'media_unauthorized') rethrow;
           await _refreshAuthorization(epoch);
@@ -327,7 +356,7 @@ class AudioCache {
       if (_refresh == null || _refreshAttempts >= 3) {
         throw const XmlyException('media_unauthorized', '音频授权仍然失效，自动重新获取次数已用尽');
       }
-      // One budget for the entire cache authorization, not one per block.
+      // Bound consecutive renewals that fail to produce new cached bytes.
       _refreshAttempts++;
       late ResolvedAudio audio;
       try {
@@ -369,11 +398,21 @@ class AudioCache {
     }
   }
 
-  Future<void> _fetchWithRetry(int index, int epoch) async {
+  Future<void> _fetchWithRetry(
+    int index,
+    int epoch, {
+    bool verifyOnly = false,
+  }) async {
+    var rateRetries = 0, transportRetries = 0;
     for (var attempt = 0; ; attempt++) {
       _diagnostic = null;
       try {
-        await _fetch(index, epoch, resumeSequential: attempt > 0);
+        await _fetch(
+          index,
+          epoch,
+          resumeSequential: attempt > 0,
+          verifyOnly: verifyOnly,
+        );
         return;
       } catch (error, stack) {
         if (!_paused && !_closed) {
@@ -387,18 +426,32 @@ class AudioCache {
         _client?.close(force: true);
         _client = null;
         _checkProducer(epoch);
-        if (attempt >= 4) {
+        final exhausted = _rateLimitRetries == null
+            ? attempt >= 4
+            : rateLimited
+            ? rateRetries++ >= _rateLimitRetries
+            : transportRetries++ >= 4;
+        if (exhausted) {
           if (error is _AudioTransportFailure)
             Error.throwWithStackTrace(error.error, error.stack);
           Error.throwWithStackTrace(error, stack);
         }
-        final backoff = Duration(seconds: 1 << attempt);
-        final retryAfter = rateLimited ? error.retryAfter : null;
-        final ready = Completer<void>();
-        final timer = Timer(
-          retryAfter != null && retryAfter > backoff ? retryAfter : backoff,
-          ready.complete,
+        final backoff = Duration(
+          seconds:
+              1 <<
+              (_rateLimitRetries == null
+                  ? min(attempt, 4)
+                  : max(0, min(transportRetries - 1, 4))),
         );
+        final retryAfter = rateLimited ? error.retryAfter : null;
+        var delay = retryAfter != null && retryAfter > backoff
+            ? retryAfter
+            : backoff;
+        if (rateLimited && _minimumRateLimitDelay > delay) {
+          delay = _minimumRateLimitDelay;
+        }
+        final ready = Completer<void>();
+        final timer = Timer(delay, ready.complete);
         try {
           await _whileActive(epoch, () => ready.future);
         } finally {
@@ -596,19 +649,7 @@ class AudioCache {
       }
       if (response.statusCode == 429) {
         final header = response.headers.value(HttpHeaders.retryAfterHeader);
-        var wait = const Duration(minutes: 5);
-        final seconds = int.tryParse(header ?? '');
-        if (seconds != null && seconds >= 0) {
-          wait = Duration(seconds: seconds);
-        } else if (header != null) {
-          try {
-            final duration = HttpDate.parse(header)
-                .difference(DateTime.now().toUtc());
-            if (!duration.isNegative) wait = duration;
-          } on FormatException {
-            /* Use the documented five-minute cooldown. */
-          }
-        }
+        final wait = serverRetryAfter(header) ?? const Duration(minutes: 5);
         throw XmlyException('rate_limited', '音频请求过于频繁，请稍后重试', retryAfter: wait);
       }
       return (response: response, finalUri: uri);
@@ -686,8 +727,7 @@ class AudioCache {
             _etag != etag ||
             _modified != modified ||
             _ranges != ranges ||
-            (!ranges && !resumeSequential) ||
-            (!_validated && etag == null && modified == null));
+            (!ranges && !resumeSequential));
     if (changed) await _reset();
     _length = size;
     _etag = etag;
@@ -700,6 +740,7 @@ class AudioCache {
     int index,
     int epoch, {
     bool resumeSequential = false,
+    bool verifyOnly = false,
   }) async {
     final start = index * blockSize;
     final requestedEnd = !_validated || _length == null
@@ -707,6 +748,11 @@ class AudioCache {
         : min(start + blockSize, _length!) - 1;
     final result = await _request(start, requestedEnd, epoch);
     final response = result.response;
+    if (verifyOnly && response.statusCode != HttpStatus.partialContent) {
+      await _discard(response);
+      await _reset();
+      throw const XmlyException('cache_source_changed', '音频来源已变化');
+    }
     if (response.statusCode == 416) {
       final match = RegExp(r'^bytes \*/([0-9]+)$').firstMatch(
         response.headers.value(HttpHeaders.contentRangeHeader) ?? '',
@@ -772,6 +818,10 @@ class AudioCache {
       throw const XmlyException('cache_range', '服务器返回的音频范围不一致');
     }
     final changed = await _metadata(response, total, true);
+    if (verifyOnly && changed) {
+      await _discard(response);
+      throw const XmlyException('cache_source_changed', '音频来源已变化');
+    }
     if (changed &&
         (index != 0 || last != min(start + blockSize - 1, total - 1))) {
       await _discard(response);
@@ -800,11 +850,27 @@ class AudioCache {
       }
       final data = bytes.takeBytes();
       _diagnostic?.responseBytes = () => data;
+      if (verifyOnly) {
+        if (_blocks[index] != sha256.convert(data).toString()) {
+          await _reset();
+          throw const XmlyException('cache_source_changed', '音频来源已变化');
+        }
+        return;
+      }
       if (index == 0) {
         _format = _sniff(data);
         final oldHash = _blocks[0];
         if (oldHash != null && oldHash != sha256.convert(data).toString())
           await _reset();
+        // Without a server validator, verify every retained block before
+        // releasing readers. Matching block zero alone cannot prove that a
+        // previously cached later range still belongs to the same audio.
+        if (!_validated && _etag == null && _modified == null) {
+          final retained = _blocks.keys.where((index) => index != 0).toList();
+          for (final retainedIndex in retained) {
+            await _fetchWithRetry(retainedIndex, epoch, verifyOnly: true);
+          }
+        }
         _validated = true;
       }
       _checkProducer(epoch);
@@ -1041,13 +1107,14 @@ class AudioCache {
   ) async* {
     if (start < 0 || (endExclusive != null && endExclusive < start))
       throw RangeError('Invalid audio range');
-    _resume();
+    // Only the download owner may explicitly resume production after a pause.
+    if (!_paused || _closed) _resume();
     var initialGeneration = _generation;
     var offset = start;
     while (!cancelled.isCompleted &&
         (endExclusive == null || offset < endExclusive)) {
       final changed = _changed.future;
-      _checkState();
+      if (!_paused || _closed) _checkState();
       if (_generation != initialGeneration) {
         if (offset != start)
           throw const XmlyException('cache_source_changed', '音频来源已变化，请重新打开');
@@ -1059,7 +1126,8 @@ class AudioCache {
         break;
       }
       final index = offset ~/ blockSize;
-      if (!_validated || !_blocks.containsKey(index)) _need(index).ignore();
+      if (!_paused && (!_validated || !_blocks.containsKey(index)))
+        _need(index).ignore();
       int available = 0;
       File? file;
       if (_validated && _blocks.containsKey(index)) {
@@ -1071,6 +1139,7 @@ class AudioCache {
       }
       final within = offset % blockSize;
       if (file == null || available <= within) {
+        _checkState();
         await Future.any([changed, cancelled.future]);
         continue;
       }
@@ -1300,12 +1369,16 @@ class AudioProxy {
     } catch (_) {
       try {
         response.statusCode = HttpStatus.badGateway;
+        response.contentLength = 0;
         await response.close();
       } catch (_) {
         try {
-          (await response.detachSocket(writeHeaders: false)).destroy();
+          // Once headers are sent, neither statusCode nor detachSocket is
+          // legal. A deadline aborts this response's connection even then.
+          response.deadline = Duration.zero;
+          await response.done;
         } catch (_) {
-          /* Client already disconnected. */
+          /* Aborted or already disconnected. */
         }
       }
     }
