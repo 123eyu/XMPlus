@@ -12,6 +12,7 @@ import '../common/widgets/adaptive_text.dart';
 import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
 import '../services/download_service.dart';
+import 'album_introduction.dart';
 import 'download_page.dart'
     show
         deleteDownloadedAudio,
@@ -1220,11 +1221,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                                         '${album.artist} · ${album.total} 集',
                                       ),
                                       if (album.intro.isNotEmpty)
-                                        Text(
-                                          album.intro,
-                                          maxLines: 3,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
+                                        AlbumIntroduction(text: album.intro),
                                       if (_cachedView)
                                         const Text('离线缓存（仅显示已观察目录与已下载声音）'),
                                       OutlinedButton.icon(
