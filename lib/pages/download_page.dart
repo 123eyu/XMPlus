@@ -287,6 +287,9 @@ class _DownloadPageState extends State<DownloadPage> {
   int _availabilityEpoch = 0;
   Map<String, bool> _available = const {};
   final _expandedAlbums = <String>{};
+  final _downloadQuery = TextEditingController();
+  Timer? _searchDebounce;
+  String _downloadFilter = '';
   StreamSubscription<void>? _taskChanges;
 
   @override
@@ -325,6 +328,8 @@ class _DownloadPageState extends State<DownloadPage> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _downloadQuery.dispose();
     unawaited(_taskChanges?.cancel());
     widget.runtime.albumCache.removeListener(_cacheChanged);
     super.dispose();
@@ -774,23 +779,39 @@ class _DownloadPageState extends State<DownloadPage> {
     );
   }
 
-  Widget _downloadedTrack(DownloadTask task, bool compact) {
+  Widget _downloadedTrack(
+    DownloadTask task,
+    bool compact, {
+    bool searchResult = false,
+  }) {
     final available = _available[task.id] == true;
     return ListTile(
       leading: compact
           ? null
           : CoverImage(
-              uri: task.track.coverUrl,
-              localPath:
-                  widget.runtime.albumCache[task.track.albumId]?.coverPath,
+              uri: searchResult ? null : task.track.coverUrl,
+              localPath: task.track.albumId.isEmpty
+                  ? null
+                  : widget.runtime.albumCache[task.track.albumId]?.coverPath,
               downloaded: available,
               size: 44,
             ),
       title: AdaptiveText(task.track.title),
-      subtitle: Text(
-        _available.containsKey(task.id)
-            ? (available ? '已下载' : '音频文件已不存在')
-            : '正在检查本地文件',
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (searchResult)
+            Text(
+              _downloadAlbumTitle(task),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          Text(
+            _available.containsKey(task.id)
+                ? (available ? '已下载' : '音频文件已不存在')
+                : '正在检查本地文件',
+          ),
+        ],
       ),
       onTap: available
           ? () => _run(() => widget.runtime.player.playLocal(task.id))
@@ -836,6 +857,126 @@ class _DownloadPageState extends State<DownloadPage> {
       ),
     );
     if (confirmed == true) await _service.cancelAlbum(id);
+  }
+
+  String _downloadAlbumTitle(DownloadTask task) {
+    final id = task.track.albumId;
+    final cached = id.isEmpty
+        ? null
+        : widget.runtime.albumCache[id]?.album.title;
+    if (cached != null && cached.isNotEmpty) return cached;
+    if (task.track.album.isNotEmpty) return task.track.album;
+    return id.isEmpty ? '未归属专辑的声音' : '专辑 $id';
+  }
+
+  void _searchDownloads(String text, {bool immediately = false}) {
+    _searchDebounce?.cancel();
+    void apply() {
+      if (mounted) setState(() => _downloadFilter = text.trim().toLowerCase());
+    }
+
+    if (immediately) {
+      apply();
+    } else {
+      _searchDebounce = Timer(const Duration(milliseconds: 180), apply);
+    }
+  }
+
+  Widget _downloadedLibrary() {
+    final compact = MediaQuery.sizeOf(context).width < 320;
+    final query = _downloadFilter;
+    final tokens = query
+        .split(RegExp(r'\s+'))
+        .where((value) => value.isNotEmpty);
+    final completed = _service.tasks
+        .where((task) => task.state == DownloadState.completed)
+        .toList();
+    final matches = query.isEmpty
+        ? const <DownloadTask>[]
+        : completed.where((task) {
+            final track = task.track;
+            final text = [
+              _downloadAlbumTitle(task),
+              track.album,
+              track.title,
+              for (final ordinal in {
+                track.officialPosition,
+                track.orderNo,
+                track.episode,
+              }.whereType<int>())
+                '$ordinal 第${ordinal}集',
+            ].join(' ').toLowerCase();
+            return tokens.every(text.contains);
+          }).toList();
+    return Column(
+      children: [
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            compact ? 8 : 16,
+            12,
+            compact ? 8 : 16,
+            8,
+          ),
+          child: TextField(
+            key: const ValueKey('downloadLibrarySearch'),
+            controller: _downloadQuery,
+            decoration: InputDecoration(
+              labelText: '搜索已下载',
+              hintText: '专辑、单集标题或集号',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _downloadQuery,
+                builder: (context, value, _) => value.text.isEmpty
+                    ? const SizedBox.shrink()
+                    : IconButton(
+                        tooltip: '清除本地搜索',
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _downloadQuery.clear();
+                          _searchDownloads('', immediately: true);
+                        },
+                      ),
+              ),
+            ),
+            textInputAction: TextInputAction.search,
+            onChanged: _searchDownloads,
+            onSubmitted: (text) => _searchDownloads(text, immediately: true),
+          ),
+        ),
+        if (query.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              '本地下载记录：匹配 ${matches.length} / 共 ${completed.length} 条',
+            ),
+          ),
+        if (query.isNotEmpty && _error != null)
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        Expanded(
+          child: query.isEmpty
+              ? _albumList(downloaded: true)
+              : matches.isEmpty
+              ? const Center(child: Text('未找到匹配的本地下载记录'))
+              : Scrollbar(
+                  child: ListView.builder(
+                    key: ValueKey('downloadSearch:$query'),
+                    itemCount: matches.length,
+                    itemBuilder: (context, index) => _downloadedTrack(
+                      matches[index],
+                      compact,
+                      searchResult: true,
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
   }
 
   Widget _albumList({required bool downloaded}) {
@@ -979,7 +1120,7 @@ class _DownloadPageState extends State<DownloadPage> {
                 child: TabBarView(
                   children: [
                     _albumList(downloaded: false),
-                    _albumList(downloaded: true),
+                    _downloadedLibrary(),
                   ],
                 ),
               ),
