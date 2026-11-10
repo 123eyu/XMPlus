@@ -14,6 +14,7 @@ class _Session {
   final String identity;
   final Track track;
   final int started;
+  (double, int)? recorded;
 }
 
 /// Coalesces only actual playback observations, one newest record per album.
@@ -114,6 +115,27 @@ class OfficialProgress {
           previous['ended_at_ms'] is int &&
           (previous['ended_at_ms'] as int) > observed.$2)
         return;
+      final sameObservation =
+          previous is Map &&
+          previous['identity'] == session.identity &&
+          previous['track'] is Map &&
+          (previous['track'] as Map)['id'] == track.id &&
+          previous['position'] == observed.$1 &&
+          previous['started_at_ms'] == session.started &&
+          previous['ended_at_ms'] == observed.$2;
+      // Pause/buffer cannot replay an ambiguous POST or recreate an ACKed record.
+      // Keep in-flight snapshots unchanged so their ACK can still remove them.
+      if (!actual && !sameObservation) return;
+      if (sameObservation) {
+        if (previous['attempted'] == true ||
+            previous['terminal'] == true ||
+            !terminal)
+          return;
+        pending[key] = {...previous, 'terminal': true};
+        await _savePending(session.identity, pending);
+        return;
+      }
+      if (session.recorded == observed) return;
       final safeTrack = track.toJson();
       safeTrack['raw'] = {
         'album_id': album,
@@ -131,6 +153,7 @@ class OfficialProgress {
       };
       // Durable before any history POST; account switching cannot lose records.
       await _savePending(session.identity, pending);
+      session.recorded = observed;
     });
     if (terminal) {
       _sessions.remove(device);
@@ -218,6 +241,10 @@ class OfficialProgress {
         final album = track.albumId.isNotEmpty
             ? track.albumId
             : '${track.raw['album_id'] ?? ''}';
+        if (album.isEmpty) {
+          _error = '部分声音缺少专辑信息，已保留待同步记录；其他进度继续同步';
+          continue;
+        }
         final official = await history.progress(
           albumId: album,
           trackId: album.isEmpty ? track.id : '',
@@ -226,20 +253,23 @@ class OfficialProgress {
         if (official != null &&
             (official['updated_at'] as num) * 1000 > ended) {
           await _removeIfUnchanged(identity, key, entry);
-          _error = '';
           continue;
         }
         await history.sync(track, position, started, ended);
         if (!identical(client, _client())) continue;
         await _removeIfUnchanged(identity, key, entry);
         _lastSyncedAt = ended;
-        _error = '';
       } on Exception {
         // Preserve the original absolute wall-clock bounds and pending record.
         _error = '收听进度同步失败，已保留待同步云进度';
       } on TypeError {
         _error = '待同步云进度格式无效，已保留记录';
+      } on ArgumentError {
+        _error = '待同步声音或进度信息无效，已保留记录；其他进度继续同步';
       }
+    }
+    if (identical(client, _client()) && _readPending(identity).isEmpty) {
+      _error = '';
     }
   });
 

@@ -53,6 +53,7 @@ class SystemMediaService extends BaseAudioHandler {
   Object? _metadataKey, _stateKey;
   String? _commandError, _nativeError;
   int _publishedAt = -1000;
+  int _commandRecoveryRevision = 0;
 
   static Duration _seconds(double seconds) => Duration(
     microseconds: (seconds * Duration.microsecondsPerSecond).round(),
@@ -86,6 +87,13 @@ class SystemMediaService extends BaseAudioHandler {
     if (hasSource || _player.loading) {
       _dismissed = false;
       _everActive = true;
+    }
+    if (_commandError != null &&
+        !_player.loading &&
+        hasSource &&
+        _player.error == null &&
+        _player.playbackRecoveryRevision != _commandRecoveryRevision) {
+      _commandError = null;
     }
     final error = _nativeError ?? _commandError ?? _player.error;
     final active =
@@ -209,6 +217,7 @@ class SystemMediaService extends BaseAudioHandler {
     } catch (failure, stack) {
       if (!_closed) {
         _commandError = _player.error ?? '系统播放操作失败，请在应用内重试';
+        _commandRecoveryRevision = _player.playbackRecoveryRevision;
         _report(failure, stack, _commandError!);
       }
       rethrow;
