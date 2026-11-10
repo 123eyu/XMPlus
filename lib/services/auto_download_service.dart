@@ -77,12 +77,13 @@ class AutoDownloadService {
   }
 
   Future<void> scanAll() async {
+    final generation = _generation;
     final all = (storage.state['settings'] as Map)['autoDownloads'];
     if (all is! Map) return;
     for (final entry in all.entries) {
       if (entry.key is! String || entry.value is! Map) continue;
       for (final album in (entry.value as Map).keys.toList()) {
-        if (_closed || _suspended) return;
+        if (_closed || _suspended || generation != _generation) return;
         if (album is String) await scanAlbum(entry.key as String, album);
       }
     }
@@ -178,6 +179,9 @@ class AutoDownloadService {
     XmlyException(code: 'login_expired') => '自动下载已停止：请重新登录原账号',
     _ => '自动下载未完成，请检查原账号、听时和下载目录后重新检查专辑',
   };
+
+  /// Cancel pending discovery/admission without removing saved subscriptions.
+  void invalidatePending() { _generation++; }
 
   /// Synchronous invalidation avoids waiting on account locks during restore.
   void suspend() { _generation++; _suspended = true; }
