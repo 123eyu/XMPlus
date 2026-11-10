@@ -404,7 +404,7 @@ class PlayerService {
           accounts.admissionPaused ||
           !identical(client, accounts.activeClient ?? anonymous))
         return;
-      await _stopSource();
+      await _stopSource(localTarget: tracks[index]);
       await _saveQueue(
         tracks,
         index,
@@ -436,7 +436,7 @@ class PlayerService {
         ++generation;
         await _commands.synchronized(() async {
           if (request != _request) return;
-          await _stopSource();
+          await _stopSource(localTarget: tracks[index]);
           await _saveQueue(tracks, index, '', source: 'updates');
           _queue = tracks;
           cursor = index;
@@ -451,7 +451,7 @@ class PlayerService {
         ++generation;
         await _commands.synchronized(() async {
           if (request != _request) return;
-          await _stopSource();
+          await _stopSource(localTarget: track);
           await _saveQueue([track], 0, '');
           _queue = [track];
           cursor = 0;
@@ -467,7 +467,7 @@ class PlayerService {
   Future<void> _select(int index, int request) async {
     if (request != _request) return;
     RangeError.checkValidIndex(index, _queue);
-    await _stopSource();
+    await _stopSource(localTarget: _queue[index]);
     await _saveQueue(
       _queue,
       index,
@@ -592,7 +592,7 @@ class PlayerService {
             downloads.task(previousTaskId).track.id == track.id
         ? previousTaskId
         : null;
-    await _stopSource();
+    await _stopSource(localTarget: track);
     if (request != _request) return;
     status = '正在准备音频';
     error = null;
@@ -883,7 +883,7 @@ class PlayerService {
     ++generation;
     await _commands.synchronized(() async {
       if (request != _request) return;
-      await _stopSource();
+      await _stopSource(localTarget: task.track);
       await _saveQueue([task.track], 0, '');
       _queue = [task.track];
       cursor = 0;
@@ -1516,16 +1516,31 @@ class PlayerService {
     await source?.release?.call();
   }
 
-  Future<void> _stopSource({bool preserveUnknown = false}) async {
+  Future<void> _stopSource({
+    bool preserveUnknown = false,
+    Track? localTarget,
+  }) async {
     await _driver.pause();
     playing = false;
     if (preserveUnknown) {
       await ledger.captureForRestore();
       await _saveProgress(terminal: true, sync: false);
     } else {
-      await ledger.observe(playing: false, buffering: buffering, speed: rate);
-      await _saveProgress(terminal: true);
-      await ledger.stopWatch();
+      try {
+        await ledger.observe(playing: false, buffering: buffering, speed: rate);
+        await _saveProgress(terminal: true);
+        await ledger.stopWatch();
+      } on XmlyException catch (error) {
+        if (error.code != 'usage_uncertain' ||
+            localTarget == null ||
+            await _downloaded(localTarget) == null) {
+          rethrow;
+        }
+        // A verified local target needs no new debit. Save the old meter and
+        // detach its watch while preserving every pending operation for review.
+        await ledger.captureForRestore();
+        await _saveProgress(terminal: true, sync: false);
+      }
     }
     await _driver.stop();
     ++_epoch;
