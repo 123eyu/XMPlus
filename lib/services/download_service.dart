@@ -47,6 +47,7 @@ class DownloadControl {
   bool _paused = false, _cancelled = false;
   bool get paused => _paused;
   bool get cancelled => _cancelled;
+
   /// Allows backends to interrupt waits that do not reach a checkpoint.
   Future<void> get stopped => _stopped.future;
   Future<void> checkpoint() async {
@@ -268,13 +269,7 @@ class DownloadService {
     }
     await _save(restored);
     _tasks.addAll(restored);
-    _option(
-      storage.state['settings'] as Map,
-      'parallelism',
-      3,
-      1,
-      6,
-    );
+    _option(storage.state['settings'] as Map, 'parallelism', 3, 1, 6);
     _loaded = true;
     _notify();
     // Restoring never schedules, resolves, claims, or debits.
@@ -1085,10 +1080,10 @@ class DownloadService {
         _notify();
       });
 
-  Future<void> resume(String id) =>
-      _queueCommands.synchronized(() => _resume(id));
+  Future<void> resume(String id, {bool Function()? isActive}) =>
+      _queueCommands.synchronized(() => _resume(id, isActive: isActive));
 
-  Future<void> _resume(String id) async {
+  Future<void> _resume(String id, {bool Function()? isActive}) async {
     _ensureOpen();
     final worker = _workers[id];
     if (worker != null) {
@@ -1097,23 +1092,25 @@ class DownloadService {
       await worker.done;
     }
     _ensureOpen();
+    if (isActive != null && !isActive()) throw const DownloadStopped();
     final item = task(id);
     if (item.state == DownloadState.completed || item.active) return;
     if (!item.processingFailed &&
         (item.needsConfirmation || !item.userConfirmed)) {
       throw const XmlyException('confirmation_required', '请重新确认本次听时和余额');
     }
-    _automaticGuards.remove(id); // A manual continue is a fresh user action.
-    await _change(
-      id,
-      (item) => item.copyWith(
+    await _change(id, (item) {
+      // Playback may have been cancelled while this command waited to update.
+      if (isActive != null && !isActive()) throw const DownloadStopped();
+      _automaticGuards.remove(id); // A manual continue is a fresh user action.
+      return item.copyWith(
         state: DownloadState.queued,
         error: null,
         retryAt: null,
         retryCount: 0,
         attemptedAccounts: const [],
-      ),
-    );
+      );
+    });
     _suspended = false;
     _pump();
   }
