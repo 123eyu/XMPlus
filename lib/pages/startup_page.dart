@@ -95,8 +95,12 @@ class _StartupPageState extends State<StartupPage> {
   }
 
   Future<void> _choose() async {
-    final value = await FilePicker.getDirectoryPath(dialogTitle: '选择资料目录');
-    if (value != null) await _open(value);
+    try {
+      final value = await FilePicker.getDirectoryPath(dialogTitle: '选择资料目录');
+      if (value != null && mounted) await _open(value);
+    } catch (_) {
+      if (mounted) setState(() => _error = '无法选择资料目录，请重试');
+    }
   }
 
   @override

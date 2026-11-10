@@ -96,8 +96,12 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage>
   }
 
   Future<void> _directory() async {
-    final directory = await FilePicker.getDirectoryPath(dialogTitle: '选择下载目录');
-    if (directory != null) await _set('rootDirectory', directory);
+    try {
+      final directory = await FilePicker.getDirectoryPath(dialogTitle: '选择下载目录');
+      if (directory != null && mounted) await _set('rootDirectory', directory);
+    } catch (_) {
+      if (mounted) setState(() => _error = '无法选择下载目录，请重试');
+    }
   }
 
   Future<void> _clearUrlCache() async {
