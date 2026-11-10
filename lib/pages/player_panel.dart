@@ -375,10 +375,10 @@ class _PlayerPanelState extends State<PlayerPanel> {
   Future<void> _playPause() async {
     final player = _runtime.player;
     if (player.current == null || _cancelling) return;
-    if (!player.loading) {
+    if (!player.loading && !(_busy && player.playing)) {
       return _act(player.playing ? player.pause : player.resume);
     }
-    // Only cancellation may pass the command already awaiting admission.
+    // Only cancellation may pass a command awaiting catalogue or audio.
     // Keep its busy gate intact until that original command has settled.
     setState(() {
       _cancelling = true;
@@ -516,7 +516,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
           ? '暂停'
           : '播放';
       final VoidCallback? play =
-          track == null || _cancelling || (_busy && !player.loading)
+          track == null || _cancelling || (_busy && !canPause)
           ? null
           : () => unawaited(_playPause());
       final coverUrl = track?.coverUrl?.toString();
