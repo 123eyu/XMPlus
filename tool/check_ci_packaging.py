@@ -29,7 +29,7 @@ def ps_quote(value):
 
 def main():
     root = Path(__file__).resolve().parent.parent
-    tag = 'v' + re.search(r'^version:\s*(\d+\.\d+\.\d+)\+', (root / 'pubspec.yaml').read_text(), re.M)[1]
+    tag = 'v' + re.search(r'^version:\s*(\d+\.\d+\.\d+)\+', (root / 'pubspec.yaml').read_text(encoding='utf-8'), re.M)[1]
     changelog = (root / 'CHANGELOG.md').read_text(encoding='utf-8')
     notes = release_notes(changelog, tag)
     assert notes.startswith('## ' + tag[1:] + '\n')
@@ -72,7 +72,7 @@ def main():
             changed = json.loads(original)
             changed[field][0]['sha256'] = '0' * 64
             native.save_json(provenance, changed)
-            changed_receipt = json.loads((base / 'BUILD-RECEIPT.json').read_text())
+            changed_receipt = json.loads((base / 'BUILD-RECEIPT.json').read_text(encoding='utf-8'))
             next(item for item in changed_receipt['files'] if item['path'] == 'sources/SOURCES.json')['sha256'] = native.digest(provenance)
             native.save_json(base / 'BUILD-RECEIPT.json', changed_receipt)
             rejected(lambda: native.verify_supply(base), f'Changed {field} accepted')
@@ -83,8 +83,8 @@ def main():
         bundle = base / 'XMPlus-fixture-windows-x64'
         shutil.copytree(base / 'runtime', bundle)
         (bundle / 'XMPlus.exe').write_bytes(b'fixture application')
-        (bundle / 'LICENSE').write_text('fixture license')
-        (bundle / 'tools/ffmpeg/version-identity.json').write_text('{"fixture":true}')
+        (bundle / 'LICENSE').write_text('fixture license', encoding='utf-8')
+        (bundle / 'tools/ffmpeg/version-identity.json').write_text('{"fixture":true}', encoding='utf-8')
         script = f"""
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest

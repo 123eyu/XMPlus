@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../common/widgets/local_panel.dart';
 import '../services/app_runtime.dart';
 import '../services/playback_policy.dart';
+import 'playback_volume_control.dart';
 
 /// Commit first: a failed disk write must not change the live playback policy.
 Future<void> persistPlaybackSetting(
@@ -31,8 +33,66 @@ Future<void> persistPlaybackSetting(
     if (key == 'syncHistory' && value is! bool)
       throw const FormatException('同步设置无效');
   });
-  await runtime.player.applySettings();
+  await runtime.player.applySettings(updateSource: key == 'listenAndDownload');
   runtime.changed();
+}
+
+Future<void> showQuickPlaybackSettings(
+  BuildContext context,
+  AppRuntime runtime, {
+  String? albumId,
+  String? albumTitle,
+}) async {
+  var global = albumId == null;
+  var saving = false;
+  final fullSettings = await showLocalPanel<bool>(
+    context: context,
+    title: '播放选项',
+    builder: (context) => StatefulBuilder(
+      builder: (context, setPanelState) => Column(
+        children: [
+          if (albumId != null)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('此专辑')),
+                  ButtonSegment(value: true, label: Text('全局')),
+                ],
+                selected: {global},
+                onSelectionChanged: saving
+                    ? null
+                    : (values) => setPanelState(() => global = values.single),
+              ),
+            ),
+          Expanded(
+            child: PlaybackSettingsPage(
+              key: ValueKey(global),
+              runtime: runtime,
+              albumId: global ? null : albumId,
+              albumTitle: global ? null : albumTitle,
+              embedded: true,
+              quick: true,
+              onSavingChanged: (value) {
+                if (context.mounted) setPanelState(() => saving = value);
+              },
+              onOpenFullSettings: () => Navigator.pop(context, true),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (fullSettings != true || !context.mounted) return;
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => PlaybackSettingsPage(
+        runtime: runtime,
+        albumId: global ? null : albumId,
+        albumTitle: global ? null : albumTitle,
+      ),
+    ),
+  );
 }
 
 class PlaybackSettingsPage extends StatefulWidget {
@@ -41,11 +101,17 @@ class PlaybackSettingsPage extends StatefulWidget {
     this.albumId,
     this.albumTitle,
     this.embedded = false,
+    this.quick = false,
+    this.onSavingChanged,
+    this.onOpenFullSettings,
     super.key,
   });
   final AppRuntime runtime;
   final String? albumId, albumTitle;
   final bool embedded;
+  final bool quick;
+  final ValueChanged<bool>? onSavingChanged;
+  final VoidCallback? onOpenFullSettings;
 
   @override
   State<PlaybackSettingsPage> createState() => _PlaybackSettingsPageState();
@@ -73,6 +139,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
       _busy = true;
       _error = null;
     });
+    widget.onSavingChanged?.call(true);
     try {
       await persistPlaybackSetting(
         widget.runtime,
@@ -85,7 +152,10 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     } catch (_) {
       if (mounted) setState(() => _error = '设置保存或应用失败，请重试');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() => _busy = false);
+        widget.onSavingChanged?.call(false);
+      }
     }
   }
 
@@ -98,7 +168,21 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
         )
       : const SizedBox.shrink();
 
-  Widget _section(String title, List<Widget> children) => Padding(
+  Widget _section(
+    String title,
+    List<Widget> children, {
+    bool expandable = false,
+  }) => widget.quick && expandable
+      ? Padding(
+          padding: const EdgeInsets.only(bottom: 20),
+          child: Card(
+            margin: EdgeInsets.zero,
+            child: ExpansionTile(title: Text(title), children: children),
+          ),
+        )
+      : _sectionBody(title, children);
+
+  Widget _sectionBody(String title, List<Widget> children) => Padding(
     padding: const EdgeInsets.only(bottom: 20),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -361,6 +445,15 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                       ),
                     ),
                   _section('声音', [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: PlaybackVolumeControl(runtime: widget.runtime),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text('主音量对所有专辑生效，与下面的专辑音量共同控制响度。'),
+                    ),
+                    const Divider(indent: 16, endIndent: 16),
                     _slider(
                       'speed',
                       '播放倍速',
@@ -373,7 +466,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                     const Divider(indent: 16, endIndent: 16),
                     _slider(
                       'volume',
-                      '音量',
+                      widget.albumId == null ? '默认专辑音量' : '专辑音量',
                       resolved.volume,
                       0,
                       100,
@@ -403,28 +496,31 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                       0,
                       3600,
                     ),
-                    _number(
-                      'seekBackwardSeconds',
-                      '后退间隔',
-                      resolved.seekBackwardSeconds,
-                      1,
-                      300,
-                    ),
-                    _number(
-                      'seekForwardSeconds',
-                      '前进间隔',
-                      resolved.seekForwardSeconds,
-                      1,
-                      300,
-                    ),
-                  ]),
+                    if (!widget.quick) ...[
+                      _number(
+                        'seekBackwardSeconds',
+                        '后退间隔',
+                        resolved.seekBackwardSeconds,
+                        1,
+                        300,
+                      ),
+                      _number(
+                        'seekForwardSeconds',
+                        '前进间隔',
+                        resolved.seekForwardSeconds,
+                        1,
+                        300,
+                      ),
+                    ],
+                  ], expandable: true),
                   _section('播放方式', [
                     _toggle('autoNext', '自动播放下一集', resolved.autoNext),
-                    _toggle(
-                      'listenAndDownload',
-                      '默认边听边下',
-                      resolved.listenAndDownload,
-                    ),
+                    if (!widget.quick)
+                      _toggle(
+                        'listenAndDownload',
+                        '默认边听边下',
+                        resolved.listenAndDownload,
+                      ),
                     Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -459,7 +555,14 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                       ),
                     ),
                   ]),
-                  if (widget.albumId == null) ...[
+                  if (widget.quick)
+                    ListTile(
+                      title: const Text('完整播放设置'),
+                      subtitle: const Text('快进间隔、边听边下及其他偏好'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: _busy ? null : widget.onOpenFullSettings,
+                    )
+                  else if (widget.albumId == null) ...[
                     _section('历史同步', [
                       SwitchListTile(
                         key: const ValueKey('syncHistory'),
@@ -535,7 +638,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
       },
     );
     return widget.embedded
-        ? content
+        ? PopScope(canPop: !_busy, child: content)
         : Scaffold(
             appBar: AppBar(title: const Text('播放设置')),
             body: content,
@@ -547,10 +650,11 @@ Future<void> showSleepTimerDialog(
   BuildContext context,
   AppRuntime runtime, {
   bool startTimer = true,
-}) => Navigator.of(context).push<void>(
-  MaterialPageRoute<void>(
-    builder: (_) => _SleepTimerPage(runtime: runtime, startTimer: startTimer),
-  ),
+}) => showLocalPanel<void>(
+  context: context,
+  title: startTimer ? '定时关闭' : '定时关闭偏好',
+  height: 600,
+  builder: (_) => _SleepTimerPage(runtime: runtime, startTimer: startTimer),
 );
 
 class _SleepTimerPage extends StatefulWidget {
@@ -565,9 +669,11 @@ class _SleepTimerPage extends StatefulWidget {
 class _SleepTimerPageState extends State<_SleepTimerPage> {
   final _form = GlobalKey<FormState>();
   late final TextEditingController _minutes;
+  late final int _storedMinutes;
   late SleepMode _mode;
   late SleepAction _action;
   late bool _wait;
+  late bool _customMinutes;
   bool _saving = false;
   String? _error;
 
@@ -581,10 +687,12 @@ class _SleepTimerPageState extends State<_SleepTimerPage> {
     } on FormatException {
       request = SleepRequest();
     }
+    _storedMinutes = request.minutes;
     _minutes = TextEditingController(text: '${request.minutes}');
     _mode = request.mode;
     _action = request.action;
     _wait = request.waitForEnd;
+    _customMinutes = ![15, 30, 45, 60].contains(request.minutes);
   }
 
   @override
@@ -600,10 +708,16 @@ class _SleepTimerPageState extends State<_SleepTimerPage> {
       _error = null;
     });
     try {
+      final enteredMinutes = int.tryParse(_minutes.text);
       final request = SleepRequest(
         mode: _mode,
         action: _action,
-        minutes: int.parse(_minutes.text),
+        minutes:
+            enteredMinutes != null &&
+                enteredMinutes >= 1 &&
+                enteredMinutes <= 1440
+            ? enteredMinutes
+            : _storedMinutes,
         waitForEnd: _wait,
       );
       await widget.runtime.storage.transaction(
@@ -622,9 +736,9 @@ class _SleepTimerPageState extends State<_SleepTimerPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(widget.startTimer ? '定时关闭' : '定时关闭偏好')),
-    body: SafeArea(
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_saving,
+    child: SafeArea(
       top: false,
       child: Center(
         child: ConstrainedBox(
@@ -673,31 +787,43 @@ class _SleepTimerPageState extends State<_SleepTimerPage> {
                     runSpacing: 8,
                     children: [
                       for (final minutes in [15, 30, 45, 60])
-                        ActionChip(
+                        ChoiceChip(
                           label: Text('$minutes 分钟'),
+                          selected:
+                              !_customMinutes && _minutes.text == '$minutes',
+                          onSelected: _saving
+                              ? null
+                              : (_) => setState(() {
+                                  _minutes.text = '$minutes';
+                                  _customMinutes = false;
+                                }),
+                        ),
+                      if (!_customMinutes)
+                        ActionChip(
+                          label: const Text('自定义'),
                           onPressed: _saving
                               ? null
-                              : () =>
-                                    setState(() => _minutes.text = '$minutes'),
+                              : () => setState(() => _customMinutes = true),
                         ),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    key: const ValueKey('sleepMinutes'),
-                    controller: _minutes,
-                    enabled: !_saving,
-                    decoration: const InputDecoration(
-                      labelText: '自定义分钟（1–1440）',
+                  if (_customMinutes)
+                    TextFormField(
+                      key: const ValueKey('sleepMinutes'),
+                      controller: _minutes,
+                      enabled: !_saving,
+                      decoration: const InputDecoration(
+                        labelText: '自定义分钟（1–1440）',
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (text) {
+                        final n = int.tryParse(text ?? '');
+                        return n == null || n < 1 || n > 1440
+                            ? '请输入 1–1440 分钟'
+                            : null;
+                      },
                     ),
-                    keyboardType: TextInputType.number,
-                    validator: (text) {
-                      final n = int.tryParse(text ?? '');
-                      return n == null || n < 1 || n > 1440
-                          ? '请输入 1–1440 分钟'
-                          : null;
-                    },
-                  ),
                   CheckboxListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('到时等待本集结束'),

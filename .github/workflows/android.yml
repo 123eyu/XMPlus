@@ -217,10 +217,14 @@ jobs:
           set -euo pipefail
           (cd release && sha256sum --check SHA256SUMS)
           python3 tool/release_notes.py "$RELEASE_TAG" --output release/RELEASE-NOTES.md
+          release_flags=()
+          if [[ "$RELEASE_TAG" == "v1.1.8" ]]; then
+            release_flags+=(--prerelease --latest=false)
+          fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" release/*.apk release/*.zip release/SHA256SUMS --clobber
-            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file release/RELEASE-NOTES.md
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file release/RELEASE-NOTES.md "${release_flags[@]}"
           else
             gh release create "$RELEASE_TAG" release/*.apk release/*.zip release/SHA256SUMS \
-              --verify-tag --title "$RELEASE_TAG" --notes-file release/RELEASE-NOTES.md
+              --verify-tag --title "$RELEASE_TAG" --notes-file release/RELEASE-NOTES.md "${release_flags[@]}"
           fi

@@ -11,6 +11,108 @@ import '../services/app_runtime.dart';
 import 'catalogue_page.dart';
 import 'player_panel.dart';
 
+class _BookmarkNoteDialog extends StatefulWidget {
+  const _BookmarkNoteDialog({
+    required this.title,
+    required this.position,
+    required this.note,
+    required this.save,
+  });
+  final String title, note;
+  final double position;
+  final Future<void> Function(String) save;
+
+  @override
+  State<_BookmarkNoteDialog> createState() => _BookmarkNoteDialogState();
+}
+
+class _BookmarkNoteDialogState extends State<_BookmarkNoteDialog> {
+  late final _note = TextEditingController(text: widget.note);
+  final _form = GlobalKey<FormState>();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving || !_form.currentState!.validate()) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.save(_note.text.trim());
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = error is XmlyException ? error.message : '备注保存失败，请重试';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_saving,
+    child: AlertDialog(
+      title: const Text('书签备注'),
+      scrollable: true,
+      content: SizedBox(
+        width: 440,
+        child: Form(
+          key: _form,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(widget.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+              Text('书签位置 ${playbackTime(widget.position)}'),
+              const SizedBox(height: 12),
+              TextFormField(
+                key: const ValueKey('bookmarkNote'),
+                controller: _note,
+                enabled: !_saving,
+                autofocus: true,
+                minLines: 2,
+                maxLines: 5,
+                maxLength: 1000,
+                decoration: const InputDecoration(
+                  labelText: '备注（可选）',
+                  hintText: '例如：重点概念、例题；清空可移除备注',
+                ),
+                validator: (text) => (text ?? '').characters.length > 1000
+                    ? '备注不能超过 1000 字'
+                    : null,
+              ),
+              if (_error != null)
+                Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: Text(_saving ? '正在保存…' : '保存备注'),
+        ),
+      ],
+    ),
+  );
+}
+
 class ListeningPage extends StatefulWidget {
   const ListeningPage({
     required this.runtime,
@@ -26,8 +128,12 @@ class ListeningPage extends StatefulWidget {
   State<ListeningPage> createState() => _ListeningPageState();
 }
 
-class _ListeningPageState extends State<ListeningPage> {
+class _ListeningPageState extends State<ListeningPage>
+    with SingleTickerProviderStateMixin {
   final _search = TextEditingController();
+  late final TabController _tabs;
+  Timer? _favoriteSearchTimer;
+  bool _favoriteSearchPaused = false;
   final _busy = [false, false, false, false];
   final List<String?> _errors = [null, null, null, null];
   final _requests = [0, 0, 0, 0];
@@ -51,6 +157,8 @@ class _ListeningPageState extends State<ListeningPage> {
   @override
   void initState() {
     super.initState();
+    _tabs = TabController(length: 5, vsync: this)
+      ..addListener(_searchTabChanged);
     _accountKey = _currentKey;
     _libraryRevision = _runtime.libraryRevision;
     _accountAvailable = _signedIn;
@@ -81,6 +189,8 @@ class _ListeningPageState extends State<ListeningPage> {
   }
 
   void _resetAccount() {
+    _favoriteSearchTimer?.cancel();
+    _favoriteSearchPaused = false;
     _accountKey = _currentKey;
     _libraryRevision = _runtime.libraryRevision;
     _accountAvailable = _signedIn;
@@ -265,8 +375,83 @@ class _ListeningPageState extends State<ListeningPage> {
         setState(() => _errors[3] = _message(error));
       }
     } finally {
-      if (_valid(3, request, epoch, key)) setState(() => _busy[3] = false);
+      if (_valid(3, request, epoch, key)) {
+        setState(() => _busy[3] = false);
+        _scheduleFavoriteSearch();
+      }
     }
+  }
+
+  void _searchTabChanged() {
+    _scheduleFavoriteSearch();
+  }
+
+  void _searchChanged() {
+    setState(() => _favoriteSearchPaused = false);
+    _scheduleFavoriteSearch();
+  }
+
+  void _scheduleFavoriteSearch() {
+    _favoriteSearchTimer?.cancel();
+    if (!mounted ||
+        !_signedIn ||
+        _tabs.index != 3 ||
+        _query.isEmpty ||
+        _favoriteSearchPaused ||
+        _busy[3] ||
+        !_moreFavorites ||
+        _errors[3] != null)
+      return;
+    _favoriteSearchTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted &&
+          _tabs.index == 3 &&
+          _query.isNotEmpty &&
+          !_favoriteSearchPaused) {
+        unawaited(_loadFavorites());
+      }
+    });
+  }
+
+  Widget _favoriteSearchStatus(int matches) {
+    final complete =
+        _favoritePage > 0 && !_moreFavorites && !_busy[3] && _errors[3] == null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        children: [
+          Text(
+            complete
+                ? '已搜索全部 ${_favorites.length} 条收藏，匹配 $matches 条'
+                : '${_favoriteSearchPaused || _errors[3] != null ? '搜索已暂停' : '正在搜索'}：已检索 ${_favorites.length} 条收藏，匹配 $matches 条，尚未检索完整列表',
+          ),
+          if (!complete)
+            TextButton(
+              onPressed: () {
+                final failed = _errors[3] != null;
+                setState(() {
+                  _favoriteSearchPaused =
+                      !_favoriteSearchPaused && _errors[3] == null;
+                  if (!_favoriteSearchPaused) _errors[3] = null;
+                });
+                if (!_favoriteSearchPaused && failed && !_busy[3]) {
+                  unawaited(
+                    _loadFavorites(
+                      reset: !_moreFavorites || _favoritePage == 0,
+                    ),
+                  );
+                } else {
+                  _scheduleFavoriteSearch();
+                }
+              },
+              child: Text(
+                _favoriteSearchPaused || _errors[3] != null ? '继续搜索' : '暂停搜索',
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   bool _active(int epoch, String key, String identity) =>
@@ -348,6 +533,48 @@ class _ListeningPageState extends State<ListeningPage> {
     );
   }
 
+  Future<void> _editBookmarkNote(
+    int index,
+    Map record,
+    int epoch,
+    String key,
+    String identity,
+  ) async {
+    if (_acting || !_active(epoch, key, identity)) return;
+    final track = Track.fromJson(xmlyMap(record['track']));
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _BookmarkNoteDialog(
+        title: track.title.isEmpty ? track.id : track.title,
+        position: record['position'] is num
+            ? (record['position'] as num).toDouble()
+            : 0,
+        note: record['note'] is String ? record['note'] as String : '',
+        save: (note) async {
+          await _runtime.storage.transaction((state) {
+            if (!_active(epoch, key, identity)) {
+              throw const XmlyException('account_changed', '账号已变化，请重新打开书签');
+            }
+            final library = (state['library'] as Map)[identity] as Map?;
+            final bookmarks = library?['bookmarks'] as List? ?? const [];
+            if (index >= bookmarks.length ||
+                jsonEncode(bookmarks[index]) != jsonEncode(record)) {
+              throw const XmlyException('stale_bookmark', '书签列表已变化，请重新选择');
+            }
+            final updated = Map<String, dynamic>.from(bookmarks[index] as Map);
+            if (note.isEmpty) {
+              updated.remove('note');
+            } else {
+              updated['note'] = note;
+            }
+            bookmarks[index] = updated;
+          });
+          _runtime.changed();
+        },
+      ),
+    );
+  }
+
   static String _message(Object error) =>
       error is XmlyException ? error.message : '加载失败，请重试';
 
@@ -377,9 +604,9 @@ class _ListeningPageState extends State<ListeningPage> {
     ),
   );
 
-  bool _matches(Track track) =>
+  bool _matches(Track track, {String extra = ''}) =>
       _query.isEmpty ||
-      '${track.title} ${track.album} ${track.artist} ${track.id}'
+      '${track.title} ${track.album} ${track.artist} ${track.id} $extra'
           .toLowerCase()
           .contains(_query);
 
@@ -448,6 +675,8 @@ class _ListeningPageState extends State<ListeningPage> {
     String? removeLabel,
     VoidCallback? remove,
     String positionLabel = '已听',
+    String note = '',
+    VoidCallback? editNote,
   }) {
     final compact = MediaQuery.sizeOf(context).width < 320;
     final epoch = _accountEpoch, key = _currentKey;
@@ -466,6 +695,8 @@ class _ListeningPageState extends State<ListeningPage> {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (note.isNotEmpty)
+            Text(note, maxLines: 3, overflow: TextOverflow.ellipsis),
           if (track.album.isNotEmpty) AdaptiveText(track.album),
           AdaptiveText(
             position > 0
@@ -496,6 +727,9 @@ class _ListeningPageState extends State<ListeningPage> {
             case 'queue':
               _act(() => _runtime.player.addToQueue(track));
               break;
+            case 'next':
+              _act(() => _runtime.player.playNext(track));
+              break;
             case 'download':
               _act(() => widget.onDownload([track]));
               break;
@@ -505,15 +739,24 @@ class _ListeningPageState extends State<ListeningPage> {
             case 'remove':
               remove?.call();
               break;
+            case 'note':
+              editNote?.call();
+              break;
           }
         },
         itemBuilder: (_) => [
           if (play != null)
             const PopupMenuItem(value: 'play', child: Text('播放')),
           const PopupMenuItem(value: 'queue', child: Text('加入播放队列')),
+          const PopupMenuItem(value: 'next', child: Text('下一集播放')),
           const PopupMenuItem(value: 'download', child: Text('下载')),
           if (track.albumId.isNotEmpty)
             const PopupMenuItem(value: 'album', child: Text('查看专辑')),
+          if (editNote != null)
+            PopupMenuItem(
+              value: 'note',
+              child: Text(note.isEmpty ? '添加备注' : '编辑备注'),
+            ),
           if (remove != null)
             PopupMenuItem(value: 'remove', child: Text(removeLabel ?? '移除')),
         ],
@@ -748,7 +991,13 @@ class _ListeningPageState extends State<ListeningPage> {
         itemCount: items.length + 2 + (_moreFavorites ? 1 : 0),
         itemBuilder: (_, index) {
           if (index == 0)
-            return _sectionState(3, () => _loadFavorites(reset: true));
+            return Column(
+              children: [
+                _sectionState(3, () => _loadFavorites(reset: true)),
+                if (_signedIn && _query.isNotEmpty)
+                  _favoriteSearchStatus(items.length),
+              ],
+            );
           if (index == 1) {
             return items.isEmpty
                 ? _empty(
@@ -756,7 +1005,12 @@ class _ListeningPageState extends State<ListeningPage> {
                         ? '登录后查看收藏'
                         : _query.isEmpty
                         ? '暂无收藏'
-                        : '没有匹配的收藏',
+                        : _moreFavorites ||
+                              _busy[3] ||
+                              _errors[3] != null ||
+                              _favoritePage == 0
+                        ? '已加载收藏中没有匹配项'
+                        : '全部收藏中没有匹配项',
                   )
                 : const SizedBox.shrink();
           }
@@ -807,7 +1061,8 @@ class _ListeningPageState extends State<ListeningPage> {
       if (record is! Map || record['track'] is! Map) continue;
       try {
         final track = Track.fromJson(xmlyMap(record['track']));
-        if (_matches(track)) rows.add(MapEntry(i, record));
+        final note = record['note'] is String ? record['note'] as String : '';
+        if (_matches(track, extra: note)) rows.add(MapEntry(i, record));
       } on XmlyException {
         continue;
       } on FormatException {
@@ -828,8 +1083,15 @@ class _ListeningPageState extends State<ListeningPage> {
           track,
           position: position,
           positionLabel: '书签位置',
+          note: row.value['note'] is String ? row.value['note'] as String : '',
+          editNote: () =>
+              _editBookmarkNote(row.key, row.value, epoch, key, identity),
           play: () => _act(
-            () => _runtime.player.playTrack(track, resumePosition: position),
+            () => _runtime.player.playTrack(
+              track,
+              resumePosition: position,
+              manualPosition: true,
+            ),
           ),
           removeLabel: '删除书签',
           remove: () =>
@@ -861,7 +1123,7 @@ class _ListeningPageState extends State<ListeningPage> {
                     Expanded(
                       child: TextField(
                         controller: _search,
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (_) => _searchChanged(),
                         decoration: const InputDecoration(
                           hintText: '搜索更新、订阅、历史、收藏和书签',
                           prefixIcon: Icon(Icons.search),
@@ -882,11 +1144,12 @@ class _ListeningPageState extends State<ListeningPage> {
                 ),
               ),
             ),
-            const SliverToBoxAdapter(
+            SliverToBoxAdapter(
               child: TabBar(
+                controller: _tabs,
                 isScrollable: true,
                 tabAlignment: TabAlignment.start,
-                tabs: [
+                tabs: const [
                   Tab(text: '听更新'),
                   Tab(text: '订阅'),
                   Tab(text: '历史'),
@@ -899,6 +1162,7 @@ class _ListeningPageState extends State<ListeningPage> {
               const SliverToBoxAdapter(child: LinearProgressIndicator()),
           ],
           body: TabBarView(
+            controller: _tabs,
             children: [
               _updatesTab(),
               _subscriptionsTab(),
@@ -915,6 +1179,9 @@ class _ListeningPageState extends State<ListeningPage> {
   @override
   void dispose() {
     ++_accountEpoch;
+    _favoriteSearchTimer?.cancel();
+    _tabs.removeListener(_searchTabChanged);
+    _tabs.dispose();
     _runtime.removeListener(_runtimeChanged);
     _search.dispose();
     super.dispose();
