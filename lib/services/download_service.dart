@@ -1751,6 +1751,8 @@ class DownloadService {
           return '下载目录不可写，请重新选择';
         case 'download_directory':
           return '下载目录不存在或无效，请重新选择';
+        case 'path_too_long':
+          return '下载目录过长，请选择较短的根目录，源缓存已保留';
         case 'disk_space':
           return '下载空间不足，请释放空间或更换目录，源缓存已保留';
         case 'disk_space_unavailable':
