@@ -542,11 +542,15 @@ class PlayerService {
     final client = _historyClient;
     if (!_syncHistory || client == null) return 0;
     try {
-      final cloud = await XmlyHistory(
-        client,
-        clock: _clock,
-      ).progress(albumId: track.albumId, trackId: track.id);
+      final cloud = await XmlyHistory(client, clock: _clock).progress(
+        albumId: track.albumId,
+        trackId: track.id,
+        timeout: const Duration(seconds: 2),
+      );
       if (cloud != null) {
+        if (cloud['incomplete'] == true) {
+          warning = '云历史查询较慢，已使用本次查到的最新进度';
+        }
         return (cloud['position'] as num).toDouble();
       }
     } catch (_) {
