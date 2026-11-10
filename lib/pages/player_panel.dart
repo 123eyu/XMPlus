@@ -389,11 +389,25 @@ class _PlayerPanelState extends State<PlayerPanel> {
                                     ),
                               onTap: () =>
                                   run(() => player.playQueueItem(index)),
-                              trailing: IconButton(
-                                tooltip: '移出队列',
-                                icon: const Icon(Icons.close),
-                                onPressed: () =>
-                                    run(() => player.removeQueueItem(index)),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    tooltip: '下一集播放',
+                                    icon: const Icon(Icons.playlist_play),
+                                    onPressed: index == player.cursor
+                                        ? null
+                                        : () =>
+                                              run(() => player.playNext(track)),
+                                  ),
+                                  IconButton(
+                                    tooltip: '移出队列',
+                                    icon: const Icon(Icons.close),
+                                    onPressed: () => run(
+                                      () => player.removeQueueItem(index),
+                                    ),
+                                  ),
+                                ],
                               ),
                             );
                           },
