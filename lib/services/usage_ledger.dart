@@ -255,7 +255,7 @@ class UsageLedger {
     if (!userConfirmed) {
       throw const XmlyException('confirmation_required', '请先确认本首扣时及不可自动退款说明');
     }
-    await _settleLocked(identity);
+    await _settleLocked(identity, pause: false);
     final quota = await clientFor(identity).queryQuota();
     if ((expectedSeconds != null && expectedSeconds != seconds) ||
         (expectedBalance != null &&
@@ -416,6 +416,11 @@ class UsageLedger {
       _watch = null;
     });
   });
+
+  /// Previewing or prepaying a download does not pause actual playback. Keep
+  /// sampling the watch across network waits, as periodic settlement does.
+  Future<void> settleForDownload(String identity) =>
+      _lock(identity).synchronized(() => _settleLocked(identity, pause: false));
 
   /// Callers pause the player before this account-switch/exit boundary.
   Future<void> settle([String? identity]) async {
