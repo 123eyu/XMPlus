@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../api/xmly_client.dart';
 import '../api/xmly_experience.dart';
@@ -40,6 +41,10 @@ class PlayerPanel extends StatefulWidget {
 }
 
 class _PlayerPanelState extends State<PlayerPanel> {
+  final _keyboardFocus = FocusNode(
+    debugLabel: 'Player shortcuts',
+    skipTraversal: true,
+  );
   bool _busy = false;
   double? _dragPosition;
   int? _dragEpoch;
@@ -79,8 +84,59 @@ class _PlayerPanelState extends State<PlayerPanel> {
   void dispose() {
     _runtime.removeListener(_favoriteContextChanged);
     _favoriteRequest++;
+    _keyboardFocus.dispose();
     super.dispose();
   }
+
+  bool get _desktopKeyboard => switch (Theme.of(context).platform) {
+    TargetPlatform.windows ||
+    TargetPlatform.macOS ||
+    TargetPlatform.linux => true,
+    _ => false,
+  };
+
+  String _keyHint(String label, String key) =>
+      _desktopKeyboard ? '$label（$key）' : label;
+
+  KeyEventResult _onPlayerKey(FocusNode node, KeyEvent event) {
+    // Descendant controls keep their own activation, editing and navigation.
+    // Also exclude routes above this player, including non-focusing dialogs.
+    if (!node.hasPrimaryFocus || ModalRoute.of(context)?.isCurrent == false) {
+      return KeyEventResult.ignored;
+    }
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isControlPressed ||
+        keyboard.isAltPressed ||
+        keyboard.isMetaPressed ||
+        keyboard.isShiftPressed) {
+      return KeyEventResult.ignored;
+    }
+    final player = _runtime.player;
+    if (player.current == null) return KeyEventResult.ignored;
+    final command = switch (event.logicalKey) {
+      LogicalKeyboardKey.space => player.playing ? player.pause : player.resume,
+      LogicalKeyboardKey.arrowLeft => player.seekBackward,
+      LogicalKeyboardKey.arrowRight => player.seekForward,
+      _ => null,
+    };
+    if (command == null) return KeyEventResult.ignored;
+    // One command per press; repeats must not toggle or enqueue more seeks.
+    if (event is KeyDownEvent && !_busy) unawaited(_act(command));
+    return KeyEventResult.handled;
+  }
+
+  Widget _withKeyboard(Widget child) => !_desktopKeyboard
+      ? child
+      : Focus(
+          focusNode: _keyboardFocus,
+          autofocus: true,
+          onKeyEvent: _onPlayerKey,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: _keyboardFocus.requestFocus,
+            child: child,
+          ),
+        );
 
   void _favoriteContextChanged() {
     if (!widget.expanded || !mounted) return;
@@ -557,7 +613,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
           children: [
             if (!compact)
               _button(
-                '后退 ${settings.seekBackwardSeconds} 秒',
+                _keyHint('后退 ${settings.seekBackwardSeconds} 秒', '←'),
                 Icons.replay_rounded,
                 track == null ? null : player.seekBackward,
                 size: 24,
@@ -569,7 +625,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
               size: 34,
             ),
             Tooltip(
-              message: player.playing ? '暂停' : '播放',
+              message: _keyHint(player.playing ? '暂停' : '播放', '空格'),
               child: SizedBox.square(
                 dimension: compact ? 64 : 76,
                 child: FilledButton(
@@ -603,7 +659,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
             ),
             if (!compact)
               _button(
-                '前进 ${settings.seekForwardSeconds} 秒',
+                _keyHint('前进 ${settings.seekForwardSeconds} 秒', '→'),
                 Icons.forward_rounded,
                 track == null ? null : player.seekForward,
                 size: 24,
@@ -663,7 +719,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
             ),
         ],
       );
-      return Scaffold(
+      final page = Scaffold(
         appBar: AppBar(
           leading: IconButton(
             tooltip: '收起播放器',
@@ -701,12 +757,16 @@ class _PlayerPanelState extends State<PlayerPanel> {
                   PopupMenuItem(
                     value: 'backward',
                     enabled: track != null && !_busy,
-                    child: Text('后退 ${settings.seekBackwardSeconds} 秒'),
+                    child: Text(
+                      _keyHint('后退 ${settings.seekBackwardSeconds} 秒', '←'),
+                    ),
                   ),
                   PopupMenuItem(
                     value: 'forward',
                     enabled: track != null && !_busy,
-                    child: Text('前进 ${settings.seekForwardSeconds} 秒'),
+                    child: Text(
+                      _keyHint('前进 ${settings.seekForwardSeconds} 秒', '→'),
+                    ),
                   ),
                 ],
                 if (track != null &&
@@ -798,6 +858,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
           ),
         ),
       );
+      return _withKeyboard(page);
     },
   );
 }
