@@ -1787,8 +1787,9 @@ class PlayerService {
       index = _queue.indexWhere((track) => track.id == trackId);
       if (index < 0) return;
       final next = List<Track>.from(_queue)..removeAt(index);
+      final removedCurrent = index == cursor;
       var selected = cursor;
-      if (index == cursor) {
+      if (removedCurrent) {
         await _stopSource();
         selected = index
             .clamp(0, next.length - 1 < 0 ? 0 : next.length - 1)
@@ -1801,6 +1802,10 @@ class PlayerService {
       _queue = next;
       cursor = selected;
       sourceAlbumId = '';
+      if (removedCurrent) {
+        position = 0;
+        duration = current?.duration ?? 0;
+      }
       ++generation;
       _notify();
     });
