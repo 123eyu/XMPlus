@@ -1172,6 +1172,7 @@ class PlayerService {
       _sleepStopped = false;
       _manualPaused = false;
       await _driver.play();
+      error = null;
       _notify();
     });
   });
