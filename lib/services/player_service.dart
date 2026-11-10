@@ -1210,6 +1210,7 @@ class PlayerService {
         request,
         resumePosition: position,
         manualReplay: _manualChapterPosition || _startSeekPosition != null,
+        startPlaying: playing,
         localTaskId: task.id,
       ),
     );
