@@ -614,8 +614,10 @@ class UsageLedger {
         (online && (operation['seconds'] as int) > debt(identity))) {
       throw const XmlyException('invalid_ledger', '待核对扣时记录无效，请保留资料');
     }
-    // Refresh for the reconciliation screen, but never attribute its changes.
-    await queryClient(identity).queryQuota();
+    // The screen already tried to display the balance. A human decision made
+    // in the official app must remain saveable when that query is unavailable.
+    // Validate the mounted identity without making another network request.
+    queryClient(identity);
     await _finish(
       identity,
       operation,

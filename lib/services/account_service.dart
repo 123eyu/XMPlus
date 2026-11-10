@@ -170,15 +170,22 @@ class AccountService {
     String? recoveryIdentity,
   }) => _accounts.synchronized(() async {
     _ensureLoaded();
-    final recovering = recoveryIdentity != null;
-    if (recovering &&
+    if (recoveryIdentity != null &&
         (credentials.identity != recoveryIdentity ||
-            !_missingCredentials.contains(recoveryIdentity))) {
+            (!_missingCredentials.contains(recoveryIdentity) &&
+                !_clients.containsKey(recoveryIdentity)))) {
       throw const AccountException(
         'credential_mismatch',
-        '请导入缺失账号的 Cookie，并保留原设备 ID',
+        '请导入原账号的 Cookie，并保留原设备 ID',
       );
     }
+    // A same-identity renewal that keeps both selections is not an account
+    // switch. Explicit recovery also permits renewing a backup account.
+    final recovering =
+        recoveryIdentity != null ||
+        (_clients.containsKey(credentials.identity) &&
+            storage.state['activeAccountId'] == credentials.identity &&
+            (!makePrimary || primaryAccountId == credentials.identity));
     // A candidate is never mounted during validation.
     final candidate = XmlyClient(credentials: credentials);
     var committed = false;
@@ -195,18 +202,18 @@ class AccountService {
         // can use the verified token revision while the old token expires.
         _settlementClients[credentials.identity] = candidate;
       }
-      if (recovering) {
-        if (quiesceForRestore == null) {
-          throw const AccountException(
-            'integration_required',
-            '请先连接账号恢复的任务暂停及听时保存服务',
-          );
-        }
+      if (recovering && quiesceForRestore != null) {
         // Repair only this identity's credential. Unknown operations remain
         // blocked and reachable for reconciliation after authentication.
         _admissionPaused = true;
         await quiesceForRestore!();
       } else {
+        if (recovering && _containsUnknown(storage.state['accounts'])) {
+          throw const AccountException(
+            'integration_required',
+            '请先连接账号恢复的任务暂停及听时保存服务',
+          );
+        }
         await _prepareChange();
       }
       final identity = credentials.identity;
