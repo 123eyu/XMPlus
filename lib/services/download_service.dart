@@ -1514,8 +1514,17 @@ class DownloadService {
               )) {
         throw const XmlyException('usage_uncertain', '请先核对本集未确认的听时扣除');
       }
+      final previous = _receipt(current.accountIdentity, id, current.track.id);
+      final cached = previous == null
+          ? null
+          : await client.cachedPrepaidAudio(
+              current.track.id,
+              quality:
+                  (current.settings['download'] as Map?)?['quality'] as String?,
+            );
+      await control.checkpoint();
       int? expectedBalance = current.expectedBalance;
-      if (current.accountIdentity != 'anonymous') {
+      if (cached == null && current.accountIdentity != 'anonymous') {
         final claimed = await beforeAdmission?.call(
           current.accountIdentity,
           client,
@@ -1542,14 +1551,16 @@ class DownloadService {
         }
         await control.checkpoint();
       }
-      final audio = await client.resolve(
-        current.track.id,
-        quality: (current.settings['download'] as Map?)?['quality'] as String?,
-      );
+      final audio =
+          cached ??
+          await client.resolve(
+            current.track.id,
+            quality:
+                (current.settings['download'] as Map?)?['quality'] as String?,
+          );
       _identity(audio, current.accountIdentity, current.track.id);
       await control.checkpoint();
       final reward = _reward(audio);
-      final previous = _receipt(current.accountIdentity, id, current.track.id);
       if (reward &&
           previous == null &&
           ledger.isBlocked(current.accountIdentity)) {
