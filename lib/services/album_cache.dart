@@ -106,7 +106,7 @@ class AlbumCache extends ChangeNotifier {
                 for (final raw in value['tracks'] as List) {
                   if (raw is! Map<String, dynamic>)
                     throw const FormatException();
-                  final track = _trackMetadata(raw, id);
+                  final track = _trackMetadata(raw, album);
                   if (tracks.containsKey(track.id))
                     throw const FormatException();
                   tracks[track.id] = track;
@@ -187,7 +187,7 @@ class AlbumCache extends ChangeNotifier {
       throw const FormatException('Invalid album page');
     final album = _album(page.album.toJson());
     final observed = <Track>[
-      for (final track in page.tracks) _trackMetadata(track.toJson(), album.id),
+      for (final track in page.tracks) _trackMetadata(track.toJson(), album),
     ];
     var coverUri = page.album.coverUrl;
     for (final track in page.tracks) {
@@ -225,14 +225,14 @@ class AlbumCache extends ChangeNotifier {
       );
       final tracks = <String, Track>{
         for (final track in previous?.tracks ?? const <Track>[])
-          track.id: track,
+          track.id: _trackMetadata(track.toJson(), mergedAlbum),
       };
       for (final track in observed) {
         final oldPosition = tracks[track.id]?.officialPosition;
         tracks[track.id] = track.officialPosition == null && oldPosition != null
             ? Track.fromJson({
                 ...track.toJson(),
-                'raw': {'officialPosition': oldPosition},
+                'raw': {...track.raw, 'officialPosition': oldPosition},
               })
             : track;
       }
@@ -298,13 +298,13 @@ class AlbumCache extends ChangeNotifier {
     });
   }
 
-  static Track _trackMetadata(Map<String, dynamic> value, String albumId) {
+  static Track _trackMetadata(Map<String, dynamic> value, Album album) {
     for (final key in ['id', 'title', 'artist', 'album', 'album_id', 'intro']) {
       if (value[key] is! String)
         throw const FormatException('Invalid track metadata');
     }
     final duration = value['duration'];
-    if (value['album_id'] != albumId ||
+    if (value['album_id'] != album.id ||
         duration is! num ||
         !duration.isFinite ||
         duration < 0 ||
@@ -327,7 +327,10 @@ class AlbumCache extends ChangeNotifier {
       ...value,
       'cover_url': _publicCover(value['cover_url']),
       'is_authorized': null,
-      'raw': {if (position != null) 'officialPosition': position},
+      'raw': {
+        if (position != null) 'officialPosition': position,
+        if (album.total > 0) 'totalCount': album.total,
+      },
     });
   }
 
