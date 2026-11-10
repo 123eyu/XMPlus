@@ -47,6 +47,8 @@ class DownloadControl {
   bool _paused = false, _cancelled = false;
   bool get paused => _paused;
   bool get cancelled => _cancelled;
+  /// Allows backends to interrupt waits that do not reach a checkpoint.
+  Future<void> get stopped => _stopped.future;
   Future<void> checkpoint() async {
     if (_paused || _cancelled) throw const DownloadStopped();
   }
@@ -207,13 +209,16 @@ class DownloadService {
   final Map<String, DownloadAlbumJob> _albums = {};
   final Set<String> _albumWorkers = {};
   List<DownloadAlbumJob> get albumJobs => List.unmodifiable(_albums.values);
+  // Continue commands must observe the final snapshot after stopped workers drain.
+  final Lock _queueCommands = Lock();
   final Lock _updates = Lock();
   final Map<String, Lock> _admissionOrder = {};
   final StreamController<void> _changes = StreamController<void>.broadcast();
   final Map<String, DownloadTask> _tasks = {};
   final Map<String, ({DownloadControl control, Future<void> done})> _workers =
       {};
-  final Set<String> _stopping = {};
+  final Map<String, int> _stopping = {};
+  final Map<String, int> _stoppingAlbums = {};
   final Map<String, bool Function()> _automaticGuards = {};
   bool _loaded = false, _closed = false, _suspended = false;
   String? _priority;
@@ -456,27 +461,13 @@ class DownloadService {
     throw failure!;
   }
 
-  Future<void> pauseAlbum(String id) async {
-    final job = _albums[id]!;
-    job.state = 'paused';
-    await _updates.synchronized(() => _save(_tasks));
-    for (final taskId in job.taskIds) {
-      if (task(taskId).active) await pause(taskId);
-    }
-    _notify();
-  }
+  Future<void> pauseAlbum(String id) =>
+      _stopTasks(_albums[id]!.taskIds, cancel: false, albumId: id);
 
-  Future<void> cancelAlbum(String id) async {
-    final job = _albums[id]!;
-    job.state = 'cancelled';
-    await _updates.synchronized(() => _save(_tasks));
-    for (final taskId in job.taskIds) {
-      if (task(taskId).state != DownloadState.completed) await cancel(taskId);
-    }
-    _notify();
-  }
+  Future<void> cancelAlbum(String id) =>
+      _stopTasks(_albums[id]!.taskIds, cancel: true, albumId: id);
 
-  Future<void> resumeAlbum(String id) async {
+  Future<void> resumeAlbum(String id) => _queueCommands.synchronized(() async {
     _ensureOpen();
     final job = _albums[id]!;
     if (job.state == 'completed' || job.state == 'cancelled') return;
@@ -486,16 +477,17 @@ class DownloadService {
     for (final taskId in job.taskIds) {
       final item = task(taskId);
       if (item.state == DownloadState.paused && !item.needsConfirmation)
-        await resume(taskId);
+        await _resume(taskId);
     }
     _suspended = false;
     _notify();
     _pump();
-  }
+  });
 
   void _pumpAlbums() {
     for (final job in _albums.values.toList()) {
       if (job.state != 'running' ||
+          _stoppingAlbums.containsKey(job.id) ||
           _albumWorkers.contains(job.id) ||
           job.taskIds.any(
             (id) =>
@@ -515,7 +507,10 @@ class DownloadService {
 
   Future<void> _advanceAlbum(DownloadAlbumJob job) async {
     bool allowed() =>
-        !_closed && !_suspended && _albums[job.id]?.state == 'running';
+        !_closed &&
+        !_suspended &&
+        !_stoppingAlbums.containsKey(job.id) &&
+        _albums[job.id]?.state == 'running';
     try {
       if (job.page * xmlyAlbumPageSize >= job.total) {
         job.state = 'completed';
@@ -823,7 +818,7 @@ class DownloadService {
     await _checkRoot(batch.rootDirectory, batch.settings);
     _option(batch.settings, 'parallelism', 3, 1, 6);
     await _reconcileOutputs(batch.items.map((item) => item.track.id).toSet());
-    Future<void> admit(XmlyClient _) => _updates.synchronized(() async {
+    Future<void> persist() => _updates.synchronized(() async {
       _ensureOpen();
       if (allowed != null && !allowed()) throw const DownloadStopped();
       final next = Map<String, DownloadTask>.from(_tasks);
@@ -936,6 +931,9 @@ class DownloadService {
       _suspended = false;
       _notify();
     });
+    // Account changes can hold their mutex while pausing the queue. Acquire the
+    // queue command lock only after admission has entered that account mutex.
+    Future<void> admit(XmlyClient _) => _queueCommands.synchronized(persist);
     if (batch.accountIdentity == 'anonymous') {
       await admit(anonymous);
     } else {
@@ -946,43 +944,93 @@ class DownloadService {
 
   Future<void> pause(String id) => _stop(id, cancel: false);
   Future<void> cancel(String id) => _stop(id, cancel: true);
-  Future<void> _stop(String id, {required bool cancel}) async {
+  Future<void> _stop(String id, {required bool cancel}) =>
+      _stopTasks([id], cancel: cancel);
+
+  Future<void> _stopTasks(
+    Iterable<String> ids, {
+    required bool cancel,
+    String? albumId,
+  }) async {
     _ensureOpen();
-    _stopping.add(id);
-    try {
-      final worker = _workers[id];
-      worker?.control._stop(cancel: cancel);
-      await _change(
-        id,
-        (item) => item.state == DownloadState.completed
-            ? item
-            : item.copyWith(
-                state: cancel ? DownloadState.cancelled : DownloadState.paused,
-                bytesPerSecond: 0,
-                retryAt: null,
-                processingFailed:
-                    item.processingFailed ||
-                    item.state == DownloadState.processing,
-              ),
-      );
-      await worker?.done;
-      await _change(
-        id,
-        (item) => item.state == DownloadState.completed
-            ? item
-            : item.copyWith(
-                state: cancel ? DownloadState.cancelled : DownloadState.paused,
-                bytesPerSecond: 0,
-                retryAt: null,
-                processingFailed:
-                    item.processingFailed ||
-                    item.state == DownloadState.processing,
-              ),
-      );
-    } finally {
-      _stopping.remove(id);
+    final state = cancel ? DownloadState.cancelled : DownloadState.paused;
+    final targets = <String>{};
+    void signal(Iterable<String> values) {
+      for (final id in values) {
+        if (!targets.add(id)) continue;
+        _stopping.update(id, (count) => count + 1, ifAbsent: () => 1);
+        _workers[id]?.control._stop(cancel: cancel);
+      }
     }
-    _pump();
+
+    if (albumId != null) {
+      _stoppingAlbums.update(albumId, (count) => count + 1, ifAbsent: () => 1);
+      _albums[albumId]!.state = state.name;
+    }
+    // Notify every producer before waiting. Pending album stops also cover a
+    // page whose admission is still publishing its newly persisted tasks.
+    signal(ids);
+    await _queueCommands.synchronized(() async {
+      try {
+        if (albumId != null) signal(_albums[albumId]!.taskIds);
+        await Future.wait([
+          for (final id in targets)
+            if (_workers[id] case final worker?) worker.done,
+        ]);
+        await _updates.synchronized(() async {
+          final stopped = <String, DownloadTask>{};
+          for (final id in targets) {
+            final item = task(id);
+            if (item.state == DownloadState.completed ||
+                albumId != null && !cancel && !item.active) {
+              continue;
+            }
+            stopped[id] = item.copyWith(
+              state: state,
+              bytesPerSecond: 0,
+              retryAt: null,
+              processingFailed:
+                  item.processingFailed ||
+                  item.state == DownloadState.processing,
+            );
+          }
+          final album = albumId == null ? null : _albums[albumId]!;
+          if (album != null) album.state = state.name;
+          try {
+            await _save({..._tasks, ...stopped});
+          } catch (_) {
+            final message = cancel
+                ? '取消状态保存失败，请检查资料目录后重新打开应用'
+                : '暂停状态保存失败，请检查资料目录后重新打开应用';
+            stopped.updateAll((id, item) => item.copyWith(error: message));
+            if (album != null) album.error = message;
+            rethrow;
+          } finally {
+            _tasks.addAll(stopped);
+            _notify();
+          }
+        });
+      } finally {
+        for (final id in targets) {
+          final remaining = _stopping[id]! - 1;
+          if (remaining == 0) {
+            _stopping.remove(id);
+          } else {
+            _stopping[id] = remaining;
+          }
+        }
+        if (albumId != null) {
+          final remaining = _stoppingAlbums[albumId]! - 1;
+          if (remaining == 0) {
+            _stoppingAlbums.remove(albumId);
+          } else {
+            _stoppingAlbums[albumId] = remaining;
+          }
+        }
+        // Finish the stop before the next continue command can start.
+        _pump();
+      }
+    });
   }
 
   static Future<bool> _outputExists(DownloadTask item) async =>
@@ -1037,10 +1085,18 @@ class DownloadService {
         _notify();
       });
 
-  Future<void> resume(String id) async {
+  Future<void> resume(String id) =>
+      _queueCommands.synchronized(() => _resume(id));
+
+  Future<void> _resume(String id) async {
     _ensureOpen();
     final worker = _workers[id];
-    if (worker != null) await worker.done;
+    if (worker != null) {
+      // An active worker needs no resume. Do not hold up a later pause command.
+      if (!worker.control.paused && !worker.control.cancelled) return;
+      await worker.done;
+    }
+    _ensureOpen();
     final item = task(id);
     if (item.state == DownloadState.completed || item.active) return;
     if (!item.processingFailed &&
@@ -1160,43 +1216,49 @@ class DownloadService {
     });
   }
 
-  Future<void> pauseAll() async {
+  Future<void> pauseAll() => _queueCommands.synchronized(() async {
     _suspended = true;
     for (final job in _albums.values) {
       if (job.state == 'running') job.state = 'paused';
     }
-    await _updates.synchronized(() => _save(_tasks));
-    for (final worker in _workers.values) {
+    final workers = _workers.values.toList();
+    for (final worker in workers) {
       worker.control._stop(cancel: false);
     }
-    for (final item in tasks.where((item) => item.active)) {
-      await _change(
-        item.id,
-        (value) => value.copyWith(
+    // Stopping must not depend on a writable state directory. Drain producers
+    // before taking the final snapshot so late worker updates cannot undo it.
+    await Future.wait(workers.map((worker) => worker.done));
+    await _updates.synchronized(() async {
+      final next = Map<String, DownloadTask>.from(_tasks);
+      final paused = tasks.where((item) => item.active).toList();
+      for (final item in paused) {
+        next[item.id] = item.copyWith(
           state: DownloadState.paused,
           bytesPerSecond: 0,
           retryAt: null,
           processingFailed:
-              value.processingFailed || value.state == DownloadState.processing,
-        ),
-      );
-    }
-    await Future.wait(_workers.values.map((worker) => worker.done).toList());
-    for (final item in tasks.where((item) => item.active)) {
-      await _change(
-        item.id,
-        (value) => value.copyWith(
-          state: DownloadState.paused,
-          bytesPerSecond: 0,
-          retryAt: null,
-          processingFailed:
-              value.processingFailed || value.state == DownloadState.processing,
-        ),
-      );
-    }
-  }
+              item.processingFailed || item.state == DownloadState.processing,
+        );
+      }
+      try {
+        await _save(next);
+      } catch (_) {
+        for (final item in paused) {
+          next[item.id] = next[item.id]!.copyWith(
+            error: '暂停状态保存失败，请检查资料目录后重新打开应用',
+          );
+        }
+        rethrow;
+      } finally {
+        _tasks
+          ..clear()
+          ..addAll(next);
+        _notify();
+      }
+    });
+  });
 
-  Future<void> resumeAll() async {
+  Future<void> resumeAll() => _queueCommands.synchronized(() async {
     _ensureOpen();
     await Future.wait(
       _workers.values
@@ -1226,7 +1288,7 @@ class DownloadService {
     }
     await _updates.synchronized(() => _save(_tasks));
     _pump();
-  }
+  });
 
   void prioritize(String? taskId) {
     if (taskId != null) task(taskId);
@@ -1247,10 +1309,14 @@ class DownloadService {
       6,
     );
     _pumpAlbums();
+    final stoppedAlbumTasks = {
+      for (final id in _stoppingAlbums.keys) ..._albums[id]!.taskIds,
+    };
     for (final item in tasks.where(
       (item) =>
           item.state == DownloadState.queued &&
-          !_stopping.contains(item.id) &&
+          !_stopping.containsKey(item.id) &&
+          !stoppedAlbumTasks.contains(item.id) &&
           !(_automaticGuards[item.id]?.call() ?? true),
     )) {
       unawaited(
@@ -1268,7 +1334,8 @@ class DownloadService {
           (item) =>
               item.state == DownloadState.queued &&
               !_workers.containsKey(item.id) &&
-              !_stopping.contains(item.id) &&
+              !_stopping.containsKey(item.id) &&
+              !stoppedAlbumTasks.contains(item.id) &&
               (_automaticGuards[item.id]?.call() ?? true),
         )
         .toList();
@@ -1329,13 +1396,7 @@ class DownloadService {
             await control.processing();
             path = await process(task(id), control);
           } else {
-            final audio = await _admissionOrder
-                .putIfAbsent(task(id).accountIdentity, Lock.new)
-                .synchronized(() async {
-                  await control.checkpoint();
-                  await _checkRoot(task(id).rootDirectory, task(id).settings);
-                  return _admit(id, control);
-                });
+            final audio = await _orderedAdmission(id, control);
             await control.checkpoint();
             await _change(
               id,
@@ -1373,7 +1434,7 @@ class DownloadService {
         }
       }
     } on DownloadStopped {
-      // The caller persisted pause/cancel before waiting for this worker to drain.
+      // The caller owns the stopped state and waits for this worker to drain.
     } catch (error) {
       try {
         final changed =
@@ -1469,6 +1530,34 @@ class DownloadService {
       return true;
     }
     return false;
+  }
+
+  Future<ResolvedAudio> _orderedAdmission(String id, DownloadControl control) {
+    // A stopped worker must not wait for another task's admission while holding
+    // the command lock. Once entered, keep waiting for any debit to be journaled.
+    var entered = false;
+    final result = Completer<ResolvedAudio>();
+    final admission = _admissionOrder
+        .putIfAbsent(task(id).accountIdentity, Lock.new)
+        .synchronized(() async {
+          entered = true;
+          await control.checkpoint();
+          await _checkRoot(task(id).rootDirectory, task(id).settings);
+          return _admit(id, control);
+        });
+    admission.then(
+      (audio) {
+        if (!result.isCompleted) result.complete(audio);
+      },
+      onError: (Object error, StackTrace stack) {
+        if (!result.isCompleted) result.completeError(error, stack);
+      },
+    );
+    control.stopped.then((_) {
+      if (!entered && !result.isCompleted)
+        result.completeError(const DownloadStopped());
+    });
+    return result.future;
   }
 
   Future<ResolvedAudio> _admit(String id, DownloadControl control) async {
