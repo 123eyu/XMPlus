@@ -12,6 +12,7 @@ import '../api/xmly_client.dart';
 import '../models/xmly_models.dart';
 import '../models/download_task.dart';
 import '../services/account_service.dart';
+import '../services/playback_policy.dart';
 import '../services/usage_ledger.dart';
 import 'app_storage.dart';
 import 'credential_store.dart';
@@ -594,20 +595,7 @@ class ConfigArchive {
     }
     void playback(Object? raw) {
       if (raw == null) return;
-      final value = _map(raw);
-      _range(value, 'speed', 0.5, 3);
-      _range(value, 'skipIntroSeconds', 0, 3600);
-      _range(value, 'skipOutroSeconds', 0, 3600);
-      _range(value, 'seekBackwardSeconds', 1, 300);
-      _range(value, 'seekForwardSeconds', 1, 300);
-      _range(value, 'volume', 0, 100);
-      for (final key in ['autoNext', 'listenAndDownload']) {
-        if (value.containsKey(key) && value[key] is! bool)
-          throw const FormatException();
-      }
-      if (value.containsKey('loopMode') &&
-          !['off', 'single'].contains(value['loopMode']))
-        throw const FormatException();
+      PlaybackSettings.parse(_map(raw));
     }
 
     playback(settings['playback']);
