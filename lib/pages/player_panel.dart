@@ -9,6 +9,7 @@ import '../common/widgets/adaptive_text.dart';
 import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
 import 'playback_settings_page.dart';
+import 'playback_speed_control.dart';
 
 String playbackTime(double seconds) {
   final total = seconds.isFinite && seconds > 0 ? seconds.floor() : 0;
@@ -606,14 +607,10 @@ class _PlayerPanelState extends State<PlayerPanel> {
             alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Tooltip(
-                message: '播放倍速与设置',
-                child: TextButton(
-                  onPressed: _settings,
-                  child: Text(
-                    '${settings.speed.toStringAsFixed(2).replaceFirst(RegExp(r'0$'), '')}×',
-                  ),
-                ),
+              PlaybackSpeedControl(
+                key: ValueKey((_runtime, track?.id)),
+                runtime: _runtime,
+                albumId: track?.albumId.isNotEmpty == true ? track!.albumId : null,
               ),
               _button(
                 _favoriteLabel,
