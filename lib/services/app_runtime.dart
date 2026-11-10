@@ -22,6 +22,7 @@ import 'media_pipeline.dart';
 import 'player_service.dart';
 import 'system_media_service.dart';
 import 'request_diagnostics.dart';
+import 'file_paths.dart';
 
 class AppRuntime extends ChangeNotifier {
   AppRuntime({required this.storage, required this.secrets}) {
@@ -54,17 +55,33 @@ class AppRuntime extends ChangeNotifier {
     autoDownloads = AutoDownloadService(
       storage: storage,
       checkAccount: _checkAutomaticAccount,
-      loadCatalogue: (identity, albumId) =>
-          XmlyCatalogue(accounts.clientFor(identity)).album(albumId),
+      loadCatalogue: (identity, albumId, cancelled, checkpoint) {
+        final client = accounts.clientFor(identity);
+        return DownloadService.readRequests(
+          client,
+          storage.state['settings'] as Map,
+          () => XmlyCatalogue(client).album(albumId),
+          cancelled: cancelled,
+          checkpoint: checkpoint,
+        );
+      },
       hasTask: (identity, trackId) => downloads.tasks.any(
-        (task) => task.accountIdentity == identity && task.track.id == trackId,
+        (task) =>
+            task.track.id == trackId &&
+            (task.accountIdentity == identity ||
+                task.state == DownloadState.completed),
       ),
-      enqueueNew: (identity, track, allowed) async {
+      enqueueNew: (identity, track, allowed, cancelled) async {
         _checkAutomaticAccount(identity);
         final batch = await prepareDownloads(
           [track],
           accountIdentity: identity,
           automatic: true,
+          cancelled: cancelled,
+          checkpoint: () async {
+            if (!allowed()) throw const DownloadStopped();
+            _checkAutomaticAccount(identity);
+          },
         );
         if (!allowed()) return;
         _checkAutomaticAccount(identity);
@@ -133,11 +150,27 @@ class AppRuntime extends ChangeNotifier {
   String? lifecycleError;
   Timer? _rewardTimer;
   bool _refreshingRewards = false;
+  int _rewardGeneration = 0;
   final Map<String, Quota> _rewardChecks = {};
   int libraryRevision = 0;
 
   XmlyClient get client => accounts.activeClient ?? anonymous;
   Future<void> load() async {
+    try {
+      await _loadServices();
+    } catch (_) {
+      try {
+        await _abortStartup();
+      } catch (_) {
+        // All cleanup operations have been attempted; retain the load error.
+      }
+      rethrow;
+    }
+    unawaited(autoDownloads.scanAll());
+    _configureRewards();
+  }
+
+  Future<void> _loadServices() async {
     await anonymous.flushUrlCache();
     await accounts.load();
     await ledger.load();
@@ -163,8 +196,38 @@ class AppRuntime extends ChangeNotifier {
       notifyListeners();
     });
     _automaticChanges = autoDownloads.changes.listen((_) => notifyListeners());
-    unawaited(autoDownloads.scanAll());
-    _configureRewards();
+  }
+
+  Future<void> _abortStartup() async {
+    closing = true;
+    autoDownloads.suspend();
+    albumCache.removeListener(_albumCacheChanged);
+    // No automatic work starts until every service has loaded. Release these
+    // idle resources without settling accounts or saving an unloaded queue.
+    // Wait for every cleanup even if one fails, before the caller closes storage.
+    try {
+      await Future.wait<void>([
+        if (_systemMedia != null) _systemMedia!.close(),
+        if (_androidBackground != null) _androidBackground!.close(),
+        player.close(quiesced: true),
+        if (_playerChanges != null) _playerChanges!.cancel(),
+        if (_downloadChanges != null) _downloadChanges!.cancel(),
+        if (_automaticChanges != null) _automaticChanges!.cancel(),
+        autoDownloads.close(),
+        downloads.close(),
+        accounts.close(preserveState: true),
+        albumCache.close(),
+        pipeline.close(),
+        () async {
+          anonymous.close();
+          await anonymous.flushUrlCache();
+        }(),
+        // This singleton remains available to a subsequent startup attempt.
+        RequestDiagnostics.instance.flush(),
+      ]);
+    } finally {
+      _closed = true;
+    }
   }
 
   void _albumCacheChanged() => notifyListeners();
@@ -199,6 +262,7 @@ class AppRuntime extends ChangeNotifier {
   }
 
   void changed() {
+    downloads.settingsChanged();
     _configureRewards();
     notifyListeners();
   }
@@ -212,7 +276,8 @@ class AppRuntime extends ChangeNotifier {
   Future<String> downloadRoot() async {
     final settings = storage.state['settings'] as Map;
     final configured = (settings['download'] as Map?)?['rootDirectory'];
-    if (configured is String && configured.isNotEmpty) return configured;
+    if (configured is String && configured.isNotEmpty)
+      return absoluteFilePath(configured);
     final parent = Platform.isAndroid
         ? await getExternalStorageDirectory() ??
               await getApplicationSupportDirectory()
@@ -235,6 +300,8 @@ class AppRuntime extends ChangeNotifier {
     bool automatic = false,
     bool? polling,
     bool previewBilling = true,
+    Future<void>? cancelled,
+    Future<void> Function()? checkpoint,
   }) async {
     final root = await downloadRoot();
     final settings = storage.state['settings'] as Map;
@@ -256,12 +323,20 @@ class AppRuntime extends ChangeNotifier {
             : accounts.clientFor(identity);
         Track? matching;
         for (var page = 1; ; page++) {
-          final result = albumPages[page] ??= await source.album(
-            track.albumId,
-            page: page,
-            pageSize: xmlyAlbumPageSize,
-            ascending: true,
-          );
+          await checkpoint?.call();
+          final result = albumPages[page] ??=
+              await DownloadService.readRequests(
+                source,
+                settings,
+                () => source.album(
+                  track.albumId,
+                  page: page,
+                  pageSize: xmlyAlbumPageSize,
+                  ascending: true,
+                ),
+                cancelled: cancelled,
+                checkpoint: checkpoint,
+              );
           matching = result.tracks
               .where((item) => item.id == track.id)
               .firstOrNull;
@@ -281,12 +356,15 @@ class AppRuntime extends ChangeNotifier {
       accountIdentity: identity,
       rootDirectory: root,
       previewBilling: previewBilling,
+      cancelled: cancelled,
+      checkpoint: checkpoint,
       settings: {
         'download': {
           ...(settings['download'] as Map? ?? const {}),
+          // Automatic consent is bound to this account, including later retries.
           'polling':
-              polling ?? (settings['download'] as Map?)?['polling'] != false,
-          if (automatic) 'retryLimit': 0,
+              !automatic &&
+              (polling ?? (settings['download'] as Map?)?['polling'] != false),
         },
         'media': settings['media'] ?? <String, dynamic>{},
         'tags': settings['tags'] ?? <String, dynamic>{},
@@ -320,9 +398,13 @@ class AppRuntime extends ChangeNotifier {
     );
   }
 
+  bool get _automaticRewardsEnabled =>
+      !closing &&
+      !_closed &&
+      (storage.state['settings'] as Map)['autoClaim'] == true;
+
   Future<int?> _claimForDownload(String identity, XmlyClient client) async {
-    if (closing || (storage.state['settings'] as Map)['autoClaim'] != true)
-      return null;
+    if (!_automaticRewardsEnabled) return null;
     final record = (storage.state['accounts'] as Map)[identity] as Map?;
     if (record == null ||
         record['rewardPaused'] == true ||
@@ -350,11 +432,16 @@ class AppRuntime extends ChangeNotifier {
     String identity,
     XmlyClient client,
   ) async {
+    final generation = _rewardGeneration;
+    bool allowed() =>
+        generation == _rewardGeneration && _automaticRewardsEnabled;
+    if (!allowed()) return null;
     final rewards = XmlyRewards(client, automaticEnabled: true);
     var increase = 0;
     try {
       final before = await client.queryQuota();
-      final after = await rewards.refresh();
+      if (!allowed()) return null;
+      final after = await rewards.refresh(shouldContinue: allowed);
       _rewardChecks[identity] = after;
       increase = after.remainingSeconds - before.remainingSeconds;
     } catch (_) {
@@ -381,7 +468,10 @@ class AppRuntime extends ChangeNotifier {
   }
 
   Future<void> pauseDownload(String id) async {
-    if (player.currentTaskId == id) await player.pause();
+    if (downloads.task(id).state == DownloadState.completed) return;
+    if (player.currentTaskId == id && player.sourceKind != 'local') {
+      await player.pause();
+    }
     await downloads.pause(id);
     await pipeline.pauseTask(id);
   }
@@ -393,7 +483,15 @@ class AppRuntime extends ChangeNotifier {
   }
 
   Future<void> pauseAllDownloads() async {
-    if (player.currentTaskId != null) await player.pause();
+    // Invalidate before awaiting playback or queue locks: a late catalogue or
+    // authorization result must not create new work after this pause command.
+    autoDownloads.invalidatePending();
+    final playingTask = player.currentTaskId;
+    if (playingTask != null &&
+        player.sourceKind != 'local' &&
+        downloads.task(playingTask).state != DownloadState.completed) {
+      await player.pause();
+    }
     await downloads.pauseAll();
   }
 
@@ -435,8 +533,10 @@ class AppRuntime extends ChangeNotifier {
   }
 
   void _configureRewards() {
-    final enabled = (storage.state['settings'] as Map)['autoClaim'] == true;
+    final enabled = _automaticRewardsEnabled;
     if (!enabled) {
+      // Re-enabling starts a new run; an in-flight old run stays cancelled.
+      _rewardGeneration++;
       _rewardTimer?.cancel();
       _rewardTimer = null;
     } else {
@@ -448,17 +548,19 @@ class AppRuntime extends ChangeNotifier {
   }
 
   Future<void> _refreshRewards() async {
-    if (_refreshingRewards ||
-        closing ||
-        (storage.state['settings'] as Map)['autoClaim'] != true)
-      return;
+    if (_refreshingRewards || !_automaticRewardsEnabled) return;
+    final generation = _rewardGeneration;
+    bool allowed() =>
+        generation == _rewardGeneration && _automaticRewardsEnabled;
     _refreshingRewards = true;
     try {
       for (final identity in accounts.accountIds.toList()) {
+        if (!allowed()) break;
         final record = (storage.state['accounts'] as Map)[identity] as Map;
         if (record['rewardPaused'] == true) continue;
         try {
           await accounts.runWithAccount(identity, (client) async {
+            if (!allowed()) return;
             await _refreshAccountRewards(identity, client);
           });
         } catch (_) {
@@ -503,6 +605,7 @@ class AppRuntime extends ChangeNotifier {
     if (_closed) return true;
     if (closing) return false;
     closing = true;
+    _rewardGeneration++;
     autoDownloads.suspend();
     _rewardTimer?.cancel();
     _rewardTimer = null;

@@ -10,6 +10,7 @@ import '../models/xmly_models.dart';
 import 'account_service.dart';
 import 'audio_cache.dart';
 import 'download_paths.dart';
+import 'file_paths.dart';
 import 'download_service.dart';
 import 'media_processor.dart';
 
@@ -50,25 +51,25 @@ class MediaPipeline {
   Future<ResolvedAudio> _refresh(DownloadTask task, bool Function() isActive) {
     if (!isActive()) throw const DownloadStopped();
     final quality = (task.settings['download'] as Map?)?['quality'] as String?;
-    if (task.accountIdentity == 'anonymous') {
-      return anonymous.resolve(
-        task.track.id,
-        force: true,
-        quality: quality,
-        mediaAuthRetries: 0,
-        isActive: isActive,
+    Future<ResolvedAudio> resolve(XmlyClient client) {
+      if (!isActive()) throw const DownloadStopped();
+      return DownloadService.readRequests(
+        client,
+        task.settings,
+        () => client.resolve(
+          task.track.id,
+          force: true,
+          quality: quality,
+          mediaAuthRetries: 0,
+          isActive: isActive,
+        ),
+        control: _controls[task.id],
       );
     }
-    return accounts.runWithAccount(task.accountIdentity, (client) {
-      if (!isActive()) throw const DownloadStopped();
-      return client.resolve(
-        task.track.id,
-        force: true,
-        quality: quality,
-        mediaAuthRetries: 0,
-        isActive: isActive,
-      );
-    });
+
+    return task.accountIdentity == 'anonymous'
+        ? resolve(anonymous)
+        : accounts.runWithAccount(task.accountIdentity, resolve);
   }
 
   String _cacheDirectory(DownloadTask task) {
@@ -84,7 +85,7 @@ class MediaPipeline {
       }
     }
     return p.join(
-      task.rootDirectory,
+      absoluteFilePath(task.rootDirectory),
       '.xmly-cache',
       task.accountIdentity,
       task.track.number,
@@ -98,10 +99,33 @@ class MediaPipeline {
     final source = await _verifiedSource(directory, task);
     if (source == null)
       throw const XmlyException('source_missing', '源缓存已失效，请重新获取音频');
+    await control.checkpoint();
+    final candidate = _caches[task.id];
+    final cache =
+        candidate?.complete == true &&
+            candidate!.directory == directory &&
+            _directories[task.id] == directory
+        ? candidate
+        : null;
     _directories[task.id] = directory;
+    // A paused transfer already verified all source bytes. Re-publish its
+    // retained cache while reprocessing, so playback need not await conversion.
+    if (cache != null) _controls[task.id] = control;
+    var completed = false;
     try {
-      return await _process(task, source, control);
+      final result = await _process(task, source, control);
+      completed = true;
+      return result;
     } finally {
+      if (cache != null) {
+        if (!completed ||
+            control.paused ||
+            control.cancelled ||
+            !_leases.containsKey(task.id)) {
+          await cache.pause();
+        }
+        if (identical(_controls[task.id], control)) _controls.remove(task.id);
+      }
       if (_finished.contains(task.id) && !_leases.containsKey(task.id))
         await _discardFinished(task.id);
     }
@@ -137,10 +161,22 @@ class MediaPipeline {
     );
     await control.checkpoint();
     var cache = _caches[task.id];
+    if (cache != null && _directories[task.id] != directory) {
+      // Account rotation keeps the task ID, but bytes and refresh callbacks
+      // belong to the old account. Stop old readers before opening its successor.
+      await cache.close();
+      _caches.remove(task.id);
+      _directories.remove(task.id);
+      _finished.remove(task.id);
+      cache = null;
+      await control.checkpoint();
+    }
     if (cache == null) {
       cache = await AudioCache.open(
         directory: directory,
         audio: audio,
+        rateLimitRetries: download['retryLimit'] as int? ?? 3,
+        minimumRateLimitDelay: const Duration(minutes: 5),
         refresh: (isActive) => _refresh(task, isActive),
         checkpoint: () async {
           await _controls[task.id]?.checkpoint();
@@ -155,10 +191,16 @@ class MediaPipeline {
     }
     _controls[task.id] = control;
     _directories[task.id] = directory;
+    var completed = false;
     try {
       var source = await _verifiedSource(directory, task);
       if (source == null) {
-        await cache.ensureComplete();
+        // Cache cooldowns and queued account refreshes may not checkpoint until
+        // they finish. A stop reaches the finally block, which drains the cache.
+        await Future.any<void>([
+          cache.ensureComplete(),
+          control.stopped.then((_) => throw const DownloadStopped()),
+        ]);
         await control.checkpoint();
         final extension = cache.sourceFormat;
         if (!const {
@@ -199,9 +241,19 @@ class MediaPipeline {
           overwrite: true,
         );
       }
-      return await _process(task, source, control);
+      final result = await _process(task, source, control);
+      completed = true;
+      return result;
     } finally {
-      await cache.pause();
+      // Complete caches have no producer left, but a retained player stream
+      // may still be draining them. Only interruption should stop that reader.
+      if (!completed ||
+          control.paused ||
+          control.cancelled ||
+          !cache.complete ||
+          !_leases.containsKey(task.id)) {
+        await cache.pause();
+      }
       _controls.remove(task.id);
       if (_finished.contains(task.id) && !_leases.containsKey(task.id))
         await _discardFinished(task.id);
