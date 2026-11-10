@@ -485,12 +485,120 @@ class PlayerService {
     final request = _newRequest();
     await _commands.synchronized(() => _openCurrent(request));
   });
-  Future<void> previous() async {
-    if (cursor > 0)
+  Future<void> previous() => _run(() async {
+    if (cursor > 0) {
       await playQueueItem(cursor - 1);
-    else if (current != null)
+      return;
+    }
+    final first = current;
+    if (first == null) return;
+    if (queueSource != 'album' ||
+        sourceAlbumId.isEmpty ||
+        first.officialPosition == 1) {
       await replay();
-  }
+      return;
+    }
+    final candidate = first.officialPosition ?? xmlyPositive(first.orderNo);
+    if (candidate == null || candidate > 5000) {
+      throw const XmlyException('invalid_album', '队列缺少专辑页码，请从专辑页重新选择声音');
+    }
+    final request = _newRequest(), intent = _advanceIntent;
+    final expectedGeneration = generation, epoch = _epoch;
+    final album = sourceAlbumId, client = accounts.activeClient ?? anonymous;
+    final snapshot = _queue;
+    bool active() =>
+        !_closed &&
+        request == _request &&
+        intent == _advanceIntent &&
+        expectedGeneration == generation &&
+        epoch == _epoch &&
+        cursor == 0 &&
+        current?.id == first.id &&
+        queueSource == 'album' &&
+        sourceAlbumId == album &&
+        !accounts.admissionPaused &&
+        identical(client, accounts.activeClient ?? anonymous);
+    Future<AlbumPage> loadPage(int page) async {
+      try {
+        return await _admission(request, () => _albumPage(client, album, page));
+      } catch (_) {
+        if (!active()) throw const DownloadStopped();
+        rethrow;
+      }
+    }
+
+    // Locate the current head first, including queues restored with 50-row pages.
+    final page = (candidate - 1) ~/ xmlyAlbumPageSize + 1;
+    final anchorPage = await loadPage(page);
+    if (!active()) return;
+    final anchor = anchorPage.tracks.indexWhere(
+      (track) => track.id == first.id,
+    );
+    if (anchor < 0 ||
+        (first.officialPosition != null &&
+            anchorPage.tracks[anchor].officialPosition !=
+                first.officialPosition)) {
+      throw const XmlyException('catalogue_changed', '专辑首页发生变化，请从专辑页重新选择声音');
+    }
+    final overlap = anchorPage.tracks
+        .skip(anchor)
+        .take(snapshot.length)
+        .toList();
+    for (var index = 0; index < overlap.length; index++) {
+      if (overlap[index].id != snapshot[index].id) {
+        throw const XmlyException('catalogue_changed', '专辑顺序已变化，请从专辑页重新选择声音');
+      }
+    }
+    var added = anchorPage.tracks.take(anchor).toList();
+    if (added.isEmpty && page > 1) {
+      final preceding = await loadPage(page - 1);
+      if (!active()) return;
+      added = preceding.tracks;
+      if (added.isEmpty ||
+          added.last.officialPosition !=
+              anchorPage.tracks.first.officialPosition! - 1) {
+        throw const XmlyException('invalid_album', '专辑前页不完整，请刷新后重试');
+      }
+    }
+    if (added.isEmpty) {
+      await replay();
+      return;
+    }
+    final previousOrder = xmlyPositive(added.last.orderNo);
+    final firstOrder = xmlyPositive(first.orderNo);
+    if (previousOrder != null &&
+        firstOrder != null &&
+        previousOrder >= firstOrder) {
+      throw const XmlyException('duplicate_page', '专辑分页重复或倒退，请刷新后重试');
+    }
+    await _commands.synchronized(() async {
+      if (!active()) return;
+      final known = _queue.map((track) => track.id).toSet();
+      if (added.any((track) => !known.add(track.id))) {
+        throw const XmlyException('duplicate_page', '专辑分页重复，请刷新后重试');
+      }
+      if (_queue.length + added.length > 5000) {
+        throw const XmlyException('catalogue_limit', '专辑播放队列最多 5000 集');
+      }
+      // Keep any tail appended while loading, and keep its last-page metadata.
+      final next = [...added, ..._queue];
+      ++generation;
+      await _saveQueue(
+        next,
+        added.length,
+        album,
+        page: albumPage,
+        total: albumTotal,
+        pageSize: albumPageSize ?? xmlyAlbumPageSize,
+      );
+      _queue = next;
+      cursor = added.length;
+      _notify();
+      if (request == _request && intent == _advanceIntent) {
+        await _select(cursor - 1, request);
+      }
+    });
+  });
 
   Future<void> next() => _run(() async {
     if (cursor + 1 < _queue.length) {
