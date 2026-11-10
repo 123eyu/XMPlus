@@ -581,11 +581,6 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           page: page,
           pageSize: _pageSize,
         );
-        try {
-          await widget.runtime.albumCache.remember(result);
-        } catch (_) {
-          // Cache metadata and artwork are nonessential to the live request.
-        }
         if (mounted && generation == _generation) {
           setState(() {
             _offline = false;
@@ -595,6 +590,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
             _total = result.total;
             _visible = result.tracks;
           });
+          unawaited(_rememberPage(result));
         }
       }
     } catch (error) {
@@ -607,6 +603,14 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       }
     } finally {
       if (mounted && generation == _generation) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _rememberPage(AlbumPage page) async {
+    try {
+      await widget.runtime.albumCache.remember(page);
+    } catch (_) {
+      // Optional cache failures never delay or replace the live catalogue.
     }
   }
 

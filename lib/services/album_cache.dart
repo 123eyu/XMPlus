@@ -38,6 +38,7 @@ class AlbumCache extends ChangeNotifier {
   final Map<String, CachedAlbum> _albums = {};
   final Map<String, int> _revisions = {};
   final Map<String, Future<void>> _refreshes = {};
+  final Map<String, Uri?> _coverUrls = {};
   final Set<Future<void>> _pending = {};
   bool _loaded = false, _closing = false;
   Future<void>? _closeFuture;
@@ -194,14 +195,6 @@ class AlbumCache extends ChangeNotifier {
       coverUri ??= track.coverUrl;
       if (coverUri != null) break;
     }
-    Uint8List? coverBytes;
-    if (coverUri != null) {
-      try {
-        coverBytes = await _fetchCover(coverUri);
-      } catch (_) {
-        // Failed optional artwork never replaces a usable local cover.
-      }
-    }
     await _disk.synchronized(() async {
       final folder = await Directory(p.join(directory, album.id))
           .create(recursive: true);
@@ -236,52 +229,84 @@ class AlbumCache extends ChangeNotifier {
               })
             : track;
       }
-      String? coverPath = previous?.coverPath;
-      if (coverBytes != null) {
-        try {
-          final digest = sha256.convert(coverBytes).toString();
-          final target = File(p.join(folder.path, '$digest.cover'));
-          if (await FileSystemEntity.type(target.path, followLinks: false) !=
-                  FileSystemEntityType.file ||
-              (await sha256.bind(target.openRead()).single).toString() !=
-                  digest) {
-            await _commit(target, coverBytes!);
-          }
-          coverPath = target.path;
-        } on FileSystemException {
-          // Metadata remains useful even when new artwork cannot be committed.
-        }
-      }
-      final revision = (_revisions[album.id] ?? 0) + 1;
       final next = CachedAlbum(
         album: mergedAlbum,
         tracks: _ordered(tracks.values),
-        coverPath: coverPath,
+        coverPath: previous?.coverPath,
       );
-      final bytes = utf8.encode(
-        jsonEncode({
-          'version': 1,
-          'revision': revision,
-          'album': mergedAlbum.toJson(),
-          'tracks': next.tracks.map((track) {
-            final value = track.toJson()..remove('is_authorized');
-            return value;
-          }).toList(),
-          'cover': coverPath == null ? null : p.basename(coverPath),
-        }),
-      );
-      if (bytes.length > _maxMetadataBytes)
-        throw const FormatException('Album cache too large');
-      // Two generations preserve the previous commit even on Windows.
-      await _commit(
-        File(p.join(folder.path, 'index.${revision % 2}.json')),
-        bytes,
-      );
-      _albums[album.id] = next;
-      _revisions[album.id] = revision;
-      await _removeUnusedCovers(folder);
-      notifyListeners();
+      await _saveAlbum(folder, next);
+      _coverUrls[album.id] = coverUri;
     });
+    if (coverUri != null && !_closing) {
+      unawaited(_track(_rememberCover(album.id, coverUri)));
+    }
+  }
+
+  Future<void> _rememberCover(String albumId, Uri uri) async {
+    try {
+      final bytes = await _fetchCover(uri);
+      await _disk.synchronized(() async {
+        if (_closing || _coverUrls[albumId] != uri) return;
+        final current = _albums[albumId];
+        if (current == null) return;
+        final folder = Directory(p.join(directory, albumId));
+        if (await FileSystemEntity.type(directory, followLinks: false) !=
+                FileSystemEntityType.directory ||
+            await FileSystemEntity.type(folder.path, followLinks: false) !=
+                FileSystemEntityType.directory) {
+          throw const FileSystemException('Invalid album cache directory');
+        }
+        final digest = sha256.convert(bytes).toString();
+        final target = File(p.join(folder.path, '$digest.cover'));
+        if (await FileSystemEntity.type(target.path, followLinks: false) !=
+                FileSystemEntityType.file ||
+            (await sha256.bind(target.openRead()).single).toString() !=
+                digest) {
+          await _commit(target, bytes);
+        }
+        // Use the newest metadata; late artwork must not restore an old page.
+        await _saveAlbum(
+          folder,
+          CachedAlbum(
+            album: current.album,
+            tracks: current.tracks,
+            coverPath: target.path,
+          ),
+        );
+      });
+    } catch (_) {
+      // Optional artwork never replaces a usable catalogue or local cover.
+    }
+  }
+
+  // Called only while holding _disk, for metadata and artwork commits alike.
+  Future<void> _saveAlbum(Directory folder, CachedAlbum next) async {
+    final albumId = next.album.id;
+    final revision = (_revisions[albumId] ?? 0) + 1;
+    final coverPath = next.coverPath;
+    final bytes = utf8.encode(
+      jsonEncode({
+        'version': 1,
+        'revision': revision,
+        'album': next.album.toJson(),
+        'tracks': next.tracks.map((track) {
+          final value = track.toJson()..remove('is_authorized');
+          return value;
+        }).toList(),
+        'cover': coverPath == null ? null : p.basename(coverPath),
+      }),
+    );
+    if (bytes.length > _maxMetadataBytes)
+      throw const FormatException('Album cache too large');
+    // Two generations preserve the previous commit even on Windows.
+    await _commit(
+      File(p.join(folder.path, 'index.${revision % 2}.json')),
+      bytes,
+    );
+    _albums[albumId] = next;
+    _revisions[albumId] = revision;
+    await _removeUnusedCovers(folder);
+    notifyListeners();
   }
 
   static Album _album(Map<String, dynamic> value) {
