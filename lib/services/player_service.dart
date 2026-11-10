@@ -377,16 +377,18 @@ class PlayerService {
     }
     final intent = ++generation, request = _newRequest();
     final client = accounts.activeClient ?? anonymous;
-    final hint =
-        track ??
-        (page == null
-            ? await _admission(request, () => client.track(id))
-            : null);
-    if (hint != null &&
-        (hint.id != id || hint.albumId.isNotEmpty && hint.albumId != album)) {
-      throw const XmlyException('missing_track', '声音与专辑不匹配，请刷新重试');
+    int? ordinalFor(Track? hint) {
+      if (hint != null &&
+          (hint.id != id || hint.albumId.isNotEmpty && hint.albumId != album)) {
+        throw const XmlyException('missing_track', '声音与专辑不匹配，请刷新重试');
+      }
+      return hint?.officialPosition ?? xmlyPositive(hint?.orderNo);
     }
-    final ordinal = hint?.officialPosition ?? xmlyPositive(hint?.orderNo);
+
+    var ordinal = ordinalFor(track);
+    if (page == null && ordinal == null) {
+      ordinal = ordinalFor(await _admission(request, () => client.track(id)));
+    }
     final selectedPage =
         page ?? (ordinal == null ? 1 : (ordinal - 1) ~/ xmlyAlbumPageSize + 1);
     final result = await _admission(
