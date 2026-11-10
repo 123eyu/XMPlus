@@ -65,7 +65,29 @@ class PlayerService {
        _clock = clock ?? DateTime.now,
        policy = PlaybackPolicy(clock: clock) {
     _driverEvents = _driver.snapshots.listen((snapshot) {
-      _background(() => _commands.synchronized(() => _observe(snapshot)));
+      final recorded =
+          !_closed &&
+          _source != null &&
+          snapshot.epoch == _epoch &&
+          snapshot.error == null &&
+          snapshot.position.isFinite &&
+          snapshot.position >= 0 &&
+          snapshot.duration.isFinite &&
+          snapshot.duration >= 0;
+      if (recorded) {
+        // Device time boundaries must not wait behind quota/debit requests.
+        // Only the in-memory sample changes here; journal writes stay serialized.
+        ledger.recordPlaybackState(
+          playing: snapshot.playing,
+          buffering: snapshot.buffering,
+          speed: rate,
+        );
+      }
+      _background(
+        () => _commands.synchronized(
+          () => _observe(snapshot, stateAlreadyRecorded: recorded),
+        ),
+      );
     });
     _downloadEvents = downloads.changes.listen((_) {
       _background(() => _commands.synchronized(_downloadChanged));
@@ -1139,7 +1161,8 @@ class PlayerService {
         return;
       }
       if (sourceKind != 'local' &&
-          (_source!.taskId != null ||
+          (ledger.needsRestart ||
+              _source!.taskId != null ||
               await _admission(request, () => _downloaded(current!)) != null)) {
         final saved = position;
         await _openCurrent(request, resumePosition: saved);
@@ -1266,7 +1289,10 @@ class PlayerService {
     );
   }
 
-  Future<void> _observe(AudioSnapshot snapshot) async {
+  Future<void> _observe(
+    AudioSnapshot snapshot, {
+    bool stateAlreadyRecorded = false,
+  }) async {
     if (_closed || _source == null || snapshot.epoch != _epoch) return;
     if (snapshot.error != null)
       throw const XmlyException('audio_device', '音频播放失败');
@@ -1298,7 +1324,12 @@ class PlayerService {
       }
     }
     if (playing && !buffering) _actual = true;
-    await ledger.observe(playing: playing, buffering: buffering, speed: rate);
+    await ledger.observe(
+      playing: playing,
+      buffering: buffering,
+      speed: rate,
+      stateAlreadyRecorded: stateAlreadyRecorded,
+    );
     if (_actual)
       await _official.observe(
         'player',
@@ -1353,7 +1384,7 @@ class PlayerService {
     }
     if (_source != null) {
       if (!_source!.supportsRanges) status = '此音频暂不支持快速跳转，跳转时可能需要等待';
-      await ledger.observe(playing: playing, buffering: buffering, speed: rate);
+      await ledger.sampleCurrentState();
       if (_actual && _clock().millisecondsSinceEpoch - _savedAt >= 5000) {
         await _saveProgress();
       }
@@ -1688,14 +1719,11 @@ class PlayerService {
       final settings = effectiveSettings;
       final wasDownload = sourceKind == 'prepaid' || sourceKind == 'local';
       policy.updateSettings(settings);
-      await ledger.observe(
-        playing: playing,
-        buffering: buffering,
-        speed: settings.speed,
-      );
+      await ledger.sampleCurrentState();
+      await _driver.setRate(settings.speed);
       rate = settings.speed;
+      await ledger.sampleCurrentState(speed: rate);
       volume = settings.outputVolume;
-      await _driver.setRate(rate);
       await _driver.setVolume(volume);
       if (updateSource &&
           _source != null &&
