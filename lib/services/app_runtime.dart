@@ -617,8 +617,9 @@ class AppRuntime extends ChangeNotifier {
       await _androidBackground?.close();
       await albumCache.close();
       albumCache.removeListener(_albumCacheChanged);
-      await accounts.close();
+      // Drain final history sync while the account client can still finish it.
       await player.close(quiesced: true);
+      await accounts.close();
       await _playerChanges?.cancel();
       await autoDownloads.close();
       await _automaticChanges?.cancel();
