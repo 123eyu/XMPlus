@@ -143,6 +143,7 @@ class PlayerService {
   String get sourceKind => _source?.kind ?? '';
   bool get loading => _loading;
   int get seekRevision => _seekRevision;
+  int get playbackEpoch => _epoch;
   String? get currentTaskId => _source?.taskId;
   String get libraryIdentity => accounts.activeClient?.identity ?? 'anonymous';
   String get _progressIdentity => _source?.identity ?? libraryIdentity;
@@ -1084,10 +1085,12 @@ class PlayerService {
       () => _openCurrent(request, resumePosition: saved, localTaskId: task.id),
     );
   });
-  Future<void> seek(double seconds) {
+  Future<void> seek(double seconds, {int? expectedEpoch}) {
+    if (expectedEpoch != null && expectedEpoch != _epoch) return Future.value();
     ++_advanceIntent;
     return _run(
       () => _commands.synchronized(() async {
+        if (expectedEpoch != null && expectedEpoch != _epoch) return;
         if (!seconds.isFinite || seconds < 0) throw ArgumentError('播放位置无效');
         if (_source == null) return;
         _manualChapterPosition = true;
