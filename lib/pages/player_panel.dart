@@ -10,6 +10,7 @@ import '../common/widgets/adaptive_text.dart';
 import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
 import 'catalogue_page.dart';
+import 'manuscript_reader.dart';
 import 'playback_settings_page.dart';
 import 'playback_speed_control.dart';
 import 'player_queue_panel.dart';
@@ -51,7 +52,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
     debugLabel: 'Player shortcuts',
     skipTraversal: true,
   );
-  bool _busy = false;
+  bool _busy = false, _cancelling = false;
   double? _dragPosition;
   int? _dragEpoch;
   String? _error;
@@ -60,6 +61,11 @@ class _PlayerPanelState extends State<PlayerPanel> {
   bool? _favorite;
   bool _favoriteBusy = false, _favoriteMutating = false;
   int _favoriteRequest = 0, _libraryRevision = -1;
+  XmlyClient? _manuscriptClient;
+  String? _manuscriptKey, _manuscriptTrackId, _manuscript, _manuscriptError;
+  bool _manuscriptLoading = false;
+  int _manuscriptRequest = 0;
+  Completer<void>? _manuscriptCancelled;
   AppRuntime get _runtime => widget.runtime;
   NavigatorState get _navigator =>
       widget.navigatorKey?.currentState ?? Navigator.of(context);
@@ -68,6 +74,8 @@ class _PlayerPanelState extends State<PlayerPanel> {
   void initState() {
     super.initState();
     _runtime.addListener(_favoriteContextChanged);
+    _runtime.addListener(_manuscriptContextChanged);
+    if (widget.expanded) unawaited(_refreshManuscript());
     if (widget.expanded) unawaited(_refreshFavorite());
   }
 
@@ -76,6 +84,8 @@ class _PlayerPanelState extends State<PlayerPanel> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.runtime != _runtime) {
       oldWidget.runtime.removeListener(_favoriteContextChanged);
+      oldWidget.runtime.removeListener(_manuscriptContextChanged);
+      _runtime.addListener(_manuscriptContextChanged);
       _runtime.addListener(_favoriteContextChanged);
       _dragPosition = null;
       _dragEpoch = null;
@@ -84,11 +94,19 @@ class _PlayerPanelState extends State<PlayerPanel> {
         (oldWidget.runtime != _runtime || !oldWidget.expanded)) {
       unawaited(_refreshFavorite());
     }
+    if (oldWidget.runtime != _runtime ||
+        oldWidget.expanded != widget.expanded) {
+      unawaited(_refreshManuscript());
+    }
   }
 
   @override
   void dispose() {
     _runtime.removeListener(_favoriteContextChanged);
+    _runtime.removeListener(_manuscriptContextChanged);
+    _manuscriptRequest++;
+    _manuscriptCancelled?.complete();
+    _manuscriptCancelled = null;
     _favoriteRequest++;
     _keyboardFocus.dispose();
     super.dispose();
@@ -120,14 +138,20 @@ class _PlayerPanelState extends State<PlayerPanel> {
     final player = _runtime.player;
     if (player.current == null) return KeyEventResult.ignored;
     final command = switch (event.logicalKey) {
-      LogicalKeyboardKey.space => player.playing ? player.pause : player.resume,
+      LogicalKeyboardKey.space => _playPause,
       LogicalKeyboardKey.arrowLeft => player.seekBackward,
       LogicalKeyboardKey.arrowRight => player.seekForward,
       _ => null,
     };
     if (command == null) return KeyEventResult.ignored;
     // One command per press; repeats must not toggle or enqueue more seeks.
-    if (event is KeyDownEvent && !_busy) unawaited(_act(command));
+    if (event is KeyDownEvent) {
+      unawaited(
+        event.logicalKey == LogicalKeyboardKey.space
+            ? _playPause()
+            : _act(command),
+      );
+    }
     return KeyEventResult.handled;
   }
 
@@ -143,6 +167,62 @@ class _PlayerPanelState extends State<PlayerPanel> {
             child: child,
           ),
         );
+
+  void _manuscriptContextChanged() {
+    if (!mounted || !widget.expanded) return;
+    final client = _runtime.client;
+    if (!identical(client, _manuscriptClient) ||
+        client.cacheIdentity != _manuscriptKey ||
+        _runtime.player.current?.id != _manuscriptTrackId) {
+      unawaited(_refreshManuscript());
+    }
+  }
+
+  Future<void> _refreshManuscript() async {
+    final client = _runtime.client, key = _runtime.client.cacheIdentity;
+    final trackId = _runtime.player.current?.id;
+    final request = ++_manuscriptRequest;
+    _manuscriptCancelled?.complete();
+    _manuscriptCancelled = null;
+    _manuscriptClient = client;
+    _manuscriptKey = key;
+    _manuscriptTrackId = trackId;
+    setState(() {
+      _manuscript = null;
+      _manuscriptError = null;
+      _manuscriptLoading = widget.expanded && trackId != null;
+    });
+    if (!_manuscriptLoading) return;
+    final cancelled = _manuscriptCancelled = Completer<void>();
+    bool current() =>
+        mounted &&
+        widget.expanded &&
+        request == _manuscriptRequest &&
+        identical(client, _runtime.client) &&
+        key == _runtime.client.cacheIdentity &&
+        trackId == _runtime.player.current?.id;
+    try {
+      final manuscript = await client.withReadPolicy(
+        () => client.fetchManuscript(trackId!),
+        rateLimitRetries: 0,
+        cancelled: cancelled.future,
+      );
+      if (current()) setState(() => _manuscript = manuscript);
+    } catch (error) {
+      if (current()) {
+        setState(
+          () => _manuscriptError = error is XmlyException
+              ? error.message
+              : '文稿读取失败，请重试',
+        );
+      }
+    } finally {
+      if (current()) {
+        _manuscriptCancelled = null;
+        setState(() => _manuscriptLoading = false);
+      }
+    }
+  }
 
   void _favoriteContextChanged() {
     if (!widget.expanded || !mounted) return;
@@ -276,7 +356,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
       : '收藏';
 
   Future<void> _act(Future<void> Function() command) async {
-    if (_busy) return;
+    if (_busy || _cancelling) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -289,6 +369,29 @@ class _PlayerPanelState extends State<PlayerPanel> {
       if (mounted) setState(() => _error = '操作未完成，请重试');
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _playPause() async {
+    final player = _runtime.player;
+    if (player.current == null || _cancelling) return;
+    if (!player.loading) {
+      return _act(player.playing ? player.pause : player.resume);
+    }
+    // Only cancellation may pass the command already awaiting admission.
+    // Keep its busy gate intact until that original command has settled.
+    setState(() {
+      _cancelling = true;
+      _error = null;
+    });
+    try {
+      await player.pause();
+    } on XmlyException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = '操作未完成，请重试');
+    } finally {
+      if (mounted) setState(() => _cancelling = false);
     }
   }
 
@@ -375,7 +478,9 @@ class _PlayerPanelState extends State<PlayerPanel> {
     double size = 28,
   }) => IconButton(
     tooltip: tooltip,
-    onPressed: _busy || command == null ? null : () => _act(command),
+    onPressed: _busy || _cancelling || command == null
+        ? null
+        : () => _act(command),
     icon: Icon(icon, size: size),
   );
 
@@ -404,11 +509,16 @@ class _PlayerPanelState extends State<PlayerPanel> {
       final settings = player.effectiveSettings;
       final message =
           _error ?? _favoriteError ?? player.error ?? player.warning;
-      final play = track == null
+      final canPause = player.playing || player.loading;
+      final playLabel = player.loading
+          ? '取消加载'
+          : canPause
+          ? '暂停'
+          : '播放';
+      final VoidCallback? play =
+          track == null || _cancelling || (_busy && !player.loading)
           ? null
-          : player.playing
-          ? player.pause
-          : player.resume;
+          : () => unawaited(_playPause());
       final coverUrl = track?.coverUrl?.toString();
       final compact = MediaQuery.sizeOf(context).width < 320;
       if (!widget.expanded) {
@@ -458,13 +568,13 @@ class _PlayerPanelState extends State<PlayerPanel> {
                       ),
                     ),
                   ),
-                  _button(
-                    player.playing ? '暂停' : '播放',
-                    player.playing
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
-                    play,
-                    size: 32,
+                  IconButton(
+                    tooltip: playLabel,
+                    onPressed: play,
+                    icon: Icon(
+                      canPause ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      size: 32,
+                    ),
                   ),
                   if (widget.miniWindow)
                     _button(
@@ -483,7 +593,8 @@ class _PlayerPanelState extends State<PlayerPanel> {
               ),
               LinearProgressIndicator(
                 minHeight: 2,
-                value: player.buffering || _busy
+                value:
+                    player.loading || player.buffering || _busy || _cancelling
                     ? null
                     : max > 0
                     ? position / max
@@ -675,7 +786,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
               size: 34,
             ),
             Tooltip(
-              message: _keyHint(player.playing ? '暂停' : '播放', '空格'),
+              message: _keyHint(playLabel, '空格'),
               child: SizedBox.square(
                 dimension: compact ? 64 : 76,
                 child: FilledButton(
@@ -683,21 +794,29 @@ class _PlayerPanelState extends State<PlayerPanel> {
                     padding: EdgeInsets.zero,
                     shape: const CircleBorder(),
                   ),
-                  onPressed: _busy || play == null ? null : () => _act(play),
-                  child: _busy || player.buffering
-                      ? SizedBox.square(
-                          dimension: 28,
+                  onPressed: play,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (_busy ||
+                          _cancelling ||
+                          player.loading ||
+                          player.buffering)
+                        SizedBox.square(
+                          dimension: compact ? 52 : 62,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             color: colors.onPrimary,
                           ),
-                        )
-                      : Icon(
-                          player.playing
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                          size: 42,
                         ),
+                      Icon(
+                        canPause
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        size: 42,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -749,6 +868,44 @@ class _PlayerPanelState extends State<PlayerPanel> {
               ),
             ],
           ),
+          if (track != null && _manuscript == null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: _manuscriptLoading
+                  ? const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: 8),
+                        Text('正在读取文稿…', key: ValueKey('manuscriptLoading')),
+                      ],
+                    )
+                  : _manuscriptError != null
+                  ? Column(
+                      children: [
+                        Text(
+                          _manuscriptError!,
+                          key: const ValueKey('manuscriptError'),
+                          style: TextStyle(color: colors.error),
+                        ),
+                        TextButton.icon(
+                          key: const ValueKey('manuscriptRetry'),
+                          onPressed: _refreshManuscript,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('重试文稿'),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      '此声音暂无文稿',
+                      key: const ValueKey('manuscriptAbsent'),
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall,
+                    ),
+            ),
           if (sleep != null)
             TextButton(
               onPressed: () {
@@ -848,6 +1005,9 @@ class _PlayerPanelState extends State<PlayerPanel> {
           top: false,
           child: LayoutBuilder(
             builder: (context, constraints) {
+              final manuscript = _manuscript;
+              final wideReader =
+                  manuscript != null && constraints.maxWidth >= 900;
               final twoColumns =
                   constraints.maxWidth >= 760 && constraints.maxHeight < 700;
               // ponytail: reserve the control stack; very short/error states scroll.
@@ -876,6 +1036,68 @@ class _PlayerPanelState extends State<PlayerPanel> {
                   footer,
                 ],
               );
+              if (manuscript != null) {
+                final reader = ManuscriptReader(
+                  key: ValueKey((_manuscriptClient, _manuscriptKey, track?.id)),
+                  manuscript: manuscript,
+                );
+                final left = Padding(
+                  padding: EdgeInsets.all(compact ? 8 : 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!compact) ...[
+                        _cover(
+                          coverUrl,
+                          math.min(coverSize, wideReader ? 240 : 300),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+                      details,
+                    ],
+                  ),
+                );
+                if (wideReader) {
+                  return Row(
+                    key: const ValueKey('manuscriptWideLayout'),
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: SingleChildScrollView(
+                          key: const ValueKey('manuscriptControlsScroll'),
+                          child: left,
+                        ),
+                      ),
+                      const VerticalDivider(width: 1),
+                      Expanded(
+                        child: Padding(
+                          key: const ValueKey('manuscriptRightPane'),
+                          padding: const EdgeInsets.all(24),
+                          child: reader,
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                return SingleChildScrollView(
+                  key: const ValueKey('manuscriptNarrowLayout'),
+                  child: Column(
+                    children: [
+                      left,
+                      SizedBox(
+                        height: math.max(
+                          320,
+                          math.min(560, constraints.maxHeight * .75),
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.all(compact ? 8 : 24),
+                          child: reader,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
               return SingleChildScrollView(
                 child: Center(
                   child: ConstrainedBox(

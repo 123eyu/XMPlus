@@ -10,6 +10,7 @@ import 'package:synchronized/synchronized.dart';
 import '../models/download_task.dart';
 import '../models/xmly_models.dart';
 import 'download_paths.dart';
+import 'file_paths.dart';
 import 'android_platform.dart';
 
 import 'request_diagnostics.dart';
@@ -257,7 +258,7 @@ class MediaProcessor {
         ? await _audioHash(source, checkpoint, details: input)
         : null;
     final warnings = <String>[];
-    return _outputs.synchronized(() async {
+    return _withOutputLock(() async {
       await checkpoint?.call();
       final conflict = download['conflict'] ?? 'skip';
       if (conflict is! String)
@@ -289,7 +290,7 @@ class MediaProcessor {
         target,
         conflict: conflict,
       );
-      if (p.equals(source, p.normalize(p.absolute(destination)))) {
+      if (p.equals(source, absoluteFilePath(destination))) {
         throw const XmlyException('invalid_commit', '源音频不能作为输出文件');
       }
       if (conflict == 'skip' &&
@@ -297,8 +298,13 @@ class MediaProcessor {
               FileSystemEntityType.notFound) {
         throw const XmlyException('destination_exists', '同名文件无法验证，请选择覆盖或添加编号');
       }
-      final temporary = await Directory(p.dirname(destination))
-          .createTemp('.xmplus-media-');
+      // Windows needs the root's verified temporary budget; keep POSIX's
+      // existing destination-directory and same-volume policy unchanged.
+      final temporary = await Directory(
+        Platform.isWindows
+            ? absoluteFilePath(task.rootDirectory)
+            : p.dirname(destination),
+      ).createTemp(DownloadPaths.mediaTemporaryPrefix);
       try {
         final output = p.join(temporary.path, 'output.$extension');
         String? cover;
@@ -508,7 +514,7 @@ class MediaProcessor {
         try {
           await _paths.commit(
             manifest.path,
-            '$destination.xmplus-media.json',
+            '$destination${DownloadPaths.mediaManifestSuffix}',
             overwrite: true,
           );
         } catch (_) {
@@ -526,7 +532,48 @@ class MediaProcessor {
           /* Only disposable processor output. */
         }
       }
-    });
+    }, checkpoint);
+  }
+
+  Future<T> _withOutputLock<T>(
+    Future<T> Function() operation,
+    Future<void> Function()? checkpoint,
+  ) async {
+    final result = Completer<T>();
+    var entered = false, checking = false;
+    Timer? timer;
+    // Abandoned waiters must never select a name or touch files later.
+    unawaited(
+      _outputs.synchronized(() async {
+        if (result.isCompleted) return;
+        entered = true;
+        timer?.cancel();
+        try {
+          result.complete(await operation());
+        } catch (error, stack) {
+          result.completeError(error, stack);
+        }
+      }),
+    );
+    if (!entered && checkpoint != null) {
+      timer = Timer.periodic(const Duration(milliseconds: 100), (_) async {
+        if (entered || result.isCompleted || checking) return;
+        checking = true;
+        try {
+          await checkpoint();
+        } catch (error, stack) {
+          if (!entered && !result.isCompleted)
+            result.completeError(error, stack);
+        } finally {
+          checking = false;
+        }
+      });
+    }
+    try {
+      return await result.future;
+    } finally {
+      timer?.cancel();
+    }
   }
 
   Future<Map<String, dynamic>?> _existing(
@@ -542,7 +589,7 @@ class MediaProcessor {
       if (await FileSystemEntity.type(path, followLinks: false) !=
           FileSystemEntityType.file)
         return null;
-      final manifest = File('$path.xmplus-media.json');
+      final manifest = File('$path${DownloadPaths.mediaManifestSuffix}');
       if (!await manifest.exists() || await manifest.length() > 16384)
         return null;
       final saved = xmlyMap(jsonDecode(await manifest.readAsString()));

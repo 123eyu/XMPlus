@@ -22,6 +22,7 @@ import 'media_pipeline.dart';
 import 'player_service.dart';
 import 'system_media_service.dart';
 import 'request_diagnostics.dart';
+import 'file_paths.dart';
 
 class AppRuntime extends ChangeNotifier {
   AppRuntime({required this.storage, required this.secrets}) {
@@ -54,20 +55,33 @@ class AppRuntime extends ChangeNotifier {
     autoDownloads = AutoDownloadService(
       storage: storage,
       checkAccount: _checkAutomaticAccount,
-      loadCatalogue: (identity, albumId) =>
-          XmlyCatalogue(accounts.clientFor(identity)).album(albumId),
+      loadCatalogue: (identity, albumId, cancelled, checkpoint) {
+        final client = accounts.clientFor(identity);
+        return DownloadService.readRequests(
+          client,
+          storage.state['settings'] as Map,
+          () => XmlyCatalogue(client).album(albumId),
+          cancelled: cancelled,
+          checkpoint: checkpoint,
+        );
+      },
       hasTask: (identity, trackId) => downloads.tasks.any(
         (task) =>
             task.track.id == trackId &&
             (task.accountIdentity == identity ||
                 task.state == DownloadState.completed),
       ),
-      enqueueNew: (identity, track, allowed) async {
+      enqueueNew: (identity, track, allowed, cancelled) async {
         _checkAutomaticAccount(identity);
         final batch = await prepareDownloads(
           [track],
           accountIdentity: identity,
           automatic: true,
+          cancelled: cancelled,
+          checkpoint: () async {
+            if (!allowed()) throw const DownloadStopped();
+            _checkAutomaticAccount(identity);
+          },
         );
         if (!allowed()) return;
         _checkAutomaticAccount(identity);
@@ -262,7 +276,8 @@ class AppRuntime extends ChangeNotifier {
   Future<String> downloadRoot() async {
     final settings = storage.state['settings'] as Map;
     final configured = (settings['download'] as Map?)?['rootDirectory'];
-    if (configured is String && configured.isNotEmpty) return configured;
+    if (configured is String && configured.isNotEmpty)
+      return absoluteFilePath(configured);
     final parent = Platform.isAndroid
         ? await getExternalStorageDirectory() ??
               await getApplicationSupportDirectory()
@@ -285,6 +300,8 @@ class AppRuntime extends ChangeNotifier {
     bool automatic = false,
     bool? polling,
     bool previewBilling = true,
+    Future<void>? cancelled,
+    Future<void> Function()? checkpoint,
   }) async {
     final root = await downloadRoot();
     final settings = storage.state['settings'] as Map;
@@ -306,12 +323,20 @@ class AppRuntime extends ChangeNotifier {
             : accounts.clientFor(identity);
         Track? matching;
         for (var page = 1; ; page++) {
-          final result = albumPages[page] ??= await source.album(
-            track.albumId,
-            page: page,
-            pageSize: xmlyAlbumPageSize,
-            ascending: true,
-          );
+          await checkpoint?.call();
+          final result = albumPages[page] ??=
+              await DownloadService.readRequests(
+                source,
+                settings,
+                () => source.album(
+                  track.albumId,
+                  page: page,
+                  pageSize: xmlyAlbumPageSize,
+                  ascending: true,
+                ),
+                cancelled: cancelled,
+                checkpoint: checkpoint,
+              );
           matching = result.tracks
               .where((item) => item.id == track.id)
               .firstOrNull;
@@ -331,6 +356,8 @@ class AppRuntime extends ChangeNotifier {
       accountIdentity: identity,
       rootDirectory: root,
       previewBilling: previewBilling,
+      cancelled: cancelled,
+      checkpoint: checkpoint,
       settings: {
         'download': {
           ...(settings['download'] as Map? ?? const {}),
@@ -338,7 +365,6 @@ class AppRuntime extends ChangeNotifier {
           'polling':
               !automatic &&
               (polling ?? (settings['download'] as Map?)?['polling'] != false),
-          if (automatic) 'retryLimit': 0,
         },
         'media': settings['media'] ?? <String, dynamic>{},
         'tags': settings['tags'] ?? <String, dynamic>{},

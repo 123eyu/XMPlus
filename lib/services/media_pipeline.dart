@@ -10,6 +10,7 @@ import '../models/xmly_models.dart';
 import 'account_service.dart';
 import 'audio_cache.dart';
 import 'download_paths.dart';
+import 'file_paths.dart';
 import 'download_service.dart';
 import 'media_processor.dart';
 
@@ -50,25 +51,25 @@ class MediaPipeline {
   Future<ResolvedAudio> _refresh(DownloadTask task, bool Function() isActive) {
     if (!isActive()) throw const DownloadStopped();
     final quality = (task.settings['download'] as Map?)?['quality'] as String?;
-    if (task.accountIdentity == 'anonymous') {
-      return anonymous.resolve(
-        task.track.id,
-        force: true,
-        quality: quality,
-        mediaAuthRetries: 0,
-        isActive: isActive,
+    Future<ResolvedAudio> resolve(XmlyClient client) {
+      if (!isActive()) throw const DownloadStopped();
+      return DownloadService.readRequests(
+        client,
+        task.settings,
+        () => client.resolve(
+          task.track.id,
+          force: true,
+          quality: quality,
+          mediaAuthRetries: 0,
+          isActive: isActive,
+        ),
+        control: _controls[task.id],
       );
     }
-    return accounts.runWithAccount(task.accountIdentity, (client) {
-      if (!isActive()) throw const DownloadStopped();
-      return client.resolve(
-        task.track.id,
-        force: true,
-        quality: quality,
-        mediaAuthRetries: 0,
-        isActive: isActive,
-      );
-    });
+
+    return task.accountIdentity == 'anonymous'
+        ? resolve(anonymous)
+        : accounts.runWithAccount(task.accountIdentity, resolve);
   }
 
   String _cacheDirectory(DownloadTask task) {
@@ -84,7 +85,7 @@ class MediaPipeline {
       }
     }
     return p.join(
-      task.rootDirectory,
+      absoluteFilePath(task.rootDirectory),
       '.xmly-cache',
       task.accountIdentity,
       task.track.number,
@@ -174,6 +175,8 @@ class MediaPipeline {
       cache = await AudioCache.open(
         directory: directory,
         audio: audio,
+        rateLimitRetries: download['retryLimit'] as int? ?? 3,
+        minimumRateLimitDelay: const Duration(minutes: 5),
         refresh: (isActive) => _refresh(task, isActive),
         checkpoint: () async {
           await _controls[task.id]?.checkpoint();

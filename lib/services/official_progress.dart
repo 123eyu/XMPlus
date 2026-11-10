@@ -14,6 +14,7 @@ class _Session {
   final String identity;
   final Track track;
   final int started;
+  (double, int)? recorded;
 }
 
 /// Coalesces only actual playback observations, one newest record per album.
@@ -114,6 +115,27 @@ class OfficialProgress {
           previous['ended_at_ms'] is int &&
           (previous['ended_at_ms'] as int) > observed.$2)
         return;
+      final sameObservation =
+          previous is Map &&
+          previous['identity'] == session.identity &&
+          previous['track'] is Map &&
+          (previous['track'] as Map)['id'] == track.id &&
+          previous['position'] == observed.$1 &&
+          previous['started_at_ms'] == session.started &&
+          previous['ended_at_ms'] == observed.$2;
+      // Pause/buffer cannot replay an ambiguous POST or recreate an ACKed record.
+      // Keep in-flight snapshots unchanged so their ACK can still remove them.
+      if (!actual && !sameObservation) return;
+      if (sameObservation) {
+        if (previous['attempted'] == true ||
+            previous['terminal'] == true ||
+            !terminal)
+          return;
+        pending[key] = {...previous, 'terminal': true};
+        await _savePending(session.identity, pending);
+        return;
+      }
+      if (session.recorded == observed) return;
       final safeTrack = track.toJson();
       safeTrack['raw'] = {
         'album_id': album,
@@ -131,6 +153,7 @@ class OfficialProgress {
       };
       // Durable before any history POST; account switching cannot lose records.
       await _savePending(session.identity, pending);
+      session.recorded = observed;
     });
     if (terminal) {
       _sessions.remove(device);

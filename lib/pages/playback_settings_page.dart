@@ -689,7 +689,6 @@ class _SleepTimerPageState extends State<_SleepTimerPage> {
     }
     _storedMinutes = request.minutes;
     _minutes = TextEditingController(text: '${request.minutes}');
-    _storedMinutes = request.minutes;
     _mode = request.mode;
     _action = request.action;
     _wait = request.waitForEnd;
