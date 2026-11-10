@@ -92,6 +92,9 @@ class AudioCache {
     }
     _validateUri(audio.uri);
     _audio = audio;
+    // Explicit download resume can authorize a different media version too.
+    // Complete caches are already a coherent file and need no more transport.
+    if (!complete) _validated = false;
     _refreshAttempts = 0;
   }
 
