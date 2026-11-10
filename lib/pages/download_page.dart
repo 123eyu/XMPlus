@@ -354,6 +354,7 @@ class _DownloadPageState extends State<DownloadPage> {
   String? _error;
   String? _availabilityKey;
   int _availabilityEpoch = 0;
+  bool _refreshingAvailability = false;
   Map<String, bool> _available = const {};
   final _expandedAlbums = <String>{};
   final _selectedDownloads = <String>{};
@@ -434,6 +435,17 @@ class _DownloadPageState extends State<DownloadPage> {
     }
     if (mounted && epoch == _availabilityEpoch && key == _availabilityKey) {
       setState(() => _available = result);
+    }
+  }
+
+  Future<void> _recheckAvailability() async {
+    if (_refreshingAvailability || _deletingAudio) return;
+    setState(() => _refreshingAvailability = true);
+    try {
+      _availabilityKey = null;
+      await _refreshAvailability(_service.tasks);
+    } finally {
+      if (mounted) setState(() => _refreshingAvailability = false);
     }
   }
 
@@ -1196,6 +1208,19 @@ class _DownloadPageState extends State<DownloadPage> {
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
+            OutlinedButton.icon(
+              onPressed:
+                  _refreshingAvailability || _deletingAudio || completed.isEmpty
+                  ? null
+                  : () => _run(_recheckAvailability),
+              icon: _refreshingAvailability
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
+              label: Text(_refreshingAvailability ? '正在检查' : '刷新本地文件'),
+            ),
             if (!_selectingDownloads)
               OutlinedButton.icon(
                 onPressed: _deletingAudio || completed.isEmpty
