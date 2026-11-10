@@ -39,6 +39,7 @@ class PlayerPanel extends StatefulWidget {
 class _PlayerPanelState extends State<PlayerPanel> {
   bool _busy = false;
   double? _dragPosition;
+  int? _dragEpoch;
   String? _error;
   XmlyClient? _favoriteClient;
   String? _favoriteKey, _favoriteTrackId, _favoriteError;
@@ -62,6 +63,8 @@ class _PlayerPanelState extends State<PlayerPanel> {
     if (oldWidget.runtime != _runtime) {
       oldWidget.runtime.removeListener(_favoriteContextChanged);
       _runtime.addListener(_favoriteContextChanged);
+      _dragPosition = null;
+      _dragEpoch = null;
     }
     if (widget.expanded &&
         (oldWidget.runtime != _runtime || !oldWidget.expanded)) {
@@ -465,9 +468,11 @@ class _PlayerPanelState extends State<PlayerPanel> {
       final max = player.duration.isFinite && player.duration > 0
           ? player.duration
           : 0.0;
-      final position = (_dragPosition ?? player.position)
-          .clamp(0.0, max)
-          .toDouble();
+      final epoch = player.playbackEpoch;
+      final position =
+          ((_dragEpoch == epoch ? _dragPosition : null) ?? player.position)
+              .clamp(0.0, max)
+              .toDouble();
       final favorite = _favorite == true;
       final settings = player.effectiveSettings;
       final message =
@@ -643,19 +648,37 @@ class _PlayerPanelState extends State<PlayerPanel> {
               inactiveTrackColor: colors.onSurface.withValues(alpha: 0.12),
             ),
             child: Slider(
+              key: ValueKey((player, epoch)),
               padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 5),
               value: position,
               max: max > 0 ? max : 1,
               label: playbackTime(position),
               semanticFormatterCallback: playbackTime,
+              onChangeStart: track == null || max == 0 || _busy
+                  ? null
+                  : (_) => _dragEpoch = epoch,
               onChanged: track == null || max == 0 || _busy
                   ? null
-                  : (value) => setState(() => _dragPosition = value),
+                  : (value) {
+                      if (_dragEpoch == epoch &&
+                          player.playbackEpoch == epoch) {
+                        setState(() => _dragPosition = value);
+                      }
+                    },
               onChangeEnd: track == null || max == 0 || _busy
                   ? null
                   : (value) async {
-                      await _act(() => player.seek(value));
-                      if (mounted) setState(() => _dragPosition = null);
+                      final selectedEpoch = _dragEpoch;
+                      setState(() {
+                        _dragPosition = null;
+                        _dragEpoch = null;
+                      });
+                      if (selectedEpoch != epoch ||
+                          player.playbackEpoch != epoch)
+                        return;
+                      await _act(
+                        () => player.seek(value, expectedEpoch: epoch),
+                      );
                     },
             ),
           ),
