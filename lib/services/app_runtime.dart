@@ -381,7 +381,10 @@ class AppRuntime extends ChangeNotifier {
   }
 
   Future<void> pauseDownload(String id) async {
-    if (player.currentTaskId == id) await player.pause();
+    if (downloads.task(id).state == DownloadState.completed) return;
+    if (player.currentTaskId == id && player.sourceKind != 'local') {
+      await player.pause();
+    }
     await downloads.pause(id);
     await pipeline.pauseTask(id);
   }
@@ -393,7 +396,12 @@ class AppRuntime extends ChangeNotifier {
   }
 
   Future<void> pauseAllDownloads() async {
-    if (player.currentTaskId != null) await player.pause();
+    final playingTask = player.currentTaskId;
+    if (playingTask != null &&
+        player.sourceKind != 'local' &&
+        downloads.task(playingTask).state != DownloadState.completed) {
+      await player.pause();
+    }
     await downloads.pauseAll();
   }
 
