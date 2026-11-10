@@ -1892,6 +1892,12 @@ class XmlyClient {
         return audio;
       } catch (error) {
         cancel.cancel();
+        if (_closed || policy?.stopped == true) {
+          // A cancelled read must not wait for the diagnostic disk queue before
+          // releasing its caller. Preserve the failure record independently.
+          unawaited(diagnostic.fail(error));
+          await _checkRead(policy);
+        }
         if (error is XmlyException && error.code == 'rate_limited') {
           await diagnostic.fail(error);
           if (rateRetries++ >= (policy?.rateLimitRetries ?? 4)) rethrow;

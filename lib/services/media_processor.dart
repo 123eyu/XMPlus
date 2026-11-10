@@ -249,6 +249,8 @@ class MediaProcessor {
               'track': task.track.toJson(),
               'media': media,
               'tags': tags,
+              if (tagging) 'metadataEncoding': 1,
+              if (tagging && extension == 'flac') 'flacMetadata': 1,
               'source': sourceDigest,
             }),
           ),
@@ -388,7 +390,7 @@ class MediaProcessor {
             originalFormats.contains(extension)) {
           await _copy(source, output, checkpoint);
         } else {
-          String? metadataPath;
+          final metadataPaths = <String>[];
           if (tagging) {
             final metadata = <String, String>{
               for (final entry in xmlyMap(
@@ -396,22 +398,64 @@ class MediaProcessor {
               ).entries)
                 if (entry.value is String) entry.key: entry.value as String,
             };
-            for (final entry in _metadata(task, tags, total).entries) {
+            final outputTags = _metadata(task, tags, total);
+            if (extension == 'flac') {
+              // Vorbis aliases COMMENT and DESCRIPTION. Use one description
+              // field and a distinct SOURCE URL so conversion cannot overwrite
+              // either value depending on the input metadata's key order.
+              var description = outputTags.remove('description');
+              for (final key in ['description', 'comment']) {
+                for (final entry in metadata.entries) {
+                  if (entry.key.toLowerCase() == key)
+                    description ??= entry.value;
+                }
+              }
+              metadata.removeWhere(
+                (key, _) => const {
+                  'description',
+                  'comment',
+                }.contains(key.toLowerCase()),
+              );
+              outputTags['source'] = outputTags.remove('comment')!;
+              if (description != null) outputTags['comment'] = description;
+            }
+            for (final entry in outputTags.entries) {
               metadata.removeWhere(
                 (key, _) => key.toLowerCase() == entry.key.toLowerCase(),
               );
               if (entry.value.isNotEmpty) metadata[entry.key] = entry.value;
             }
             final contents = StringBuffer(';FFMETADATA1\n');
+            final trailing = <MapEntry<String, String>>[];
             for (final entry in metadata.entries) {
-              contents.writeln(
-                '${_escapeMetadata(entry.key)}=${_escapeMetadata(entry.value)}',
-              );
+              if (entry.value.endsWith(r'\')) {
+                trailing.add(entry);
+              } else {
+                contents.writeln(
+                  '${_escapeMetadata(entry.key)}=${_escapeMetadata(entry.value)}',
+                );
+              }
             }
-            metadataPath = p.join(temporary.path, 'tags.ffmetadata');
+            final metadataPath = p.join(temporary.path, 'tags.ffmetadata');
             await File(
               metadataPath,
             ).writeAsString(contents.toString(), encoding: utf8, flush: true);
+            metadataPaths.add(metadataPath);
+            // FFmpeg's FFmetadata reader treats ANY trailing backslash as a
+            // continuation, even a correctly doubled one. End such fields at
+            // EOF in separate inputs; repeated maps merge these disjoint keys.
+            for (final entry in trailing) {
+              final path = p.join(
+                temporary.path,
+                'tag-${metadataPaths.length}',
+              );
+              await File(path).writeAsString(
+                ';FFMETADATA1\n${_escapeMetadata(entry.key)}=${_escapeMetadata(entry.value)}',
+                encoding: utf8,
+                flush: true,
+              );
+              metadataPaths.add(path);
+            }
           }
           final args = [
             '-v',
@@ -422,7 +466,7 @@ class MediaProcessor {
             '-i',
             source,
             if (cover != null) ...[..._protocols, '-i', cover],
-            if (metadataPath != null) ...[
+            for (final metadataPath in metadataPaths) ...[
               ..._protocols,
               '-f',
               'ffmetadata',
@@ -432,12 +476,12 @@ class MediaProcessor {
             '-map',
             '0:a:0',
             if (cover != null) ...['-map', '1:v:0'],
-            '-map_metadata',
-            metadataPath != null
-                ? (cover == null ? '1' : '2')
-                : format == 'original'
-                ? '0'
-                : '-1',
+            if (metadataPaths.isNotEmpty)
+              for (var index = 0; index < metadataPaths.length; index++) ...[
+                '-map_metadata',
+                '${index + (cover == null ? 1 : 2)}',
+              ]
+            else ...['-map_metadata', format == 'original' ? '0' : '-1'],
             '-map_chapters',
             '-1',
             '-c:a',
