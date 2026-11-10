@@ -731,6 +731,7 @@ class PlayerService {
   }) async {
     final identity = libraryIdentity;
     final local = await _downloaded(track);
+    if (_closed || request != _request) throw const DownloadStopped();
     if (local != null) return _local(local);
     final missingDownload = downloads.tasks.any(
       (task) =>
