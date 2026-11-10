@@ -258,11 +258,9 @@ class AccountService {
         });
         record.putIfAbsent('ledger', () => <String, dynamic>{});
         accounts[identity] = record;
-        if (!recovering) {
+        if (!recovering && (makePrimary || state['primaryAccountId'] == null)) {
+          state['primaryAccountId'] = identity;
           state['activeAccountId'] = identity;
-          if (makePrimary || state['primaryAccountId'] == null) {
-            state['primaryAccountId'] = identity;
-          }
         }
         (state['credentialCleanup'] as List).remove(newRef);
         if (oldRef != null) _scheduleCleanup(state, oldRef);

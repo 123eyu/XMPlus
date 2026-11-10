@@ -263,6 +263,7 @@ class _AccountPageState extends State<AccountPage> {
     final missing = widget.accounts.missingCredentialAccountIds.contains(
       identity,
     );
+    final active = widget.accounts.activeClient?.identity == identity;
     final paused = record['rewardPaused'] == true;
     final quota = record['quota'];
     Quota? verified;
@@ -292,6 +293,11 @@ class _AccountPageState extends State<AccountPage> {
                   const Padding(
                     padding: EdgeInsets.only(left: 8),
                     child: Chip(label: Text('主账号')),
+                  ),
+                if (active && !primary)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: Chip(label: Text('当前使用')),
                   ),
               ],
             ),
@@ -335,14 +341,14 @@ class _AccountPageState extends State<AccountPage> {
                     icon: const Icon(Icons.key),
                     label: const Text('更新登录'),
                   ),
-                  if (!primary)
+                  if (!primary || !active)
                     OutlinedButton(
                       onPressed: _busy
                           ? null
                           : () => _run(
                               () => widget.accounts.setPrimary(identity),
                             ),
-                      child: const Text('设为主账号'),
+                      child: Text(primary ? '切回主账号' : '设为主账号'),
                     ),
                   OutlinedButton(
                     onPressed: _busy ? null : () => _quota(identity),
