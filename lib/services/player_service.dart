@@ -122,7 +122,8 @@ class PlayerService {
   bool playing = false, buffering = false;
   double position = 0, duration = 0, rate = 1, volume = 100;
   double _observedPosition = 0;
-  String? error, warning, status;
+  String? error, status;
+  String? _sourceWarning;
   bool _closed = false, _loaded = false, _actual = false, _atEnd = false;
   bool _awaitingDuration = false, _manualChapterPosition = false;
   bool _sleepStopped = false, _manualPaused = false;
@@ -141,6 +142,10 @@ class PlayerService {
       cursor >= 0 && cursor < _queue.length ? _queue[cursor] : null;
   String get sourceKind => _source?.kind ?? '';
   bool get loading => _loading;
+  // Policy warnings describe the current settings/duration. Do not retain one
+  // after its condition clears or while a new source is still being prepared.
+  String? get warning =>
+      (_source != null && !_loading ? policy.warning : null) ?? _sourceWarning;
   int get seekRevision => _seekRevision;
   String? get currentTaskId => _source?.taskId;
   String get libraryIdentity => accounts.activeClient?.identity ?? 'anonymous';
@@ -288,7 +293,7 @@ class PlayerService {
     _loaded = false;
     await load();
     error = null;
-    warning = null;
+    _sourceWarning = null;
     status = null;
     _notify();
   }
@@ -550,7 +555,7 @@ class PlayerService {
         return (cloud['position'] as num).toDouble();
       }
     } catch (_) {
-      warning = '云进度暂不可用，将从片头开始';
+      _sourceWarning = '云进度暂不可用，将从片头开始';
     }
     return 0;
   }
@@ -596,7 +601,7 @@ class PlayerService {
     if (request != _request) return;
     status = '正在准备音频';
     error = null;
-    warning = null;
+    _sourceWarning = null;
     _notify();
     final settings = effectiveSettings;
     final source = await _admission(
@@ -654,7 +659,6 @@ class PlayerService {
         settings: settings,
         manualReplay: manualReplay,
       );
-      warning = policy.warning ?? warning;
       rate = settings.speed;
       volume = settings.volume;
       await _driver.open(source.uri, epoch: epoch);
@@ -798,7 +802,7 @@ class PlayerService {
         if (prepare == null || confirm == null) {
           throw const XmlyException('confirmation_required', '请先确认边听边下');
         }
-        warning = '边听边下按整集预扣听时，已产生的在线听时不会抵扣';
+        _sourceWarning = '边听边下按整集预扣听时，已产生的在线听时不会抵扣';
         _notify();
         final batch = await prepare([track]);
         if (request != _request || !await confirm(batch)) {
@@ -1081,7 +1085,6 @@ class PlayerService {
       duration: duration,
       completed: snapshot.completed && _actual,
     );
-    warning = policy.warning ?? warning;
     if (finished && _actual && !_atEnd)
       await _finish();
     else
