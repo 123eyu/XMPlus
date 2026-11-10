@@ -157,6 +157,7 @@ Future<void> _deleteAudioGroup(
     }
     if (runtime.downloads.tasks.any(
       (task) =>
+          task.state == DownloadState.completed &&
           task.finalPath != null &&
           _audioPathKey(task.finalPath!) == key &&
           !ids.contains(task.id),
