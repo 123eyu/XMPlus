@@ -1776,6 +1776,8 @@ class DownloadService {
               : '无法启动媒体工具，请检查路径';
         case 'media_probe':
           return '无法识别有效音轨或时长，源缓存已保留，请选择重新获取或其他格式';
+        case 'media_incomplete':
+          return '音频时长明显短于标注时长，请重新获取音频；源缓存和已有扣时收据已保留';
         case 'media_hash':
         case 'media_validation':
           return '音频校验失败，源缓存已保留，请选择其他格式后重试';
