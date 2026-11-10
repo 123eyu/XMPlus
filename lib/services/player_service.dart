@@ -1852,6 +1852,7 @@ class PlayerService {
       await _saveQueue(next, cursorIndex, '');
       _queue = next;
       cursor = cursorIndex;
+      if (selected == null) duration = current?.duration ?? 0;
       sourceAlbumId = '';
       ++generation;
       _notify();
@@ -1860,6 +1861,7 @@ class PlayerService {
 
   Future<void> addToQueue(Track track) => _run(
     () => _commands.synchronized(() async {
+      final selected = current?.id;
       if (_queue.any((item) => item.id == track.id)) return;
       if (_queue.length >= 5000)
         throw const XmlyException('queue_full', '队列最多 5000 集');
@@ -1867,6 +1869,7 @@ class PlayerService {
       await _saveQueue(next, index, '');
       _queue = next;
       cursor = index;
+      if (selected == null) duration = current?.duration ?? 0;
       sourceAlbumId = '';
       ++generation;
       _notify();
