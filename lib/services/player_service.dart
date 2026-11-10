@@ -678,6 +678,11 @@ class PlayerService {
         return;
       }
       _official.start('player', track, source.identity);
+      final sleep = policy.pollSleep();
+      if (sleep != null) {
+        await _sleep(sleep);
+        return;
+      }
       if (startPlaying) await _driver.play();
       status = source.supportsRanges ? null : '此音频暂不支持快速跳转，跳转时可能需要等待';
       _notify();
@@ -1107,7 +1112,23 @@ class PlayerService {
   }
 
   /// Polls sleep deadlines and persists actual listening progress.
-  Future<void> tick() => _commands.synchronized(() async {
+  Future<void> tick() async {
+    if (_closed) return;
+    // Authorization can be waiting inside _commands. Expiry must cancel that
+    // admission now, so it cannot start audio before the queued sleep action.
+    final expired = policy.pollSleep();
+    if (expired != null) {
+      _newRequest();
+      _sleepStopped = true;
+      await _commands.synchronized(() async {
+        if (!_closed) await _sleep(expired, invalidateRequest: false);
+      });
+      return;
+    }
+    await _commands.synchronized(_tick);
+  }
+
+  Future<void> _tick() async {
     if (_closed) return;
     final sleep = policy.pollSleep();
     if (sleep != null) {
@@ -1122,7 +1143,8 @@ class PlayerService {
       }
     }
     _notify();
-  });
+  }
+
   Future<void> _finish() async {
     _atEnd = true;
     final sleep = policy.onChapterEnd();
@@ -1360,8 +1382,11 @@ class PlayerService {
     _notify();
   }
 
-  Future<void> _sleep(SleepAction action) async {
-    ++_advanceIntent;
+  Future<void> _sleep(
+    SleepAction action, {
+    bool invalidateRequest = true,
+  }) async {
+    if (invalidateRequest) _newRequest();
     _sleepStopped = true;
     await _pause(sleep: true);
     status = '定时已结束';
