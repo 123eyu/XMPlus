@@ -121,6 +121,7 @@ class PlayerService {
   String get queueOrderLabel => queueSource == 'updates' ? '倒序（由旧到新）' : '队列顺序';
   bool playing = false, buffering = false;
   double position = 0, duration = 0, rate = 1, volume = 100;
+  double? _startSeekPosition;
   double _observedPosition = 0;
   String? error, warning, status;
   bool _closed = false, _loaded = false, _actual = false, _atEnd = false;
@@ -207,7 +208,8 @@ class PlayerService {
     return '播放操作未完成，请重试';
   }
 
-  int _newRequest() {
+  int _newRequest({bool keepStartPosition = false}) {
+    if (!keepStartPosition) _startSeekPosition = null;
     ++_advanceIntent;
     final previous = _requestChanged;
     _requestChanged = Completer<void>();
@@ -482,7 +484,7 @@ class PlayerService {
   }
 
   Future<void> playCurrent() => _run(() async {
-    final request = _newRequest();
+    final request = _newRequest(keepStartPosition: true);
     await _commands.synchronized(() => _openCurrent(request));
   });
   Future<void> previous() async {
@@ -562,14 +564,18 @@ class PlayerService {
     String? localTaskId,
   }) async {
     if (current == null || request != _request) return;
+    final selectedStart = _source == null && resumePosition == null
+        ? _startSeekPosition
+        : null;
     _loading = true;
     try {
       await _openCurrentSource(
         request,
-        resumePosition: resumePosition,
-        manualReplay: manualReplay,
+        resumePosition: resumePosition ?? selectedStart,
+        manualReplay: manualReplay || selectedStart != null,
         localTaskId: localTaskId,
       );
+      if (request == _request && _source != null) _startSeekPosition = null;
     } finally {
       _loading = false;
       _notify();
@@ -914,7 +920,7 @@ class PlayerService {
   }
 
   Future<void> resume() => _run(() async {
-    final request = _newRequest();
+    final request = _newRequest(keepStartPosition: true);
     await _commands.synchronized(() async {
       if (_source == null || _atEnd) {
         await _openCurrent(request);
@@ -943,11 +949,26 @@ class PlayerService {
     );
   });
   Future<void> seek(double seconds) {
+    final trackId = current?.id, request = _request;
     ++_advanceIntent;
     return _run(
       () => _commands.synchronized(() async {
+        if (request != _request || trackId != current?.id) return;
         if (!seconds.isFinite || seconds < 0) throw ArgumentError('播放位置无效');
-        if (_source == null) return;
+        if (_source == null) {
+          final track = current;
+          if (track == null) return;
+          // Selecting a future start is a UI intent, not an audio observation.
+          duration = track.duration;
+          position = seconds.clamp(
+            0,
+            duration > 0 ? duration : double.infinity,
+          );
+          _startSeekPosition = position;
+          ++_seekRevision;
+          _notify();
+          return;
+        }
         _manualChapterPosition = true;
         position = policy.manualSeek(seconds);
         await _driver.seek(position);
