@@ -74,7 +74,9 @@ class XmlyComments {
     final ids = <String>{};
     for (final value in raw) {
       final row = xmlyMap(value);
-      final id = xmlyIdentifier(row['id']);
+      final rawId = row['id'];
+      if (rawId is! int && rawId is! String) throw _invalid;
+      final id = xmlyIdentifier(rawId.toString());
       if (!ids.add(id) || row['content'] is! String) throw _invalid;
       comments.add(
         TrackComment(
