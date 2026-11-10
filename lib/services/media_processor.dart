@@ -212,6 +212,11 @@ class MediaProcessor {
         : format as String;
     final tagging = _boolean(tags, 'enabled', true);
     final coverEnabled = tagging && _boolean(tags, 'cover', false);
+    final originalFormats = '${xmlyMap(input['format'])['format_name']}'.split(
+      ',',
+    );
+    final copyOriginal =
+        format == 'original' && !tagging && originalFormats.contains(extension);
     final download = xmlyMap(task.settings['download']);
     final minimum = download['minimumFreeMiB'] ?? 512;
     if (minimum is! int) throw const XmlyException('invalid_space', '可用空间设置无效');
@@ -223,6 +228,8 @@ class MediaProcessor {
     if (format == 'original') {
       // Copy/remux never writes decoded PCM. Keep output/replacement room,
       // plus temporary/embedded metadata and the bounded cover download.
+      // Even an almost-empty ADTS stream needs MP4 headers and sample tables.
+      if (!copyOriginal) reserve += 1024 * 1024;
       if (tagging) {
         // ffprobe output caps retained source tags at _limit. Allow escaped
         // metadata files as well as the tags embedded in the final container.
@@ -395,11 +402,7 @@ class MediaProcessor {
             warnings.add('此格式不支持内嵌封面，已保留音频');
           }
         }
-        final originalFormats = '${xmlyMap(input['format'])['format_name']}'
-            .split(',');
-        if (format == 'original' &&
-            !tagging &&
-            originalFormats.contains(extension)) {
+        if (copyOriginal) {
           await _copy(source, output, checkpoint);
         } else {
           final args = [
