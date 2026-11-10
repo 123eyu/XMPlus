@@ -218,6 +218,7 @@ class DownloadService {
   final Map<String, ({DownloadControl control, Future<void> done})> _workers =
       {};
   final Map<String, int> _stopping = {};
+  final Map<String, int> _stoppingAlbums = {};
   final Map<String, bool Function()> _automaticGuards = {};
   bool _loaded = false, _closed = false, _suspended = false;
   int _parallelism = 3;
@@ -461,25 +462,11 @@ class DownloadService {
     throw failure!;
   }
 
-  Future<void> pauseAlbum(String id) async {
-    final job = _albums[id]!;
-    job.state = 'paused';
-    await _updates.synchronized(() => _save(_tasks));
-    for (final taskId in job.taskIds) {
-      if (task(taskId).active) await pause(taskId);
-    }
-    _notify();
-  }
+  Future<void> pauseAlbum(String id) =>
+      _stopTasks(_albums[id]!.taskIds, cancel: false, albumId: id);
 
-  Future<void> cancelAlbum(String id) async {
-    final job = _albums[id]!;
-    job.state = 'cancelled';
-    await _updates.synchronized(() => _save(_tasks));
-    for (final taskId in job.taskIds) {
-      if (task(taskId).state != DownloadState.completed) await cancel(taskId);
-    }
-    _notify();
-  }
+  Future<void> cancelAlbum(String id) =>
+      _stopTasks(_albums[id]!.taskIds, cancel: true, albumId: id);
 
   Future<void> resumeAlbum(String id) => _queueCommands.synchronized(() async {
     _ensureOpen();
@@ -501,6 +488,7 @@ class DownloadService {
   void _pumpAlbums() {
     for (final job in _albums.values.toList()) {
       if (job.state != 'running' ||
+          _stoppingAlbums.containsKey(job.id) ||
           _albumWorkers.contains(job.id) ||
           job.taskIds.any(
             (id) =>
@@ -520,7 +508,10 @@ class DownloadService {
 
   Future<void> _advanceAlbum(DownloadAlbumJob job) async {
     bool allowed() =>
-        !_closed && !_suspended && _albums[job.id]?.state == 'running';
+        !_closed &&
+        !_suspended &&
+        !_stoppingAlbums.containsKey(job.id) &&
+        _albums[job.id]?.state == 'running';
     try {
       if (job.page * xmlyAlbumPageSize >= job.total) {
         job.state = 'completed';
@@ -955,53 +946,93 @@ class DownloadService {
 
   Future<void> pause(String id) => _stop(id, cancel: false);
   Future<void> cancel(String id) => _stop(id, cancel: true);
-  Future<void> _stop(String id, {required bool cancel}) async {
+  Future<void> _stop(String id, {required bool cancel}) =>
+      _stopTasks([id], cancel: cancel);
+
+  Future<void> _stopTasks(
+    Iterable<String> ids, {
+    required bool cancel,
+    String? albumId,
+  }) async {
     _ensureOpen();
-    // Signal before waiting for the command lock so album stops reach every
-    // producer. Keep each pending stop counted until its final state is applied.
-    _stopping.update(id, (count) => count + 1, ifAbsent: () => 1);
-    _workers[id]?.control._stop(cancel: cancel);
-    try {
-      await _queueCommands.synchronized(() async {
-        await _workers[id]?.done;
+    final state = cancel ? DownloadState.cancelled : DownloadState.paused;
+    final targets = <String>{};
+    void signal(Iterable<String> values) {
+      for (final id in values) {
+        if (!targets.add(id)) continue;
+        _stopping.update(id, (count) => count + 1, ifAbsent: () => 1);
+        _workers[id]?.control._stop(cancel: cancel);
+      }
+    }
+
+    if (albumId != null) {
+      _stoppingAlbums.update(albumId, (count) => count + 1, ifAbsent: () => 1);
+      _albums[albumId]!.state = state.name;
+    }
+    // Notify every producer before waiting. Pending album stops also cover a
+    // page whose admission is still publishing its newly persisted tasks.
+    signal(ids);
+    await _queueCommands.synchronized(() async {
+      try {
+        if (albumId != null) signal(_albums[albumId]!.taskIds);
+        await Future.wait([
+          for (final id in targets)
+            if (_workers[id] case final worker?) worker.done,
+        ]);
         await _updates.synchronized(() async {
-          final item = task(id);
-          var stopped = item.state == DownloadState.completed
-              ? item
-              : item.copyWith(
-                  state: cancel ? DownloadState.cancelled : DownloadState.paused,
-                  bytesPerSecond: 0,
-                  retryAt: null,
-                  processingFailed:
-                      item.processingFailed ||
-                      item.state == DownloadState.processing,
-                );
-          try {
-            await _save({..._tasks, id: stopped});
-          } catch (_) {
-            if (item.state != DownloadState.completed) {
-              stopped = stopped.copyWith(
-                error: cancel
-                    ? '取消状态保存失败，请检查资料目录后重新打开应用'
-                    : '暂停状态保存失败，请检查资料目录后重新打开应用',
-              );
+          final stopped = <String, DownloadTask>{};
+          for (final id in targets) {
+            final item = task(id);
+            if (item.state == DownloadState.completed ||
+                albumId != null && !cancel && !item.active) {
+              continue;
             }
+            stopped[id] = item.copyWith(
+              state: state,
+              bytesPerSecond: 0,
+              retryAt: null,
+              processingFailed:
+                  item.processingFailed ||
+                  item.state == DownloadState.processing,
+            );
+          }
+          final album = albumId == null ? null : _albums[albumId]!;
+          if (album != null) album.state = state.name;
+          try {
+            await _save({..._tasks, ...stopped});
+          } catch (_) {
+            final message = cancel
+                ? '取消状态保存失败，请检查资料目录后重新打开应用'
+                : '暂停状态保存失败，请检查资料目录后重新打开应用';
+            stopped.updateAll((id, item) => item.copyWith(error: message));
+            if (album != null) album.error = message;
             rethrow;
           } finally {
-            _tasks[id] = stopped;
+            _tasks.addAll(stopped);
             _notify();
           }
         });
-      });
-    } finally {
-      final remaining = _stopping[id]! - 1;
-      if (remaining == 0) {
-        _stopping.remove(id);
-      } else {
-        _stopping[id] = remaining;
+      } finally {
+        for (final id in targets) {
+          final remaining = _stopping[id]! - 1;
+          if (remaining == 0) {
+            _stopping.remove(id);
+          } else {
+            _stopping[id] = remaining;
+          }
+        }
+        if (albumId != null) {
+          final remaining = _stoppingAlbums[albumId]! - 1;
+          if (remaining == 0) {
+            _stoppingAlbums.remove(albumId);
+          } else {
+            _stoppingAlbums[albumId] = remaining;
+          }
+        }
+        // Finish the stop before the next continue command can start.
+        _pump();
       }
-      _pump();
-    }
+    });
   }
 
   static Future<bool> _outputExists(DownloadTask item) async =>
@@ -1270,10 +1301,14 @@ class DownloadService {
   void _pump() {
     if (_closed || _suspended || !_loaded) return;
     _pumpAlbums();
+    final stoppedAlbumTasks = {
+      for (final id in _stoppingAlbums.keys) ..._albums[id]!.taskIds,
+    };
     for (final item in tasks.where(
       (item) =>
           item.state == DownloadState.queued &&
           !_stopping.containsKey(item.id) &&
+          !stoppedAlbumTasks.contains(item.id) &&
           !(_automaticGuards[item.id]?.call() ?? true),
     )) {
       unawaited(
@@ -1292,6 +1327,7 @@ class DownloadService {
               item.state == DownloadState.queued &&
               !_workers.containsKey(item.id) &&
               !_stopping.containsKey(item.id) &&
+              !stoppedAlbumTasks.contains(item.id) &&
               (_automaticGuards[item.id]?.call() ?? true),
         )
         .toList();
