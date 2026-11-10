@@ -23,6 +23,8 @@ class AudioCache {
   final Future<ResolvedAudio> Function(bool Function() isActive)? _refresh;
   final Future<void> Function()? _checkpoint;
   final void Function(int, int?, double)? _onProgress;
+  final int? _rateLimitRetries;
+  final Duration _minimumRateLimitDelay;
   final _blocks = <int, String>{};
   final _waiting = <int, Completer<void>>{};
   final _priority = LinkedHashSet<int>();
@@ -53,6 +55,8 @@ class AudioCache {
     this._refresh,
     this._checkpoint,
     this._onProgress,
+    this._rateLimitRetries,
+    this._minimumRateLimitDelay,
   );
 
   static Future<AudioCache> open({
@@ -61,12 +65,27 @@ class AudioCache {
     Future<ResolvedAudio> Function(bool Function() isActive)? refresh,
     Future<void> Function()? checkpoint,
     void Function(int received, int? total, double rate)? onProgress,
+    int? rateLimitRetries,
+    Duration minimumRateLimitDelay = Duration.zero,
   }) async {
+    if ((rateLimitRetries != null &&
+            (rateLimitRetries < 0 || rateLimitRetries > 1000)) ||
+        minimumRateLimitDelay.isNegative) {
+      throw const XmlyException('invalid_retry', '限流重试设置无效');
+    }
     final path = p.normalize(p.absolute(directory));
     if (!_openDirectories.add(Platform.isWindows ? path.toLowerCase() : path)) {
       throw const XmlyException('cache_in_use', '此缓存正在使用');
     }
-    final cache = AudioCache._(path, audio, refresh, checkpoint, onProgress);
+    final cache = AudioCache._(
+      path,
+      audio,
+      refresh,
+      checkpoint,
+      onProgress,
+      rateLimitRetries,
+      minimumRateLimitDelay,
+    );
     try {
       cache._validateUri(audio.uri);
       await Directory(path).create(recursive: true);
@@ -370,6 +389,7 @@ class AudioCache {
   }
 
   Future<void> _fetchWithRetry(int index, int epoch) async {
+    var rateRetries = 0, transportRetries = 0;
     for (var attempt = 0; ; attempt++) {
       _diagnostic = null;
       try {
@@ -387,18 +407,32 @@ class AudioCache {
         _client?.close(force: true);
         _client = null;
         _checkProducer(epoch);
-        if (attempt >= 4) {
+        final exhausted = _rateLimitRetries == null
+            ? attempt >= 4
+            : rateLimited
+            ? rateRetries++ >= _rateLimitRetries
+            : transportRetries++ >= 4;
+        if (exhausted) {
           if (error is _AudioTransportFailure)
             Error.throwWithStackTrace(error.error, error.stack);
           Error.throwWithStackTrace(error, stack);
         }
-        final backoff = Duration(seconds: 1 << attempt);
-        final retryAfter = rateLimited ? error.retryAfter : null;
-        final ready = Completer<void>();
-        final timer = Timer(
-          retryAfter != null && retryAfter > backoff ? retryAfter : backoff,
-          ready.complete,
+        final backoff = Duration(
+          seconds:
+              1 <<
+              (_rateLimitRetries == null
+                  ? min(attempt, 4)
+                  : max(0, min(transportRetries - 1, 4))),
         );
+        final retryAfter = rateLimited ? error.retryAfter : null;
+        var delay = retryAfter != null && retryAfter > backoff
+            ? retryAfter
+            : backoff;
+        if (rateLimited && _minimumRateLimitDelay > delay) {
+          delay = _minimumRateLimitDelay;
+        }
+        final ready = Completer<void>();
+        final timer = Timer(delay, ready.complete);
         try {
           await _whileActive(epoch, () => ready.future);
         } finally {

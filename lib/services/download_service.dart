@@ -47,6 +47,7 @@ class DownloadControl {
   bool _paused = false, _cancelled = false;
   bool get paused => _paused;
   bool get cancelled => _cancelled;
+  Future<void> get stopped => _stopped.future;
   Future<void> checkpoint() async {
     if (_paused || _cancelled) throw const DownloadStopped();
   }
@@ -420,11 +421,15 @@ class DownloadService {
     Object? failure;
     for (final candidate in _candidates(identity, settings)) {
       try {
-        Future<AlbumPage> read(XmlyClient client) => client.album(
-          albumId,
-          page: page,
-          pageSize: xmlyAlbumPageSize,
-          ascending: true,
+        Future<AlbumPage> read(XmlyClient client) => readRequests(
+          client,
+          settings,
+          () => client.album(
+            albumId,
+            page: page,
+            pageSize: xmlyAlbumPageSize,
+            ascending: true,
+          ),
         );
         final result = candidate == 'anonymous'
             ? await read(anonymous)
@@ -644,9 +649,14 @@ class DownloadService {
               await beforeAdmission?.call(candidate, client);
             }
             await control?.checkpoint();
-            final audio = await client.resolve(
-              selection.track.id,
-              quality: (settings['download'] as Map?)?['quality'] as String?,
+            final audio = await readRequests(
+              client,
+              settings,
+              () => client.resolve(
+                selection.track.id,
+                quality: (settings['download'] as Map?)?['quality'] as String?,
+              ),
+              control: control,
             );
             _identity(audio, candidate, selection.track.id);
             final receipt = _receipt(
@@ -664,8 +674,12 @@ class DownloadService {
               }
               if (!balances.containsKey(candidate)) {
                 await ledger.settle(candidate);
-                balances[candidate] = (await ledger.queryQuota(candidate))
-                    .remainingSeconds;
+                balances[candidate] = (await readRequests(
+                  client,
+                  settings,
+                  () => ledger.queryQuota(candidate),
+                  control: control,
+                )).remainingSeconds;
               }
               expected = balances[candidate]! - (reserved[candidate] ?? 0);
               if (expected < seconds) {
@@ -1542,9 +1556,15 @@ class DownloadService {
         }
         await control.checkpoint();
       }
-      final audio = await client.resolve(
-        current.track.id,
-        quality: (current.settings['download'] as Map?)?['quality'] as String?,
+      final audio = await readRequests(
+        client,
+        current.settings,
+        () => client.resolve(
+          current.track.id,
+          quality:
+              (current.settings['download'] as Map?)?['quality'] as String?,
+        ),
+        control: control,
       );
       _identity(audio, current.accountIdentity, current.track.id);
       await control.checkpoint();
@@ -1702,6 +1722,19 @@ class DownloadService {
         'officialPosition': selected.officialPosition,
     },
   );
+  static Future<T> readRequests<T>(
+    XmlyClient client,
+    Map settings,
+    Future<T> Function() action, {
+    DownloadControl? control,
+  }) => client.withReadPolicy(
+    action,
+    rateLimitRetries: _option(settings, 'retryLimit', 3, 0, 1000),
+    minimumRateLimitDelay: const Duration(minutes: 5),
+    cancelled: control?.stopped,
+    checkpoint: control?.checkpoint,
+  );
+
   static int _option(Map settings, String key, int fallback, int min, int max) {
     final download = settings['download'];
     final value = download is Map ? download[key] : null;

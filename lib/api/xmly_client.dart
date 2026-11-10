@@ -14,6 +14,7 @@ import '../services/request_diagnostics.dart';
 import 'xmly_crypto.dart';
 
 class XmlyClient {
+  static final _readPolicyKey = Object();
   static const mobile = 'https://mobile.ximalaya.com';
   static const cachedAlbumOrigin = 'https://mobwsa.ximalaya.com';
   static const searchOrigin = 'https://www.ximalaya.com';
@@ -171,11 +172,45 @@ class XmlyClient {
     unawaited(clearUrlCache());
   }
 
-  Future<void> _retryWait(Duration delay) async {
+  /// Bind retry/cancellation to one operation, since playback and downloads may
+  /// share this client. Mutating requests deliberately ignore this read policy.
+  Future<T> withReadPolicy<T>(
+    Future<T> Function() action, {
+    required int rateLimitRetries,
+    Duration minimumRateLimitDelay = Duration.zero,
+    Future<void>? cancelled,
+    Future<void> Function()? checkpoint,
+  }) {
+    if (rateLimitRetries < 0 ||
+        rateLimitRetries > 1000 ||
+        minimumRateLimitDelay.isNegative ||
+        (cancelled != null && checkpoint == null)) {
+      throw const XmlyException('invalid_retry', '限流重试设置无效');
+    }
+    return runZoned(
+      action,
+      zoneValues: {
+        _readPolicyKey: _ReadPolicy(
+          rateLimitRetries,
+          minimumRateLimitDelay,
+          cancelled,
+          checkpoint,
+        ),
+      },
+    );
+  }
+
+  Future<void> _retryWait(Duration delay, [_ReadPolicy? policy]) async {
+    await policy?.checkpoint?.call();
     final ready = Completer<void>();
     final timer = Timer(delay, ready.complete);
     try {
-      await Future.any<void>([ready.future, _closeSignal.future]);
+      await Future.any<void>([
+        ready.future,
+        _closeSignal.future,
+        if (policy?.cancelled != null) policy!.cancelled!,
+      ]);
+      await policy?.checkpoint?.call();
     } finally {
       timer.cancel();
     }
@@ -228,11 +263,26 @@ class XmlyClient {
         origin == welfare &&
         RegExp(r'^/lite-earn/ting/welfare/rewardDuration/ts-[0-9]+$')
             .hasMatch(path);
-    for (var attempt = 0; attempt < 5; attempt++) {
+    final policy = readOnly
+        ? Zone.current[_readPolicyKey] as _ReadPolicy?
+        : null;
+    var failures = 0, rateRetries = 0;
+    while (true) {
+      await policy?.checkpoint?.call();
+      Duration? retryDelay;
       final until = _cooldowns[origin];
       if (until != null && until.isAfter(DateTime.now())) {
-        await _retryWait(until.difference(DateTime.now()));
+        final delay = until.difference(DateTime.now());
+        if (policy?.rateLimitRetries == 0) {
+          throw XmlyException(
+            'rate_limited',
+            '请求过于频繁，请稍后重试',
+            retryAfter: delay,
+          );
+        }
+        await _retryWait(delay, policy);
       }
+      await policy?.checkpoint?.call();
       if (_closed)
         throw const XmlyException('client_closed', '连接已关闭', definitive: true);
       final cancel = CancelToken();
@@ -264,7 +314,7 @@ class XmlyClient {
           },
         );
       } on _RetryableStatus {
-        if (!readOnly || attempt == 4)
+        if (!readOnly || failures++ >= 4)
           throw XmlyException(
             readOnly ? 'network' : 'uncertain',
             readOnly ? '喜马拉雅服务暂时不可用' : '请求结果未知，请核对后重试',
@@ -276,19 +326,19 @@ class XmlyClient {
         if (cancel.cancelError?.error case final XmlyException limit
             when limit.code == 'response_too_large')
           throw limit;
-        if (!readOnly || attempt == 4)
+        if (!readOnly || failures++ >= 4)
           throw XmlyException(
             readOnly ? 'network' : 'uncertain',
             readOnly ? '请求失败或超时' : '请求结果未知，请核对后重试',
           );
       } on TimeoutException {
-        if (!readOnly || attempt == 4)
+        if (!readOnly || failures++ >= 4)
           throw XmlyException(
             readOnly ? 'network' : 'uncertain',
             readOnly ? '请求失败或超时' : '请求结果未知，请核对后重试',
           );
       } on IOException {
-        if (!readOnly || attempt == 4)
+        if (!readOnly || failures++ >= 4)
           throw XmlyException(
             readOnly ? 'network' : 'uncertain',
             readOnly ? '请求失败或超时' : '请求结果未知，请核对后重试',
@@ -299,17 +349,23 @@ class XmlyClient {
             error.code == 'rejected' &&
             diagnostic.status == 200 &&
             error.definitive;
-        if ((error.code != 'rate_limited' && !safeRewardRejection) ||
-            attempt == 4)
+        if (error.code != 'rate_limited' && !safeRewardRejection) rethrow;
+        if (error.code == 'rate_limited' && policy != null) {
+          if (rateRetries++ >= policy.rateLimitRetries) rethrow;
+          final serverDelay = error.retryAfter ?? Duration.zero;
+          retryDelay = serverDelay > policy.minimumRateLimitDelay
+              ? serverDelay
+              : policy.minimumRateLimitDelay;
+        } else if (failures++ >= 4) {
           rethrow;
+        }
       }
-      final backoff = Duration(seconds: 1 << attempt);
+      final backoff = Duration(seconds: 1 << max(0, min(failures - 1, 4)));
       final cooldown = _cooldowns[origin]?.difference(DateTime.now());
-      await _retryWait(
-        cooldown != null && cooldown > backoff ? cooldown : backoff,
-      );
+      var delay = cooldown != null && cooldown > backoff ? cooldown : backoff;
+      if (retryDelay != null && retryDelay > delay) delay = retryDelay;
+      await _retryWait(delay, policy);
     }
-    throw const XmlyException('network', '请求失败');
   }
 
   Future<Map<String, dynamic>> _attempt(
@@ -1790,6 +1846,19 @@ class XmlyClient {
     // Keep the last validated leases for queued writes; callers drain before
     // releasing AppStorage's lock. Old callbacks cannot write after close.
   }
+}
+
+class _ReadPolicy {
+  const _ReadPolicy(
+    this.rateLimitRetries,
+    this.minimumRateLimitDelay,
+    this.cancelled,
+    this.checkpoint,
+  );
+  final int rateLimitRetries;
+  final Duration minimumRateLimitDelay;
+  final Future<void>? cancelled;
+  final Future<void> Function()? checkpoint;
 }
 
 class _CachedAudioUrl {
