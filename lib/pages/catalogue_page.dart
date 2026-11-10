@@ -752,20 +752,10 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       ),
       Offset.zero & overlay.size,
     );
-    bool? favorite;
-    String? statusError;
     setState(() => _favoriteBusy = true);
     try {
-      if (client.accountAvailable) {
-        try {
-          favorite = await XmlyExperience(client).isFavorite(track.id);
-        } catch (error) {
-          statusError = _safeError(error);
-        }
-      }
       final task = await _localDownload(track);
       if (!current()) return;
-      if (statusError != null) setState(() => _error = statusError);
       final action = await showMenu<String>(
         context: context,
         position: position,
@@ -777,32 +767,24 @@ class _AlbumPageViewState extends State<AlbumPageView> {
             const PopupMenuItem(value: 'delete', child: Text('删除已下载文件'))
           else
             const PopupMenuItem(value: 'download', child: Text('下载')),
-          PopupMenuItem(
-            value: favorite == true ? 'unfavorite' : 'favorite',
-            child: Text(
-              !client.accountAvailable
-                  ? '收藏（需登录）'
-                  : favorite == null
-                  ? '重试收藏状态'
-                  : favorite
-                  ? '取消收藏'
-                  : '收藏',
-            ),
-          ),
+          if (client.accountAvailable)
+            _FavoriteMenuItem(client: client, trackId: track.id)
+          else
+            const PopupMenuItem(value: 'favorite', child: Text('收藏（需登录）')),
         ],
       );
       if (!current() || action == null) return;
+      if (action == 'retryFavorite') {
+        setState(() => _favoriteBusy = false);
+        if (menuContext.mounted) await _openTrackMenu(menuContext, track);
+        return;
+      }
       if (action != 'favorite' && action != 'unfavorite') {
         await _trackAction(track, action);
         return;
       }
       if (!client.accountAvailable) {
         setState(() => _error = '请先登录后收藏声音');
-        return;
-      }
-      if (favorite == null) {
-        setState(() => _favoriteBusy = false);
-        if (menuContext.mounted) await _openTrackMenu(menuContext, track);
         return;
       }
       final desired = action == 'favorite';
@@ -1229,6 +1211,58 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       ),
     );
   }
+}
+
+class _FavoriteMenuItem extends PopupMenuEntry<String> {
+  const _FavoriteMenuItem({required this.client, required this.trackId});
+
+  final XmlyClient client;
+  final String trackId;
+
+  @override
+  double get height => kMinInteractiveDimension;
+
+  @override
+  bool represents(String? value) =>
+      const {'favorite', 'unfavorite', 'retryFavorite'}.contains(value);
+
+  @override
+  State<_FavoriteMenuItem> createState() => _FavoriteMenuItemState();
+}
+
+class _FavoriteMenuItemState extends State<_FavoriteMenuItem> {
+  late final Future<bool> _favorite;
+
+  @override
+  void initState() {
+    super.initState();
+    _favorite = XmlyExperience(widget.client).isFavorite(widget.trackId);
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<bool>(
+    future: _favorite,
+    builder: (context, snapshot) {
+      final ready = snapshot.connectionState == ConnectionState.done;
+      return PopupMenuItem<String>(
+        enabled: ready,
+        value: snapshot.hasError
+            ? 'retryFavorite'
+            : snapshot.data == true
+            ? 'unfavorite'
+            : 'favorite',
+        child: Text(
+          !ready
+              ? '正在读取收藏状态…'
+              : snapshot.hasError
+              ? '重试收藏状态'
+              : snapshot.data == true
+              ? '取消收藏'
+              : '收藏',
+        ),
+      );
+    },
+  );
 }
 
 class CoverImage extends StatelessWidget {
