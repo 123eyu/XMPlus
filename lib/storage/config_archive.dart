@@ -12,6 +12,7 @@ import '../api/xmly_client.dart';
 import '../models/xmly_models.dart';
 import '../models/download_task.dart';
 import '../services/account_service.dart';
+import '../services/download_service.dart' show DownloadAlbumJob;
 import '../services/usage_ledger.dart';
 import 'app_storage.dart';
 import 'credential_store.dart';
@@ -102,9 +103,17 @@ class ConfigArchive {
 
   Future<List<int>> export({bool includeAccount = false}) async {
     final state = storage.state;
+    final tasks = {
+      'downloads': _clean(state['downloads']),
+      'downloadAlbums': _clean(state['downloadAlbums'] ?? const []),
+      'queue': _clean(state['queue']),
+    };
     final files = <String, Object?>{
       'setting.json': _clean(state['settings']),
-      'library.json': {'library': _clean(state['library'])},
+      'library.json': {
+        'library': _clean(state['library']),
+        if (!includeAccount) ...tasks,
+      },
     };
     if (includeAccount) {
       final records = <Map<String, dynamic>>[];
@@ -131,8 +140,7 @@ class ConfigArchive {
       files['account.json'] = {
         'accounts': records,
         'primaryAccountId': state['primaryAccountId'],
-        'downloads': _clean(state['downloads']),
-        'queue': _clean(state['queue']),
+        ...tasks,
       };
     }
     files['meta.json'] = {
@@ -253,6 +261,9 @@ class ConfigArchive {
       if (account != null)
         '合并 ${(account['accounts'] as List).length} 个账号及账本，恢复的任务保持暂停',
       if (account != null) '现有未确认扣时和已确认收据不会删除',
+      if (account?['downloads'] != null ||
+          (payload['library.json'] as Map?)?['downloads'] != null)
+        '恢复下载记录及整专辑分页进度，任务保持暂停并需重新确认',
       if (account != null && payload['meta.json']['origin'] != _origin)
         '其他资料目录的下载收据仅作历史，不抵扣新下载',
       if ((payload['setting.json'] as Map?)?.containsKey('autoDownloads') ==
@@ -305,7 +316,10 @@ class ConfigArchive {
     await relocate(payload);
     final library = payload['library.json'] as Map?;
     final account = payload['account.json'] as Map?;
-    final downloads = account?['downloads'] as List?;
+    final downloadData = account?.containsKey('downloads') == true
+        ? account
+        : library;
+    final downloads = downloadData?['downloads'] as List?;
     for (final task in downloads ?? const []) {
       final wasProcessing = (task as Map)['state'] == 'processing';
       task['state'] = 'paused';
@@ -316,7 +330,13 @@ class ConfigArchive {
       task['retryAt'] = null;
       task['autoStart'] = false;
     }
-    final queue = account?['queue'] as Map<String, dynamic>?;
+    final albumJobs = downloadData?['downloadAlbums'] as List?;
+    for (final job in albumJobs ?? const []) {
+      (job as Map)['state'] = 'paused';
+      job['error'] = null;
+    }
+    final queue =
+        (account?['queue'] ?? library?['queue']) as Map<String, dynamic>?;
     await accounts.restoreArchive(
       settings: payload['setting.json'] as Map<String, dynamic>?,
       library: library?['library'] as Map<String, dynamic>?,
@@ -324,6 +344,7 @@ class ConfigArchive {
           ?.cast<Map<String, dynamic>>(),
       primaryAccountId: account?['primaryAccountId'] as String?,
       downloads: downloads,
+      downloadAlbums: albumJobs,
       queue: queue,
       sameOrigin: draft.sameOrigin,
     );
@@ -376,6 +397,7 @@ class ConfigArchive {
     final library = payload['library.json'];
     if (library != null) {
       final value = _map(library);
+      _validateTasks(value);
       if (value.containsKey('library')) {
         // Validate old backups above before discarding obsolete local favorites.
         for (final library in _map(value['library']).values) {
@@ -431,15 +453,60 @@ class ConfigArchive {
             !credentialIdentities.contains(value['primaryAccountId']) ||
         credentialIdentities.isEmpty && value['primaryAccountId'] != null)
       throw const FormatException();
+    _validateTasks(value);
+  }
+
+  static void _validateTasks(Map<String, dynamic> value) {
+    final tasks = <String, DownloadTask>{};
     if (value.containsKey('downloads')) {
+      if (value['downloads'] is! List) throw const FormatException();
       _checkData(value['downloads']);
-      final taskIds = <String>{};
       for (final item in value['downloads'] as List) {
         final task = _map(item);
         final parsed = DownloadTask.fromJson(task);
-        if (!taskIds.add(parsed.id) || !p.isAbsolute(parsed.rootDirectory)) {
+        if (tasks.containsKey(parsed.id) ||
+            !p.isAbsolute(parsed.rootDirectory)) {
           throw const FormatException();
         }
+        tasks[parsed.id] = parsed;
+      }
+    }
+    if (value.containsKey('downloadAlbums')) {
+      if (value['downloadAlbums'] is! List || !value.containsKey('downloads')) {
+        throw const FormatException();
+      }
+      _checkData(value['downloadAlbums']);
+      final ids = <String>{};
+      for (final item in value['downloadAlbums'] as List) {
+        final job = DownloadAlbumJob.fromJson(_map(item));
+        if (job.id.isEmpty ||
+            !ids.add(job.id) ||
+            job.accountIdentity.isEmpty ||
+            xmlyIdentifier(job.albumId) != job.albumId ||
+            !p.isAbsolute(job.rootDirectory) ||
+            job.total < 0 ||
+            job.total > 5000 ||
+            job.page < 1 ||
+            job.page > 5000 ~/ xmlyAlbumPageSize ||
+            job.seen.length !=
+                (job.page * xmlyAlbumPageSize).clamp(0, job.total) ||
+            job.seen.toSet().length != job.seen.length ||
+            job.taskIds.toSet().length != job.taskIds.length ||
+            job.taskIds.any((id) => !job.seen.contains(tasks[id]?.track.id)) ||
+            !const {
+              'queued',
+              'running',
+              'paused',
+              'completed',
+              'failed',
+              'cancelled',
+            }.contains(job.state)) {
+          throw const FormatException();
+        }
+        for (final id in job.seen) {
+          xmlyIdentifier(id);
+        }
+        _validateSettings(job.settings);
       }
     }
     if (value.containsKey('queue')) {

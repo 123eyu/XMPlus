@@ -238,6 +238,7 @@ class AccountService {
     List<Map<String, dynamic>>? importedAccounts,
     String? primaryAccountId,
     List<dynamic>? downloads,
+    List<dynamic>? downloadAlbums,
     Map<String, dynamic>? queue,
     required bool sameOrigin,
   }) => _accounts.synchronized(() async {
@@ -316,7 +317,7 @@ class AccountService {
         if (library != null) state['library'] = library;
         if (downloads != null) {
           state['downloads'] = downloads;
-          state['downloadAlbums'] = <dynamic>[];
+          state['downloadAlbums'] = downloadAlbums ?? <dynamic>[];
         }
         if (queue != null) state['queue'] = queue;
         final records = state['accounts'] as Map<String, dynamic>;
