@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
@@ -6,6 +7,7 @@ import 'package:synchronized/synchronized.dart';
 import 'package:uuid/uuid.dart';
 
 import '../api/xmly_client.dart';
+import '../models/download_task.dart';
 import '../models/xmly_models.dart';
 import '../storage/app_storage.dart';
 import '../storage/credential_store.dart';
@@ -285,6 +287,11 @@ class AccountService {
         await quiesce!();
         await settle!();
       }
+      final restoredDownloads = downloads == null
+          ? null
+          : sameOrigin
+          ? await _retainLocalDownloads(downloads)
+          : downloads;
       // Unlike switching/removing an account, restore preserves every existing
       // unknown operation, and never resumes work or clears its billing block.
       if (refs.isNotEmpty) {
@@ -314,8 +321,8 @@ class AccountService {
       await storage.transaction((state) {
         if (settings != null) state['settings'] = settings;
         if (library != null) state['library'] = library;
-        if (downloads != null) {
-          state['downloads'] = downloads;
+        if (restoredDownloads != null) {
+          state['downloads'] = restoredDownloads;
           state['downloadAlbums'] = <dynamic>[];
         }
         if (queue != null) state['queue'] = queue;
@@ -391,6 +398,47 @@ class AccountService {
       _admissionPaused = false;
     }
   });
+
+  Future<List<dynamic>> _retainLocalDownloads(List<dynamic> imported) async {
+    final local = <String, DownloadTask>{};
+    for (final raw in storage.state['downloads'] as List) {
+      final task = DownloadTask.fromJson(Map<String, dynamic>.from(raw as Map));
+      if (task.state == DownloadState.completed && task.finalPath != null) {
+        local[task.id] = task;
+      }
+    }
+    final restored = <dynamic>[];
+    for (final raw in imported) {
+      final incoming = DownloadTask.fromJson(
+        Map<String, dynamic>.from(raw as Map),
+      );
+      final existing = local[incoming.id];
+      var keep = false;
+      if (existing != null &&
+          existing.accountIdentity == incoming.accountIdentity &&
+          existing.track.id == incoming.track.id &&
+          p.equals(
+            p.normalize(existing.rootDirectory),
+            p.normalize(incoming.rootDirectory),
+          ) &&
+          p.isWithin(existing.rootDirectory, existing.finalPath!)) {
+        try {
+          keep =
+              await FileSystemEntity.type(
+                    existing.finalPath!,
+                    followLinks: false,
+                  ) ==
+                  FileSystemEntityType.file &&
+              await File(existing.finalPath!).length() > 0;
+        } on FileSystemException {
+          // Missing/inaccessible outputs use the normal paused restore path.
+        }
+      }
+      // Reuse only a current local association, never a path supplied by a ZIP.
+      restored.add(keep ? existing!.toJson() : raw);
+    }
+    return restored;
+  }
 
   static void _historicReceipts(Object? node) {
     if (node is Map) {

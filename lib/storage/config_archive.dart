@@ -251,7 +251,10 @@ class ConfigArchive {
       if (payload.containsKey('setting.json')) '替换应用设置',
       if (payload.containsKey('library.json')) '替换本地书签',
       if (account != null)
-        '合并 ${(account['accounts'] as List).length} 个账号及账本，恢复的任务保持暂停',
+        '合并 ${(account['accounts'] as List).length} 个账号及账本，未完成任务保持暂停',
+      if (account?['downloads'] != null &&
+          payload['meta.json']['origin'] == _origin)
+        '保留本机仍存在的已完成音频关联',
       if (account != null) '现有未确认扣时和已确认收据不会删除',
       if (account != null && payload['meta.json']['origin'] != _origin)
         '其他资料目录的下载收据仅作历史，不抵扣新下载',
