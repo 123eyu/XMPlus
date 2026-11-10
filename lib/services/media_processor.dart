@@ -689,12 +689,12 @@ class MediaProcessor {
   static Future<String> _localFile(String value) async {
     if (!p.isAbsolute(value) ||
         value.contains('\u0000') ||
-        value.startsWith(r'\\') ||
-        value.startsWith('//') ||
         await FileSystemEntity.type(value, followLinks: false) !=
             FileSystemEntityType.file) {
       throw const XmlyException('media_local_file', '媒体处理只接受本地音频文件');
     }
+    // A Windows share or extended-length path is still a filesystem file.
+    // FFmpeg remains restricted to file/pipe protocols after canonicalization.
     return File(value).resolveSymbolicLinks();
   }
 
