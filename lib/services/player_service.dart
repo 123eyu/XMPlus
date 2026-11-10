@@ -1078,13 +1078,17 @@ class PlayerService {
       await _sleep(sleep);
       return;
     }
-    final finished = policy.observe(
-      position,
-      duration: duration,
-      completed: snapshot.completed && _actual,
-    );
+    // Opening/seeking can emit a paused position before the first real play.
+    // Such a snapshot must not consume this chapter's completion event.
+    final finished =
+        _actual &&
+        policy.observe(
+          position,
+          duration: duration,
+          completed: snapshot.completed,
+        );
     warning = policy.warning ?? warning;
-    if (finished && _actual && !_atEnd)
+    if (finished && !_atEnd)
       await _finish();
     else
       _prefetchNext(snapshot);
