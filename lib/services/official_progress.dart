@@ -14,6 +14,7 @@ class _Session {
   final String identity;
   final Track track;
   final int started;
+  (double, int)? recorded;
 }
 
 /// Coalesces only actual playback observations, one newest record per album.
@@ -135,6 +136,9 @@ class OfficialProgress {
         await _savePending(session.identity, pending);
         return;
       }
+      // A successful flush may have removed the entry before an identical
+      // device callback arrives. Do not recreate this session's saved snapshot.
+      if (session.recorded == observed) return;
       final safeTrack = track.toJson();
       safeTrack['raw'] = {
         'album_id': album,
@@ -152,6 +156,7 @@ class OfficialProgress {
       };
       // Durable before any history POST; account switching cannot lose records.
       await _savePending(session.identity, pending);
+      session.recorded = observed;
     });
     if (terminal) {
       _sessions.remove(device);
