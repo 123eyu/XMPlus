@@ -147,6 +147,7 @@ class PlayerService {
   double? _startSeekPosition;
   double _observedPosition = 0;
   double? _endSeekPosition;
+  int? _endAdvanceIntent;
   int _observedAt = 0;
   String? error, warning, status;
   bool _closed = false, _loaded = false, _actual = false, _atEnd = false;
@@ -1440,6 +1441,8 @@ class PlayerService {
 
   Future<void> _finish() async {
     _atEnd = true;
+    // Completion owns advancement even when its page was prefetched before a seek.
+    _endAdvanceIntent = _advanceIntent;
     _endSeekPosition = null;
     final sleep = policy.onChapterEnd();
     if (sleep != null) {
@@ -1657,7 +1660,7 @@ class PlayerService {
           _notify();
           if (_atEnd &&
               _epoch == endEpoch &&
-              advanceIntent == _advanceIntent &&
+              _endAdvanceIntent == _advanceIntent &&
               current?.id == last.id &&
               cursor + 1 < _queue.length &&
               !_sleepStopped &&
