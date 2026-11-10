@@ -368,13 +368,14 @@ class _DownloadPageState extends State<DownloadPage> {
   Future<void> _retry(DownloadTask task) async {
     task = _service.task(task.id);
     if (task.state != DownloadState.failed &&
-        task.state != DownloadState.paused)
+        task.state != DownloadState.paused &&
+        task.state != DownloadState.cancelled)
       return;
     if (task.processingFailed) {
       await _service.retry(task.id);
       return;
     }
-    if (task.needsConfirmation) {
+    if (task.needsConfirmation || !task.userConfirmed) {
       final batch = await _service.prepareRetry(task.id);
       if (!mounted) return;
       if (await confirmDownloadBatch(context, batch))
