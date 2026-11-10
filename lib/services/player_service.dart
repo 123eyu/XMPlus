@@ -123,6 +123,7 @@ class PlayerService {
   double position = 0, duration = 0, rate = 1, volume = 100;
   double _observedPosition = 0;
   double? _endSeekPosition;
+  int _observedAt = 0;
   String? error, warning, status;
   bool _closed = false, _loaded = false, _actual = false, _atEnd = false;
   bool _awaitingDuration = false, _manualChapterPosition = false;
@@ -666,25 +667,44 @@ class PlayerService {
     );
   });
 
+  ({double position, int updatedAt})? _localProgress(Track track) {
+    final library = (storage.state['library'] as Map)[_progressIdentity];
+    final progress = library is Map ? library['playbackProgress'] : null;
+    final entry = progress is Map ? progress[track.id] : null;
+    if (entry is! Map) return null;
+    final saved = entry['position'], updated = entry['updatedAt'];
+    if (saved is! num ||
+        !saved.isFinite ||
+        saved < 0 ||
+        saved > 2147483647 ||
+        updated is! int ||
+        updated < 0)
+      return null;
+    return (position: saved.toDouble(), updatedAt: updated);
+  }
+
   Future<double> _resumePosition(Track track) async {
+    final local = _localProgress(track);
     final client = _historyClient;
-    if (!_syncHistory || client == null) return 0;
+    if (!_syncHistory || client == null) return local?.position ?? 0;
     try {
       final cloud = await XmlyHistory(client, clock: _clock).progress(
         albumId: track.albumId,
         trackId: track.id,
         timeout: const Duration(seconds: 2),
       );
-      if (cloud != null) {
+      if (cloud != null &&
+          (local == null ||
+              (cloud['updated_at'] as num) * 1000 > local.updatedAt)) {
         if (cloud['incomplete'] == true) {
           warning = '云历史查询较慢，已使用本次查到的最新进度';
         }
         return (cloud['position'] as num).toDouble();
       }
     } catch (_) {
-      warning = '云进度暂不可用，将从片头开始';
+      warning = local == null ? '云进度暂不可用，将从片头开始' : '云进度暂不可用，已使用本地进度';
     }
-    return 0;
+    return local?.position ?? 0;
   }
 
   Future<void> _openCurrent(
@@ -777,6 +797,7 @@ class PlayerService {
       _atEnd = false;
       _endSeekPosition = null;
       _actual = false;
+      _observedAt = 0;
       _sleepStopped = false;
       _manualPaused = !startPlaying;
       _checkedEpochs.clear();
@@ -1207,6 +1228,10 @@ class PlayerService {
     playing = snapshot.playing;
     buffering = snapshot.buffering;
     position = snapshot.position;
+    if ((playing && !buffering) ||
+        (_actual && snapshot.position != _observedPosition)) {
+      _observedAt = _clock().millisecondsSinceEpoch;
+    }
     _observedPosition = snapshot.position;
     if (snapshot.duration > 0) duration = snapshot.duration;
     if (_awaitingDuration && duration > 0) {
@@ -1548,6 +1573,35 @@ class PlayerService {
     final track = current;
     if (track == null || _source == null || !_actual) return;
     final actualPosition = _observedPosition;
+    final identity = _progressIdentity;
+    final observedAt = _observedAt;
+    final previous = _localProgress(track);
+    if (actualPosition.isFinite &&
+        actualPosition >= 0 &&
+        actualPosition <= 2147483647 &&
+        (previous?.position != actualPosition ||
+            previous?.updatedAt != observedAt)) {
+      await storage.transaction((state) {
+        final library = (state['library'] as Map).putIfAbsent(
+          identity,
+          () => <String, dynamic>{},
+        ) as Map;
+        final existing = library['playbackProgress'];
+        final progress = existing is Map
+            ? Map<String, dynamic>.from(existing)
+            : <String, dynamic>{};
+        // Keep recent positions bounded; replacing an entry moves it to the end.
+        progress.remove(track.id);
+        progress[track.id] = {
+          'position': actualPosition,
+          'updatedAt': observedAt,
+        };
+        while (progress.length > 5000) {
+          progress.remove(progress.keys.first);
+        }
+        library['playbackProgress'] = progress;
+      });
+    }
     _savedAt = _clock().millisecondsSinceEpoch;
     if (sync)
       await _official.observe('player', actualPosition, terminal: terminal);
