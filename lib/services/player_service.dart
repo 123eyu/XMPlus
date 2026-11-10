@@ -1340,7 +1340,14 @@ class PlayerService {
       } catch (failure) {
         if (failure is DownloadStopped || !active()) return;
         if (_epoch == endEpoch) _checkedEpochs.remove(endEpoch);
-        if (speculative && !_atEnd) rethrow;
+        if (speculative &&
+            (!_atEnd ||
+                _manualPaused ||
+                _sleepStopped ||
+                endEpoch != _epoch ||
+                advanceIntent != _advanceIntent)) {
+          rethrow;
+        }
         error = _message(failure);
         status = '检查更新失败，请重试';
         _notify();
