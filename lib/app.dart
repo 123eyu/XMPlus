@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get/get.dart';
+import 'package:synchronized/synchronized.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'common/theme.dart';
@@ -16,7 +17,10 @@ import 'common/widgets/app_shutdown_overlay.dart';
 import 'pages/shell_page.dart';
 import 'pages/download_page.dart';
 import 'pages/player_panel.dart';
+import 'pages/mini_player_page.dart';
+import 'pages/window_close_preferences.dart';
 import 'services/app_runtime.dart';
+import 'services/desktop_playback_window.dart';
 import 'services/request_diagnostics.dart';
 
 class MyApp extends StatefulWidget {
@@ -31,8 +35,14 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> with WindowListener {
   late final _appearance = AppAppearance(widget.runtime.storage);
   final _navigator = GlobalKey<NavigatorState>();
+  final _messenger = GlobalKey<ScaffoldMessengerState>();
   final _playerRoutes = _PlayerRouteObserver();
-  bool _closeRequested = false;
+  final _windowActions = Lock();
+  final _playbackWindow = DesktopPlaybackWindow();
+  Route<void>? _miniRoute;
+  Route<dynamic>? _closeDialog;
+  Future<void>? _closeWork;
+  bool _exitPending = false, _choosingCloseAction = false;
   String? _windowCloseError;
   bool _diagnosticsOpen = false;
 
@@ -46,13 +56,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
       final context = _navigator.currentContext;
       return context == null ? false : confirmDownloadBatch(context, batch);
     };
-    widget.runtime.requestExit = () async {
-      if (Platform.isAndroid) {
-        await onCloseRequested();
-      } else {
-        await windowManager.close();
-      }
-    };
+    widget.runtime.requestExit = () => onCloseRequested(explicitExit: true);
     if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
       windowManager.addListener(this);
       unawaited(windowManager.setPreventClose(true));
@@ -64,35 +68,98 @@ class _MyAppState extends State<MyApp> with WindowListener {
     await onCloseRequested();
   }
 
-  Future<void> onCloseRequested() async {
-    if (_closeRequested || !mounted) return;
-    _closeRequested = true;
+  Future<void> onCloseRequested({bool explicitExit = false}) {
+    if (!mounted) return Future.value();
+    if (explicitExit ||
+        widget.runtime.scheduledExit ||
+        widget.runtime.exitOnly) {
+      _exitPending = true;
+      // A timer can fire while a close dialog is waiting for user input.
+      // Dismiss only our dialog; an explicit exit still confirms downloads.
+      final dialog = _closeDialog;
+      if (dialog != null &&
+          dialog.isActive &&
+          (_choosingCloseAction || widget.runtime.scheduledExit)) {
+        _navigator.currentState?.removeRoute(dialog);
+      }
+    }
+    return _closeWork ??= _windowActions
+        .synchronized(_handleClose)
+        .whenComplete(() {
+          _closeWork = null;
+          _exitPending = false;
+          widget.runtime.scheduledExit = false;
+        });
+  }
+
+  Future<T?> _askClose<T>(Widget dialog) async {
+    final context = _navigator.currentContext;
+    if (context == null) return null;
+    final route = DialogRoute<T>(context: context, builder: (_) => dialog);
+    _closeDialog = route;
+    try {
+      return await _navigator.currentState!.push(route);
+    } finally {
+      if (identical(_closeDialog, route)) _closeDialog = null;
+    }
+  }
+
+  Future<void> _handleClose() async {
+    if (!mounted) return;
     if (_windowCloseError != null) setState(() => _windowCloseError = null);
     try {
-      final context = _navigator.currentContext;
+      if (Platform.isWindows && !_exitPending) {
+        if (_miniRoute != null) {
+          await windowManager.minimize();
+          if (!_exitPending) return;
+        } else {
+          var action = WindowCloseAction.read(widget.runtime);
+          if (action == WindowCloseAction.ask) {
+            _choosingCloseAction = true;
+            final choice = await _askClose<(WindowCloseAction, bool)>(
+              const WindowCloseChoiceDialog(),
+            );
+            _choosingCloseAction = false;
+            if (!_exitPending) {
+              if (choice == null) return;
+              action = choice.$1;
+              if (choice.$2) {
+                try {
+                  await action.save(widget.runtime);
+                } catch (_) {
+                  _showWindowError('未能记住选择，本次仍按所选方式关闭');
+                }
+              }
+            }
+          }
+          if (!_exitPending && action == WindowCloseAction.mini) {
+            await _enterMini();
+            if (!_exitPending) return;
+          }
+        }
+      }
       if (!widget.runtime.exitOnly &&
           !widget.runtime.scheduledExit &&
           widget.runtime.downloads.tasks.any((task) => task.active)) {
-        final confirmed = context == null
-            ? false
-            : await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('暂停下载并退出？'),
-                  content: const Text('下次打开后可手动继续。'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('取消'),
-                    ),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('暂停并退出'),
-                    ),
-                  ],
+        final confirmed = await _askClose<bool>(
+          Builder(
+            builder: (context) => AlertDialog(
+              title: const Text('暂停下载并退出？'),
+              content: const Text('下次打开后可手动继续。'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('取消'),
                 ),
-              );
-        if (confirmed != true) return;
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('暂停并退出'),
+                ),
+              ],
+            ),
+          ),
+        );
+        if (confirmed != true && !widget.runtime.scheduledExit) return;
       }
       if (await widget.runtime.close()) {
         if (Platform.isAndroid) {
@@ -101,6 +168,9 @@ class _MyAppState extends State<MyApp> with WindowListener {
           await windowManager.setPreventClose(false);
           await windowManager.close();
         }
+      } else {
+        await _revealWindow();
+        _showWindowError(widget.runtime.lifecycleError ?? '退出未完成，请重试');
       }
     } catch (_) {
       if (mounted) {
@@ -113,11 +183,67 @@ class _MyAppState extends State<MyApp> with WindowListener {
           // Keep the retry UI even if the native window call also failed.
         }
       }
+      await _revealWindow();
+      _showWindowError('窗口操作未完成，请重试');
     } finally {
-      _closeRequested = false;
-      widget.runtime.scheduledExit = false;
+      _choosingCloseAction = false;
     }
   }
+
+  Future<void> _revealWindow() async {
+    if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+      if (await windowManager.isMinimized()) await windowManager.restore();
+      await windowManager.show();
+      await windowManager.focus();
+    }
+  }
+
+  void _showWindowError(String message) {
+    _messenger.currentState?.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _enterMini() async {
+    if (_miniRoute != null || !mounted) return;
+    final route = MaterialPageRoute<void>(
+      settings: const RouteSettings(name: MiniPlayerPage.routeName),
+      builder: (_) => MiniPlayerPage(
+        runtime: widget.runtime,
+        onRestore: () => unawaited(_switchWindow(restore: true)),
+        onExit: () => unawaited(onCloseRequested(explicitExit: true)),
+      ),
+    );
+    setState(() => _miniRoute = route);
+    unawaited(_navigator.currentState!.push(route));
+    try {
+      await _playbackWindow.enterMini();
+    } catch (_) {
+      if (!_playbackWindow.isMini) {
+        _navigator.currentState?.removeRoute(route);
+        if (mounted) setState(() => _miniRoute = null);
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _switchWindow({bool restore = false}) =>
+      _windowActions.synchronized(() async {
+        if (!mounted || widget.runtime.closing) return;
+        try {
+          if (restore) {
+            await _playbackWindow.restore();
+            final route = _miniRoute;
+            if (route != null) {
+              _navigator.currentState?.removeRoute(route);
+              if (mounted) setState(() => _miniRoute = null);
+            }
+          } else {
+            await _enterMini();
+          }
+        } catch (_) {
+          await _revealWindow();
+          _showWindowError('窗口切换失败，可重试或选择彻底退出');
+        }
+      });
 
   Future<void> _showRequestFailures() async {
     if (_diagnosticsOpen || !mounted) return;
@@ -153,6 +279,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
       builder: (context, _) => GetMaterialApp(
         title: 'XMPlus',
         navigatorKey: _navigator,
+        scaffoldMessengerKey: _messenger,
         navigatorObservers: [_playerRoutes],
         debugShowCheckedModeBanner: false,
         theme: getThemeData(
@@ -183,62 +310,66 @@ class _MyAppState extends State<MyApp> with WindowListener {
             child: AppShutdownOverlay(
               runtime: widget.runtime,
               windowError: _windowCloseError,
-              onRetry: () => unawaited(onCloseRequested()),
+              onRetry: () => unawaited(onCloseRequested(explicitExit: true)),
               child: Overlay.wrap(
                 child: ListenableBuilder(
                   listenable: _playerRoutes,
                   child: child,
                   builder: (context, child) => Column(
                     children: [
-                      ListenableBuilder(
-                        listenable: widget.runtime,
-                        builder: (context, _) => StreamBuilder<void>(
-                          stream: RequestDiagnostics.instance.changes,
-                          builder: (context, _) {
-                            final diagnostics = RequestDiagnostics.instance;
-                            final settings =
-                                widget.runtime.storage.state['settings'] as Map;
-                            if (settings['showRequestFailureBanner'] != true ||
-                                (diagnostics.entries.isEmpty &&
-                                    diagnostics.persistenceError == null)) {
-                              return const SizedBox.shrink();
-                            }
-                            return Material(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .errorContainer,
-                              child: SafeArea(
-                                bottom: false,
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.error_outline),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          '请求失败记录：${diagnostics.entries.length} 条'
-                                          '${diagnostics.persistenceError == null ? '' : '；本地日志保存失败，请复制保留'}',
+                      if (_miniRoute == null)
+                        ListenableBuilder(
+                          listenable: widget.runtime,
+                          builder: (context, _) => StreamBuilder<void>(
+                            stream: RequestDiagnostics.instance.changes,
+                            builder: (context, _) {
+                              final diagnostics = RequestDiagnostics.instance;
+                              final settings =
+                                  widget.runtime.storage.state['settings']
+                                      as Map;
+                              if (settings['showRequestFailureBanner'] !=
+                                      true ||
+                                  (diagnostics.entries.isEmpty &&
+                                      diagnostics.persistenceError == null)) {
+                                return const SizedBox.shrink();
+                              }
+                              return Material(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .errorContainer,
+                                child: SafeArea(
+                                  bottom: false,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.error_outline),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            '请求失败记录：${diagnostics.entries.length} 条'
+                                            '${diagnostics.persistenceError == null ? '' : '；本地日志保存失败，请复制保留'}',
+                                          ),
                                         ),
-                                      ),
-                                      TextButton(
-                                        onPressed: _showRequestFailures,
-                                        child: const Text('详情 / 复制'),
-                                      ),
-                                    ],
+                                        TextButton(
+                                          onPressed: _showRequestFailures,
+                                          child: const Text('详情 / 复制'),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
-                      ),
                       Expanded(child: child!),
-                      if (_playerRoutes.current?.settings.name !=
-                          PlayerPanel.routeName)
+                      if (_miniRoute == null &&
+                          _playerRoutes.current?.settings.name !=
+                              PlayerPanel.routeName)
                         SafeArea(
                           top: false,
                           child: ExcludeFocus(
@@ -267,7 +398,13 @@ class _MyAppState extends State<MyApp> with WindowListener {
           onPopInvokedWithResult: (didPop, result) {
             if (!didPop && Platform.isAndroid) unawaited(onCloseRequested());
           },
-          child: ShellPage(appearance: _appearance, runtime: widget.runtime),
+          child: ShellPage(
+            appearance: _appearance,
+            runtime: widget.runtime,
+            onMiniPlayer: Platform.isWindows
+                ? () => unawaited(_switchWindow())
+                : null,
+          ),
         ),
       ),
     );

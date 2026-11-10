@@ -379,7 +379,9 @@ class _GeetestDialogState extends State<GeetestDialog> {
                       data: Uint8List.fromList(utf8.encode(_html())),
                     );
                   }
-                  if (request.isForMainFrame != true &&
+                  // Windows reports every resource as a main-frame request;
+                  // top-level navigation is guarded separately above.
+                  if ((Platform.isWindows || request.isForMainFrame != true) &&
                       _allowedResource(request.url.uriValue))
                     return null;
                   return WebResourceResponse(

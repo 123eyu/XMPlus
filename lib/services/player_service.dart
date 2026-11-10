@@ -66,7 +66,29 @@ class PlayerService {
        _clock = clock ?? DateTime.now,
        policy = PlaybackPolicy(clock: clock) {
     _driverEvents = _driver.snapshots.listen((snapshot) {
-      _background(() => _commands.synchronized(() => _observe(snapshot)));
+      final recorded =
+          !_closed &&
+          _source != null &&
+          snapshot.epoch == _epoch &&
+          snapshot.error == null &&
+          snapshot.position.isFinite &&
+          snapshot.position >= 0 &&
+          snapshot.duration.isFinite &&
+          snapshot.duration >= 0;
+      if (recorded) {
+        // Device time boundaries must not wait behind quota/debit requests.
+        // Only the in-memory sample changes here; journal writes stay serialized.
+        ledger.recordPlaybackState(
+          playing: snapshot.playing,
+          buffering: snapshot.buffering,
+          speed: rate,
+        );
+      }
+      _background(
+        () => _commands.synchronized(
+          () => _observe(snapshot, stateAlreadyRecorded: recorded),
+        ),
+      );
     });
     _downloadEvents = downloads.changes.listen((_) {
       _background(() => _commands.synchronized(_downloadChanged));
@@ -106,6 +128,7 @@ class PlayerService {
   late final StreamSubscription<void> _downloadEvents;
   Timer? _timer;
   AudioProxy? _proxy;
+  Future<AudioProxy>? _proxyOpening;
   PlaybackSource? _source;
   List<Track> _queue = [];
   Completer<void> _requestChanged = Completer<void>();
@@ -122,7 +145,10 @@ class PlayerService {
   String get queueOrderLabel => queueSource == 'updates' ? '倒序（由旧到新）' : '队列顺序';
   bool playing = false, buffering = false;
   double position = 0, duration = 0, rate = 1, volume = 100;
+  double? _startSeekPosition;
   double _observedPosition = 0;
+  double? _endSeekPosition;
+  int _observedAt = 0;
   String? error, warning, status;
   bool _closed = false, _loaded = false, _actual = false, _atEnd = false;
   CloseSequence? _closeSteps;
@@ -136,6 +162,7 @@ class PlayerService {
   int _prefetchEpoch = -1, _prefetchGeneration = -1;
   bool _loading = false;
   int _seekRevision = 0;
+  int _playbackRecoveryRevision = 0;
 
   Stream<void> get changes => _changes.stream;
   List<Track> get queue => List.unmodifiable(_queue);
@@ -144,11 +171,13 @@ class PlayerService {
   String get sourceKind => _source?.kind ?? '';
   bool get loading => _loading;
   int get seekRevision => _seekRevision;
+  int get playbackEpoch => _epoch;
+  int get playbackRecoveryRevision => _playbackRecoveryRevision;
   String? get currentTaskId => _source?.taskId;
   String get libraryIdentity => accounts.activeClient?.identity ?? 'anonymous';
   String get _progressIdentity => _source?.identity ?? libraryIdentity;
   XmlyClient? get _historyClient {
-    final identity = _source?.identity;
+    final identity = _source?.identity ?? accounts.activeClient?.identity;
     if (identity == null || identity == 'anonymous') return null;
     try {
       return accounts.clientFor(identity);
@@ -209,7 +238,8 @@ class PlayerService {
     return '播放操作未完成，请重试';
   }
 
-  int _newRequest() {
+  int _newRequest({bool keepStartPosition = false}) {
+    if (!keepStartPosition) _startSeekPosition = null;
     ++_advanceIntent;
     final previous = _requestChanged;
     _requestChanged = Completer<void>();
@@ -270,6 +300,8 @@ class PlayerService {
     buffering = false;
     _actual = false;
     _atEnd = false;
+    _endSeekPosition = null;
+    _startSeekPosition = null;
     _sleepStopped = false;
     duration = current?.duration ?? 0;
     position = 0;
@@ -379,16 +411,18 @@ class PlayerService {
     }
     final intent = ++generation, request = _newRequest();
     final client = accounts.activeClient ?? anonymous;
-    final hint =
-        track ??
-        (page == null
-            ? await _admission(request, () => client.track(id))
-            : null);
-    if (hint != null &&
-        (hint.id != id || hint.albumId.isNotEmpty && hint.albumId != album)) {
-      throw const XmlyException('missing_track', '声音与专辑不匹配，请刷新重试');
+    int? ordinalFor(Track? hint) {
+      if (hint != null &&
+          (hint.id != id || hint.albumId.isNotEmpty && hint.albumId != album)) {
+        throw const XmlyException('missing_track', '声音与专辑不匹配，请刷新重试');
+      }
+      return hint?.officialPosition ?? xmlyPositive(hint?.orderNo);
     }
-    final ordinal = hint?.officialPosition ?? xmlyPositive(hint?.orderNo);
+
+    var ordinal = ordinalFor(track);
+    if (page == null && ordinal == null) {
+      ordinal = ordinalFor(await _admission(request, () => client.track(id)));
+    }
     final selectedPage =
         page ?? (ordinal == null ? 1 : (ordinal - 1) ~/ xmlyAlbumPageSize + 1);
     final result = await _admission(
@@ -406,7 +440,7 @@ class PlayerService {
           accounts.admissionPaused ||
           !identical(client, accounts.activeClient ?? anonymous))
         return;
-      await _stopSource();
+      await _stopSource(localTarget: tracks[index]);
       await _saveQueue(
         tracks,
         index,
@@ -438,7 +472,7 @@ class PlayerService {
         ++generation;
         await _commands.synchronized(() async {
           if (request != _request) return;
-          await _stopSource();
+          await _stopSource(localTarget: tracks[index]);
           await _saveQueue(tracks, index, '', source: 'updates');
           _queue = tracks;
           cursor = index;
@@ -447,29 +481,41 @@ class PlayerService {
         });
       });
 
-  Future<void> playTrack(Track track, {double? resumePosition}) =>
-      _run(() async {
-        final request = _newRequest();
-        ++generation;
-        await _commands.synchronized(() async {
-          if (request != _request) return;
-          await _stopSource();
-          await _saveQueue([track], 0, '');
-          _queue = [track];
-          cursor = 0;
-          sourceAlbumId = '';
-          await _openCurrent(request, resumePosition: resumePosition);
-        });
-      });
+  Future<void> playTrack(
+    Track track, {
+    double? resumePosition,
+    bool manualPosition = false,
+  }) => _run(() async {
+    final request = _newRequest();
+    ++generation;
+    await _commands.synchronized(() async {
+      if (request != _request) return;
+      await _stopSource(localTarget: track);
+      await _saveQueue([track], 0, '');
+      _queue = [track];
+      cursor = 0;
+      sourceAlbumId = '';
+      await _openCurrent(
+        request,
+        resumePosition: resumePosition,
+        // Bookmarks bypass chapter skipping just like a manual seek.
+        manualReplay: manualPosition,
+      );
+    });
+  });
   Future<void> playQueueItem(int index) => _run(() async {
     RangeError.checkValidIndex(index, _queue);
+    final trackId = _queue[index].id;
     final request = _newRequest();
-    await _commands.synchronized(() => _select(index, request));
+    await _commands.synchronized(() async {
+      index = _queue.indexWhere((track) => track.id == trackId);
+      if (index >= 0) await _select(index, request);
+    });
   });
   Future<void> _select(int index, int request) async {
     if (request != _request) return;
     RangeError.checkValidIndex(index, _queue);
-    await _stopSource();
+    await _stopSource(localTarget: _queue[index]);
     await _saveQueue(
       _queue,
       index,
@@ -484,15 +530,123 @@ class PlayerService {
   }
 
   Future<void> playCurrent() => _run(() async {
-    final request = _newRequest();
+    final request = _newRequest(keepStartPosition: true);
     await _commands.synchronized(() => _openCurrent(request));
   });
-  Future<void> previous() async {
-    if (cursor > 0)
+  Future<void> previous() => _run(() async {
+    if (cursor > 0) {
       await playQueueItem(cursor - 1);
-    else if (current != null)
+      return;
+    }
+    final first = current;
+    if (first == null) return;
+    if (queueSource != 'album' ||
+        sourceAlbumId.isEmpty ||
+        first.officialPosition == 1) {
       await replay();
-  }
+      return;
+    }
+    final candidate = first.officialPosition ?? xmlyPositive(first.orderNo);
+    if (candidate == null || candidate > 5000) {
+      throw const XmlyException('invalid_album', '队列缺少专辑页码，请从专辑页重新选择声音');
+    }
+    final request = _newRequest(), intent = _advanceIntent;
+    final expectedGeneration = generation, epoch = _epoch;
+    final album = sourceAlbumId, client = accounts.activeClient ?? anonymous;
+    final snapshot = _queue;
+    bool active() =>
+        !_closed &&
+        request == _request &&
+        intent == _advanceIntent &&
+        expectedGeneration == generation &&
+        epoch == _epoch &&
+        cursor == 0 &&
+        current?.id == first.id &&
+        queueSource == 'album' &&
+        sourceAlbumId == album &&
+        !accounts.admissionPaused &&
+        identical(client, accounts.activeClient ?? anonymous);
+    Future<AlbumPage> loadPage(int page) async {
+      try {
+        return await _admission(request, () => _albumPage(client, album, page));
+      } catch (_) {
+        if (!active()) throw const DownloadStopped();
+        rethrow;
+      }
+    }
+
+    // Locate the current head first, including queues restored with 50-row pages.
+    final page = (candidate - 1) ~/ xmlyAlbumPageSize + 1;
+    final anchorPage = await loadPage(page);
+    if (!active()) return;
+    final anchor = anchorPage.tracks.indexWhere(
+      (track) => track.id == first.id,
+    );
+    if (anchor < 0 ||
+        (first.officialPosition != null &&
+            anchorPage.tracks[anchor].officialPosition !=
+                first.officialPosition)) {
+      throw const XmlyException('catalogue_changed', '专辑首页发生变化，请从专辑页重新选择声音');
+    }
+    final overlap = anchorPage.tracks
+        .skip(anchor)
+        .take(snapshot.length)
+        .toList();
+    for (var index = 0; index < overlap.length; index++) {
+      if (overlap[index].id != snapshot[index].id) {
+        throw const XmlyException('catalogue_changed', '专辑顺序已变化，请从专辑页重新选择声音');
+      }
+    }
+    var added = anchorPage.tracks.take(anchor).toList();
+    if (added.isEmpty && page > 1) {
+      final preceding = await loadPage(page - 1);
+      if (!active()) return;
+      added = preceding.tracks;
+      if (added.isEmpty ||
+          added.last.officialPosition !=
+              anchorPage.tracks.first.officialPosition! - 1) {
+        throw const XmlyException('invalid_album', '专辑前页不完整，请刷新后重试');
+      }
+    }
+    if (added.isEmpty) {
+      await replay();
+      return;
+    }
+    final previousOrder = xmlyPositive(added.last.orderNo);
+    final firstOrder = xmlyPositive(first.orderNo);
+    if (previousOrder != null &&
+        firstOrder != null &&
+        previousOrder >= firstOrder) {
+      throw const XmlyException('duplicate_page', '专辑分页重复或倒退，请刷新后重试');
+    }
+    await _commands.synchronized(() async {
+      if (!active()) return;
+      final known = _queue.map((track) => track.id).toSet();
+      if (added.any((track) => !known.add(track.id))) {
+        throw const XmlyException('duplicate_page', '专辑分页重复，请刷新后重试');
+      }
+      if (_queue.length + added.length > 5000) {
+        throw const XmlyException('catalogue_limit', '专辑播放队列最多 5000 集');
+      }
+      // Keep any tail appended while loading, and keep its last-page metadata.
+      final next = [...added, ..._queue];
+      ++generation;
+      await _saveQueue(
+        next,
+        added.length,
+        album,
+        page: albumPage,
+        total: albumTotal,
+        pageSize: albumPageSize ?? xmlyAlbumPageSize,
+      );
+      _queue = next;
+      cursor = added.length;
+      _notify();
+      if (request == _request && intent == _advanceIntent) {
+        await _select(cursor - 1, request);
+      }
+    });
+  });
 
   Future<void> next() => _run(() async {
     if (cursor + 1 < _queue.length) {
@@ -513,13 +667,16 @@ class PlayerService {
     // The tail commits under _commands; never join its network work under that lock.
     await refreshAlbumTail(album);
     await _commands.synchronized(() async {
+      // A later sleep changes _advanceIntent; a consumed earlier sleep must not
+      // suppress this explicit next command after its catalogue request returns.
       if (intent != _advanceIntent ||
           expectedGeneration != generation ||
           epoch != _epoch ||
-          current?.id != id ||
-          _sleepStopped)
+          current?.id != id)
         return;
-      final sleep = policy.onChapterEnd() ?? policy.pollSleep();
+      // Fetching the next page is not a chapter-completion event. Match the
+      // in-page manual next path while still honoring an elapsed countdown.
+      final sleep = policy.pollSleep();
       if (sleep != null) {
         await _sleep(sleep);
         return;
@@ -540,38 +697,67 @@ class PlayerService {
     );
   });
 
+  ({double position, int updatedAt})? _localProgress(Track track) {
+    final library = (storage.state['library'] as Map)[_progressIdentity];
+    final progress = library is Map ? library['playbackProgress'] : null;
+    final entry = progress is Map ? progress[track.id] : null;
+    if (entry is! Map) return null;
+    final saved = entry['position'], updated = entry['updatedAt'];
+    if (saved is! num ||
+        !saved.isFinite ||
+        saved < 0 ||
+        saved > 2147483647 ||
+        updated is! int ||
+        updated < 0)
+      return null;
+    return (position: saved.toDouble(), updatedAt: updated);
+  }
+
   Future<double> _resumePosition(Track track) async {
+    final local = _localProgress(track);
     final client = _historyClient;
-    if (!_syncHistory || client == null) return 0;
+    if (!_syncHistory || client == null) return local?.position ?? 0;
     try {
-      final cloud = await XmlyHistory(
-        client,
-        clock: _clock,
-      ).progress(albumId: track.albumId, trackId: track.id);
-      if (cloud != null) {
+      final cloud = await XmlyHistory(client, clock: _clock).progress(
+        albumId: track.albumId,
+        trackId: track.id,
+        timeout: const Duration(seconds: 2),
+      );
+      if (cloud != null &&
+          (local == null ||
+              (cloud['updated_at'] as num) * 1000 > local.updatedAt)) {
+        if (cloud['incomplete'] == true) {
+          warning = '云历史查询较慢，已使用本次查到的最新进度';
+        }
         return (cloud['position'] as num).toDouble();
       }
     } catch (_) {
-      warning = '云进度暂不可用，将从片头开始';
+      warning = local == null ? '云进度暂不可用，将从片头开始' : '云进度暂不可用，已使用本地进度';
     }
-    return 0;
+    return local?.position ?? 0;
   }
 
   Future<void> _openCurrent(
     int request, {
     double? resumePosition,
     bool manualReplay = false,
+    bool startPlaying = true,
     String? localTaskId,
   }) async {
     if (current == null || request != _request) return;
+    final selectedStart = _source == null && resumePosition == null
+        ? _startSeekPosition
+        : null;
     _loading = true;
     try {
       await _openCurrentSource(
         request,
-        resumePosition: resumePosition,
-        manualReplay: manualReplay,
+        resumePosition: resumePosition ?? selectedStart,
+        manualReplay: manualReplay || selectedStart != null,
+        startPlaying: startPlaying,
         localTaskId: localTaskId,
       );
+      if (request == _request && _source != null) _startSeekPosition = null;
     } finally {
       _loading = false;
       _notify();
@@ -582,6 +768,7 @@ class PlayerService {
     int request, {
     double? resumePosition,
     bool manualReplay = false,
+    bool startPlaying = true,
     String? localTaskId,
   }) async {
     final track = current;
@@ -594,8 +781,14 @@ class PlayerService {
             downloads.task(previousTaskId).track.id == track.id
         ? previousTaskId
         : null;
-    await _stopSource();
+    await _stopSource(localTarget: track);
     if (request != _request) return;
+    // The queue has committed; a failed admission must not attach the previous
+    // episode's position or observations to this newly selected track.
+    position = 0;
+    duration = track.duration;
+    _observedPosition = 0;
+    _observedAt = 0;
     status = '正在准备音频';
     error = null;
     warning = null;
@@ -642,9 +835,11 @@ class PlayerService {
         speed: settings.speed,
       );
       _atEnd = false;
+      _endSeekPosition = null;
       _actual = false;
+      _observedAt = 0;
       _sleepStopped = false;
-      _manualPaused = false;
+      _manualPaused = !startPlaying;
       _checkedEpochs.clear();
       final epoch = ++_epoch;
       duration = track.duration;
@@ -658,7 +853,7 @@ class PlayerService {
       );
       warning = policy.warning ?? warning;
       rate = settings.speed;
-      volume = settings.volume;
+      volume = settings.outputVolume;
       await _driver.open(source.uri, epoch: epoch);
       await _driver.setRate(rate);
       await _driver.setVolume(volume);
@@ -668,7 +863,15 @@ class PlayerService {
         return;
       }
       _official.start('player', track, source.identity);
-      await _driver.play();
+      final sleep = policy.pollSleep();
+      if (sleep != null) {
+        await _sleep(sleep);
+        return;
+      }
+      if (startPlaying) {
+        await _driver.play();
+        ++_playbackRecoveryRevision;
+      }
       status = source.supportsRanges ? null : '此音频暂不支持快速跳转，跳转时可能需要等待';
       _notify();
     } catch (_) {
@@ -686,7 +889,10 @@ class PlayerService {
     }
     return PlaybackSource(
       uri: File(task.finalPath!).absolute.uri,
-      identity: task.accountIdentity,
+      // Complete files need no new billing authorization. Their listening
+      // session belongs to the current listener; taskId retains download and
+      // receipt ownership independently.
+      identity: libraryIdentity,
       kind: 'local',
       taskId: task.id,
     );
@@ -703,6 +909,27 @@ class PlayerService {
     return null;
   }
 
+  Future<AudioProxy> _playbackProxy() {
+    if (_closed) throw const DownloadStopped();
+    final ready = _proxy;
+    if (ready != null) return Future.value(ready);
+    // Cancelled admissions can still finish alongside a newer preparation.
+    // Keep one owner for their shared listener, including during shutdown.
+    return _proxyOpening ??= () async {
+      try {
+        final proxy = await AudioProxy.start();
+        if (_closed) {
+          await proxy.close();
+          throw const DownloadStopped();
+        }
+        _proxy = proxy;
+        return proxy;
+      } finally {
+        _proxyOpening = null;
+      }
+    }();
+  }
+
   Future<PlaybackSource> _prepare(
     Track track,
     bool save,
@@ -711,6 +938,7 @@ class PlayerService {
   }) async {
     final identity = libraryIdentity;
     final local = await _downloaded(track);
+    if (_closed || request != _request) throw const DownloadStopped();
     if (local != null) return _local(local);
     final missingDownload = downloads.tasks.any(
       (task) =>
@@ -745,10 +973,17 @@ class PlayerService {
       audio: audio,
       refresh: (isActive) {
         Future<ResolvedAudio> refresh(XmlyClient client) {
-          if (!isActive() || _closed || request != _request) {
+          // Pause/resume can supersede the opening request while retaining this
+          // source. The cache lifetime decides whether a refresh is still valid.
+          if (!isActive() || _closed) {
             throw const DownloadStopped();
           }
-          return client.resolve(track.id, force: true, quality: quality);
+          return client.resolve(
+            track.id,
+            force: true,
+            quality: quality,
+            isActive: isActive,
+          );
         }
 
         return identity == 'anonymous'
@@ -757,15 +992,16 @@ class PlayerService {
       },
     );
     try {
-      _proxy ??= await AudioProxy.start();
+      final proxy = await _playbackProxy();
+      if (_closed || request != _request) throw const DownloadStopped();
       return PlaybackSource(
-        uri: _proxy!.mount(cache),
+        uri: proxy.mount(cache),
         identity: identity,
         kind: 'online',
         requiresReward: reward,
         cache: cache,
         release: () async {
-          await _proxy?.unmount(cache);
+          await proxy.unmount(cache);
           await cache.close();
           final folder = Directory(directory);
           if (await folder.exists()) await folder.delete(recursive: true);
@@ -820,14 +1056,23 @@ class PlayerService {
             }
           },
         );
-        task = downloads.tasks
-            .where(
-              (item) =>
-                  item.accountIdentity == batch.accountIdentity &&
-                  item.track.id == track.id &&
-                  item.deduplicates,
-            )
-            .firstOrNull;
+        // Preview polling may select a different account for this track.
+        final selectedIdentity =
+            batch.items
+                .where((item) => item.track.id == track.id)
+                .firstOrNull
+                ?.accountIdentity ??
+            batch.accountIdentity;
+        task = retained != null
+            ? downloads.task(retained!)
+            : downloads.tasks
+                  .where(
+                    (item) =>
+                        item.accountIdentity == selectedIdentity &&
+                        item.track.id == track.id &&
+                        item.deduplicates,
+                  )
+                  .firstOrNull;
       }
       if (task == null) throw const XmlyException('task_missing', '没有可用的下载任务');
       if (retained == null) {
@@ -841,7 +1086,12 @@ class PlayerService {
         return source;
       }
       downloads.prioritize(task.id);
-      if (!task.active) await downloads.resume(task.id);
+      if (!task.active) {
+        await downloads.resume(
+          task.id,
+          isActive: () => !_closed && request == _request,
+        );
+      }
       AudioCache? cache;
       while ((cache = pipeline.taskCache(task.id)) == null) {
         if (request != _request || _closed) throw const DownloadStopped();
@@ -856,17 +1106,19 @@ class PlayerService {
           throw const XmlyException('download_stopped', '下载尚未就绪，请检查任务');
         await Future<void>.delayed(const Duration(milliseconds: 25));
       }
-      _proxy ??= await AudioProxy.start();
+      final proxy = await _playbackProxy();
+      if (_closed || request != _request) throw const DownloadStopped();
       final leased = retained!;
       final mounted = cache!;
       final source = PlaybackSource(
-        uri: _proxy!.mount(mounted),
-        identity: task.accountIdentity,
+        uri: proxy.mount(mounted),
+        // The task may have rotated accounts while this request awaited a cache.
+        identity: mounted.accountIdentity,
         kind: 'prepaid',
         taskId: task.id,
         cache: mounted,
         release: () async {
-          await _proxy?.unmount(mounted);
+          await proxy.unmount(mounted);
           await pipeline.releaseTask(leased);
         },
       );
@@ -879,13 +1131,13 @@ class PlayerService {
 
   Future<void> playLocal(String taskId) => _run(() async {
     final task = downloads.task(taskId);
-    // Check before replacing the user's queue.
-    await _local(task);
     final request = _newRequest();
+    // Check before replacing the user's queue.
+    await _admission(request, () => _local(task));
     ++generation;
     await _commands.synchronized(() async {
       if (request != _request) return;
-      await _stopSource();
+      await _stopSource(localTarget: task.track);
       await _saveQueue([task.track], 0, '');
       _queue = [task.track];
       cursor = 0;
@@ -895,7 +1147,7 @@ class PlayerService {
   });
 
   Future<void> pause() {
-    ++_advanceIntent;
+    _newRequest();
     _manualPaused = true;
     return _run(() => _commands.synchronized(() => _pause()));
   }
@@ -916,43 +1168,90 @@ class PlayerService {
   }
 
   Future<void> resume() => _run(() async {
-    final request = _newRequest();
+    final request = _newRequest(keepStartPosition: true);
     await _commands.synchronized(() async {
+      if (request != _request) return;
       if (_source == null || _atEnd) {
-        await _openCurrent(request);
+        final selectedPosition = _atEnd ? _endSeekPosition : null;
+        await _openCurrent(
+          request,
+          resumePosition: selectedPosition,
+          manualReplay: selectedPosition != null,
+        );
         return;
       }
       if (sourceKind != 'local' &&
-          (_source!.taskId != null || await _downloaded(current!) != null)) {
+          (ledger.needsRestart ||
+              _source!.taskId != null ||
+              await _admission(request, () => _downloaded(current!)) != null)) {
         final saved = position;
-        await _openCurrent(request, resumePosition: saved);
+        await _openCurrent(
+          request,
+          resumePosition: saved,
+          manualReplay: _manualChapterPosition,
+        );
         return;
       }
       _official.start('player', current!, _progressIdentity);
+      _sleepStopped = false;
       _manualPaused = false;
       await _driver.play();
+      ++_playbackRecoveryRevision;
+      error = null;
       _notify();
     });
   });
   Future<void> switchToLocal() => _run(() async {
     final track = current;
     if (track == null) return;
-    final task = await _downloaded(track);
+    final request = _newRequest(keepStartPosition: true);
+    final task = await _admission(request, () => _downloaded(track));
     if (task == null) throw const XmlyException('file_missing', '请先下载本集');
-    final request = _newRequest(), saved = position;
     await _commands.synchronized(
-      () => _openCurrent(request, resumePosition: saved, localTaskId: task.id),
+      () => _openCurrent(
+        request,
+        resumePosition: position,
+        manualReplay: _manualChapterPosition || _startSeekPosition != null,
+        localTaskId: task.id,
+      ),
     );
   });
-  Future<void> seek(double seconds) {
+  Future<void> seek(double seconds, {int? expectedEpoch}) =>
+      _seekTo(() => seconds, expectedEpoch: expectedEpoch);
+
+  Future<void> _seekTo(double Function() target, {int? expectedEpoch}) {
+    if (expectedEpoch != null && expectedEpoch != _epoch) return Future.value();
+    final request = _request, trackId = current?.id;
     ++_advanceIntent;
     return _run(
       () => _commands.synchronized(() async {
+        if (expectedEpoch != null && expectedEpoch != _epoch) return;
+        if (request != _request || trackId != current?.id) return;
+        final seconds = target();
         if (!seconds.isFinite || seconds < 0) throw ArgumentError('播放位置无效');
-        if (_source == null) return;
+        if (_source == null) {
+          final track = current;
+          if (track == null) return;
+          // A future start is a UI intent, never a listening observation.
+          duration = track.duration;
+          position = seconds
+              .clamp(0, duration > 0 ? duration : double.infinity)
+              .toDouble();
+          _startSeekPosition = position;
+          ++_seekRevision;
+          _notify();
+          return;
+        }
         _manualChapterPosition = true;
         position = policy.manualSeek(seconds);
         await _driver.seek(position);
+        if (_atEnd) {
+          // Reopen a completed device at the user's selection on resume.
+          // A new source epoch also rearms the chapter completion policy.
+          _endSeekPosition = duration <= 0 || position < duration
+              ? position
+              : null;
+        }
         ++_seekRevision;
         // Seeking itself is never an actual listening observation or history POST.
         _notify();
@@ -960,13 +1259,13 @@ class PlayerService {
     );
   }
 
-  Future<void> seekBackward() => seek(
-    (position - effectiveSettings.seekBackwardSeconds)
+  Future<void> seekBackward() => _seekTo(
+    () => (position - effectiveSettings.seekBackwardSeconds)
         .clamp(0, double.infinity)
         .toDouble(),
   );
   Future<void> seekForward() =>
-      seek(position + effectiveSettings.seekForwardSeconds);
+      _seekTo(() => position + effectiveSettings.seekForwardSeconds);
 
   void _prefetchNext(AudioSnapshot snapshot) {
     final source = _source;
@@ -1010,7 +1309,7 @@ class PlayerService {
                     _tailGeneration == generation &&
                     _tailRequest == request) ||
                 _checkedEpochs.add(epoch))) {
-          await refreshAlbumTail(sourceAlbumId);
+          await refreshAlbumTail(sourceAlbumId, speculative: true);
         }
         if (!active() || cursor + 1 >= _queue.length) return;
         final next = _queue[cursor + 1];
@@ -1038,7 +1337,10 @@ class PlayerService {
     );
   }
 
-  Future<void> _observe(AudioSnapshot snapshot) async {
+  Future<void> _observe(
+    AudioSnapshot snapshot, {
+    bool stateAlreadyRecorded = false,
+  }) async {
     if (_closed || _source == null || snapshot.epoch != _epoch) return;
     if (snapshot.error != null)
       throw const XmlyException('audio_device', '音频播放失败');
@@ -1050,6 +1352,10 @@ class PlayerService {
     playing = snapshot.playing;
     buffering = snapshot.buffering;
     position = snapshot.position;
+    if ((playing && !buffering) ||
+        (_actual && snapshot.position != _observedPosition)) {
+      _observedAt = _clock().millisecondsSinceEpoch;
+    }
     _observedPosition = snapshot.position;
     if (snapshot.duration > 0) duration = snapshot.duration;
     if (_awaitingDuration && duration > 0) {
@@ -1066,7 +1372,12 @@ class PlayerService {
       }
     }
     if (playing && !buffering) _actual = true;
-    await ledger.observe(playing: playing, buffering: buffering, speed: rate);
+    await ledger.observe(
+      playing: playing,
+      buffering: buffering,
+      speed: rate,
+      stateAlreadyRecorded: stateAlreadyRecorded,
+    );
     if (_actual)
       await _official.observe(
         'player',
@@ -1078,13 +1389,17 @@ class PlayerService {
       await _sleep(sleep);
       return;
     }
-    final finished = policy.observe(
-      position,
-      duration: duration,
-      completed: snapshot.completed && _actual,
-    );
+    // Opening/seeking can emit a paused position before the first real play.
+    // Such a snapshot must not consume this chapter's completion event.
+    final finished =
+        _actual &&
+        policy.observe(
+          position,
+          duration: duration,
+          completed: snapshot.completed,
+        );
     warning = policy.warning ?? warning;
-    if (finished && _actual && !_atEnd)
+    if (finished && !_atEnd)
       await _finish();
     else
       _prefetchNext(snapshot);
@@ -1092,7 +1407,23 @@ class PlayerService {
   }
 
   /// Polls sleep deadlines and persists actual listening progress.
-  Future<void> tick() => _commands.synchronized(() async {
+  Future<void> tick() async {
+    if (_closed) return;
+    // Authorization can be waiting inside _commands. Expiry must cancel that
+    // admission now, so it cannot start audio before the queued sleep action.
+    final expired = policy.pollSleep();
+    if (expired != null) {
+      _newRequest();
+      _sleepStopped = true;
+      await _commands.synchronized(() async {
+        if (!_closed) await _sleep(expired, invalidateRequest: false);
+      });
+      return;
+    }
+    await _commands.synchronized(_tick);
+  }
+
+  Future<void> _tick() async {
     if (_closed) return;
     final sleep = policy.pollSleep();
     if (sleep != null) {
@@ -1101,36 +1432,64 @@ class PlayerService {
     }
     if (_source != null) {
       if (!_source!.supportsRanges) status = '此音频暂不支持快速跳转，跳转时可能需要等待';
-      await ledger.observe(playing: playing, buffering: buffering, speed: rate);
+      await ledger.sampleCurrentState();
       if (_actual && _clock().millisecondsSinceEpoch - _savedAt >= 5000) {
         await _saveProgress();
       }
     }
     _notify();
-  });
+  }
+
   Future<void> _finish() async {
     _atEnd = true;
+    _endSeekPosition = null;
     final sleep = policy.onChapterEnd();
-    await _pause();
     if (sleep != null) {
       await _sleep(sleep);
       return;
     }
+    await _pause();
     if (_manualPaused) return;
     if (effectiveSettings.loopMode == 'single') {
-      await _openCurrent(_newRequest(), resumePosition: 0, manualReplay: true);
+      await _openCurrent(_newRequest(), resumePosition: 0);
       return;
     }
     if (queueSource == 'album' &&
         cursor == _queue.length - 1 &&
         sourceAlbumId.isNotEmpty &&
         current?.albumId == sourceAlbumId) {
-      if ((_tailFlight != null &&
-              _tailGeneration == generation &&
-              _tailRequest == _request) ||
-          _checkedEpochs.add(_epoch)) {
-        // _finish owns _commands. The flight takes that lock only to commit.
-        unawaited(refreshAlbumTail(sourceAlbumId).catchError((Object _) {}));
+      final pending =
+          _tailFlight != null &&
+          _tailGeneration == generation &&
+          _tailRequest == _request;
+      if (pending || _checkedEpochs.add(_epoch)) {
+        // _finish owns _commands; the tail takes that lock only to commit.
+        final epoch = _epoch, request = _request, intent = _advanceIntent;
+        final expectedGeneration = generation, album = sourceAlbumId;
+        unawaited(() async {
+          try {
+            await refreshAlbumTail(album);
+          } catch (_) {
+            // A still-running speculative failure gets one completion attempt.
+            if (!pending ||
+                _closed ||
+                !_atEnd ||
+                _manualPaused ||
+                _sleepStopped ||
+                epoch != _epoch ||
+                request != _request ||
+                intent != _advanceIntent ||
+                expectedGeneration != generation ||
+                album != sourceAlbumId ||
+                _checkedEpochs.contains(epoch))
+              return;
+            try {
+              await refreshAlbumTail(album);
+            } catch (_) {
+              // The final failure remains visible for an explicit retry.
+            }
+          }
+        }());
       }
       return;
     }
@@ -1139,7 +1498,7 @@ class PlayerService {
     }
   }
 
-  Future<void> refreshAlbumTail(String albumId) {
+  Future<void> refreshAlbumTail(String albumId, {bool speculative = false}) {
     final album = xmlyIdentifier(albumId),
         expectedGeneration = generation,
         request = _request;
@@ -1163,6 +1522,9 @@ class PlayerService {
         sourceAlbumId == album &&
         !accounts.admissionPaused &&
         identical(client, accounts.activeClient ?? anonymous);
+    _tailGeneration = expectedGeneration;
+    _tailRequest = request;
+    var committed = false;
     final flight = () async {
       try {
         if (!active()) return;
@@ -1291,7 +1653,8 @@ class PlayerService {
             );
           }
           _queue = next;
-          error = null;
+          committed = true;
+          if (!speculative) error = null;
           status = added.isEmpty ? '已听到最新一集' : '已更新 ${added.length} 集';
           _notify();
           if (_atEnd &&
@@ -1312,15 +1675,32 @@ class PlayerService {
           }
         });
       } catch (failure) {
+        if (_epoch == endEpoch &&
+            _tailGeneration == expectedGeneration &&
+            _tailRequest == request)
+          _checkedEpochs.remove(endEpoch);
         if (failure is DownloadStopped || !active()) return;
+        if (speculative &&
+            (!_atEnd ||
+                _manualPaused ||
+                _sleepStopped ||
+                endEpoch != _epoch ||
+                advanceIntent != _advanceIntent))
+          rethrow;
         error = _message(failure);
         status = '检查更新失败，请重试';
         _notify();
         rethrow;
+      } finally {
+        // Cancellation can return normally after a page or while awaiting the
+        // commit lock. Do not consume this epoch's later completion check.
+        if (!committed &&
+            _epoch == endEpoch &&
+            _tailGeneration == expectedGeneration &&
+            _tailRequest == request)
+          _checkedEpochs.remove(endEpoch);
       }
     }();
-    _tailGeneration = expectedGeneration;
-    _tailRequest = request;
     _tailFlight = flight;
     unawaited(
       flight.then(
@@ -1345,8 +1725,11 @@ class PlayerService {
     _notify();
   }
 
-  Future<void> _sleep(SleepAction action) async {
-    ++_advanceIntent;
+  Future<void> _sleep(
+    SleepAction action, {
+    bool invalidateRequest = true,
+  }) async {
+    if (invalidateRequest) _newRequest();
     _sleepStopped = true;
     await _pause(sleep: true);
     status = '定时已结束';
@@ -1366,6 +1749,35 @@ class PlayerService {
     final track = current;
     if (track == null || _source == null || !_actual) return;
     final actualPosition = _observedPosition;
+    final identity = _progressIdentity;
+    final observedAt = _observedAt;
+    final previous = _localProgress(track);
+    if (actualPosition.isFinite &&
+        actualPosition >= 0 &&
+        actualPosition <= 2147483647 &&
+        (previous?.position != actualPosition ||
+            previous?.updatedAt != observedAt)) {
+      await storage.transaction((state) {
+        final library = (state['library'] as Map).putIfAbsent(
+          identity,
+          () => <String, dynamic>{},
+        ) as Map;
+        final existing = library['playbackProgress'];
+        final progress = existing is Map
+            ? Map<String, dynamic>.from(existing)
+            : <String, dynamic>{};
+        // Keep recent positions bounded; replacing an entry moves it to the end.
+        progress.remove(track.id);
+        progress[track.id] = {
+          'position': actualPosition,
+          'updatedAt': observedAt,
+        };
+        while (progress.length > 5000) {
+          progress.remove(progress.keys.first);
+        }
+        library['playbackProgress'] = progress;
+      });
+    }
     _savedAt = _clock().millisecondsSinceEpoch;
     if (sync)
       await _official.observe('player', actualPosition, terminal: terminal);
@@ -1376,26 +1788,74 @@ class PlayerService {
     _notify();
   }
 
-  Future<void> applySettings() => _run(
+  Future<void> setMasterVolume(double value) => _commands.synchronized(
+    () async {
+      if (_closed) throw StateError('播放器已关闭');
+      if (!value.isFinite || value < 0 || value > 100) {
+        throw const FormatException('主音量必须在 0–100 之间');
+      }
+      await storage.transaction((state) {
+        final settings = state['settings'] as Map;
+        final playback =
+            settings.putIfAbsent('playback', () => <String, dynamic>{}) as Map;
+        playback['masterVolume'] = value;
+      });
+      final settings = effectiveSettings;
+      policy.updateSettings(settings);
+      final nextVolume = settings.outputVolume;
+      await _driver.setVolume(nextVolume);
+      volume = nextVolume;
+      _notify();
+    },
+  );
+
+  Future<void> applySettings({bool updateSource = true}) => _run(
     () => _commands.synchronized(() async {
       final settings = effectiveSettings;
       final wasDownload = sourceKind == 'prepaid' || sourceKind == 'local';
       policy.updateSettings(settings);
-      await ledger.observe(
-        playing: playing,
-        buffering: buffering,
-        speed: settings.speed,
-      );
+      await ledger.sampleCurrentState();
+      await _driver.setRate(settings.speed);
       rate = settings.speed;
-      volume = settings.volume;
-      await _driver.setRate(rate);
+      await ledger.sampleCurrentState(speed: rate);
+      volume = settings.outputVolume;
       await _driver.setVolume(volume);
-      if (_source != null && settings.listenAndDownload && !wasDownload) {
-        final saved = position;
+      if (updateSource &&
+          _source != null &&
+          settings.listenAndDownload &&
+          !wasDownload) {
+        final saved = position, wasPlaying = playing;
         await _pause();
         await ledger.stopWatch();
-        await _openCurrent(_newRequest(), resumePosition: saved);
+        await _openCurrent(
+          _newRequest(),
+          resumePosition: saved,
+          manualReplay: _manualChapterPosition,
+          startPlaying: wasPlaying,
+        );
       }
+      _notify();
+    }),
+  );
+
+  Future<void> playNext(Track track) => _run(
+    () => _commands.synchronized(() async {
+      final selected = current?.id;
+      if (track.id == selected) return;
+      final next = List<Track>.from(_queue);
+      final existing = next.indexWhere((item) => item.id == track.id);
+      if (existing < 0 && next.length >= 5000) {
+        throw const XmlyException('queue_full', '队列最多 5000 集');
+      }
+      final target = existing < 0 ? track : next.removeAt(existing);
+      final index = next.indexWhere((item) => item.id == selected);
+      next.insert(index + 1, target);
+      final cursorIndex = index < 0 ? 0 : index;
+      await _saveQueue(next, cursorIndex, '');
+      _queue = next;
+      cursor = cursorIndex;
+      sourceAlbumId = '';
+      ++generation;
       _notify();
     }),
   );
@@ -1416,11 +1876,15 @@ class PlayerService {
   );
   Future<void> removeQueueItem(int index) => _run(() async {
     RangeError.checkValidIndex(index, _queue);
+    final trackId = _queue[index].id;
     _newRequest();
     await _commands.synchronized(() async {
+      index = _queue.indexWhere((track) => track.id == trackId);
+      if (index < 0) return;
       final next = List<Track>.from(_queue)..removeAt(index);
+      final removedCurrent = index == cursor;
       var selected = cursor;
-      if (index == cursor) {
+      if (removedCurrent) {
         await _stopSource();
         selected = index
             .clamp(0, next.length - 1 < 0 ? 0 : next.length - 1)
@@ -1433,17 +1897,28 @@ class PlayerService {
       _queue = next;
       cursor = selected;
       sourceAlbumId = '';
+      if (removedCurrent) {
+        position = 0;
+        duration = current?.duration ?? 0;
+      }
       ++generation;
       _notify();
     });
   });
-  Future<void> moveQueueItem(int from, int to) => _run(
-    () => _commands.synchronized(() async {
-      RangeError.checkValidIndex(from, _queue);
-      RangeError.checkValidIndex(to, _queue);
+  Future<void> moveQueueItem(int from, int to) => _run(() async {
+    RangeError.checkValidIndex(from, _queue);
+    RangeError.checkValidIndex(to, _queue);
+    if (from == to) return;
+    final trackId = _queue[from].id, anchorId = _queue[to].id;
+    final insertAfter = from < to;
+    await _commands.synchronized(() async {
+      from = _queue.indexWhere((track) => track.id == trackId);
+      if (from < 0 || !_queue.any((track) => track.id == anchorId)) return;
       final selected = current?.id;
       final next = List<Track>.from(_queue);
-      next.insert(to, next.removeAt(from));
+      final moved = next.removeAt(from);
+      final anchor = next.indexWhere((track) => track.id == anchorId);
+      next.insert(anchor + (insertAfter ? 1 : 0), moved);
       final index = next.indexWhere((item) => item.id == selected);
       await _saveQueue(next, index, '');
       _queue = next;
@@ -1451,8 +1926,8 @@ class PlayerService {
       sourceAlbumId = '';
       ++generation;
       _notify();
-    }),
-  );
+    });
+  });
   Future<void> clearQueue() => _run(() async {
     _newRequest();
     await _commands.synchronized(() async {
@@ -1518,16 +1993,38 @@ class PlayerService {
     await source?.release?.call();
   }
 
-  Future<void> _stopSource({bool preserveUnknown = false}) async {
+  Future<void> _stopSource({
+    bool preserveUnknown = false,
+    Track? localTarget,
+  }) async {
+    _endSeekPosition = null;
     await _driver.pause();
     playing = false;
-    if (preserveUnknown) {
+    if (preserveUnknown ||
+        (ledger.needsRestart &&
+            localTarget != null &&
+            await _downloaded(localTarget) != null)) {
       await ledger.captureForRestore();
       await _saveProgress(terminal: true, sync: false);
     } else {
-      await ledger.observe(playing: false, buffering: buffering, speed: rate);
-      await _saveProgress(terminal: true);
-      await ledger.stopWatch();
+      try {
+        await ledger.observe(playing: false, buffering: buffering, speed: rate);
+        await _saveProgress(terminal: true);
+        await ledger.stopWatch();
+      } on XmlyException catch (error) {
+        if (!const {
+              'usage_uncertain',
+              'insufficient_quota',
+            }.contains(error.code) ||
+            localTarget == null ||
+            await _downloaded(localTarget) == null) {
+          rethrow;
+        }
+        // A verified local target needs no new debit. Save old debt and detach
+        // its watch, preserving every receipt/pending operation without repost.
+        await ledger.captureForRestore();
+        await _saveProgress(terminal: true, sync: false);
+      }
     }
     await _driver.stop();
     ++_epoch;
@@ -1568,6 +2065,11 @@ class PlayerService {
       _downloadEvents.cancel,
       _driver.close,
       () async {
+        try {
+          await _proxyOpening;
+        } catch (_) {
+          // Preparation observes startup failures; no listener remains to close.
+        }
         await _proxy?.close();
       },
       () async {
