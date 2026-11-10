@@ -83,10 +83,12 @@ class _PlaybackVolumeControlState extends State<PlaybackVolumeControl> {
                     label: _label(current),
                     semanticFormatterCallback: (value) =>
                         '主音量 ${_label(value)}',
-                    onChanged: _saving
-                        ? null
-                        : (value) => setState(() => _draft = value),
-                    onChangeEnd: _saving ? null : _save,
+                    // Disabling a focused slider drops keyboard focus. Keep
+                    // it enabled, but ignore edits while this save is pending.
+                    onChanged: (value) {
+                      if (!_saving) setState(() => _draft = value);
+                    },
+                    onChangeEnd: _save,
                   ),
                   const Text('切换专辑后保持；各专辑的音量设置仍单独生效。'),
                   if (_saving) const Text('正在保存…'),
