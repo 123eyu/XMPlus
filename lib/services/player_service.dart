@@ -469,8 +469,12 @@ class PlayerService {
   });
   Future<void> playQueueItem(int index) => _run(() async {
     RangeError.checkValidIndex(index, _queue);
+    final trackId = _queue[index].id;
     final request = _newRequest();
-    await _commands.synchronized(() => _select(index, request));
+    await _commands.synchronized(() async {
+      index = _queue.indexWhere((track) => track.id == trackId);
+      if (index >= 0) await _select(index, request);
+    });
   });
   Future<void> _select(int index, int request) async {
     if (request != _request) return;
@@ -1463,8 +1467,11 @@ class PlayerService {
   );
   Future<void> removeQueueItem(int index) => _run(() async {
     RangeError.checkValidIndex(index, _queue);
+    final trackId = _queue[index].id;
     _newRequest();
     await _commands.synchronized(() async {
+      index = _queue.indexWhere((track) => track.id == trackId);
+      if (index < 0) return;
       final next = List<Track>.from(_queue)..removeAt(index);
       var selected = cursor;
       if (index == cursor) {
@@ -1484,13 +1491,20 @@ class PlayerService {
       _notify();
     });
   });
-  Future<void> moveQueueItem(int from, int to) => _run(
-    () => _commands.synchronized(() async {
-      RangeError.checkValidIndex(from, _queue);
-      RangeError.checkValidIndex(to, _queue);
+  Future<void> moveQueueItem(int from, int to) => _run(() async {
+    RangeError.checkValidIndex(from, _queue);
+    RangeError.checkValidIndex(to, _queue);
+    if (from == to) return;
+    final trackId = _queue[from].id, anchorId = _queue[to].id;
+    final insertAfter = from < to;
+    await _commands.synchronized(() async {
+      from = _queue.indexWhere((track) => track.id == trackId);
+      if (from < 0 || !_queue.any((track) => track.id == anchorId)) return;
       final selected = current?.id;
       final next = List<Track>.from(_queue);
-      next.insert(to, next.removeAt(from));
+      final moved = next.removeAt(from);
+      final anchor = next.indexWhere((track) => track.id == anchorId);
+      next.insert(anchor + (insertAfter ? 1 : 0), moved);
       final index = next.indexWhere((item) => item.id == selected);
       await _saveQueue(next, index, '');
       _queue = next;
@@ -1498,8 +1512,8 @@ class PlayerService {
       sourceAlbumId = '';
       ++generation;
       _notify();
-    }),
-  );
+    });
+  });
   Future<void> clearQueue() => _run(() async {
     _newRequest();
     await _commands.synchronized(() async {
