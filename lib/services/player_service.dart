@@ -105,6 +105,7 @@ class PlayerService {
   late final StreamSubscription<void> _downloadEvents;
   Timer? _timer;
   AudioProxy? _proxy;
+  Future<AudioProxy>? _proxyOpening;
   PlaybackSource? _source;
   List<Track> _queue = [];
   Completer<void> _requestChanged = Completer<void>();
@@ -701,6 +702,27 @@ class PlayerService {
     return null;
   }
 
+  Future<AudioProxy> _playbackProxy() {
+    if (_closed) throw const DownloadStopped();
+    final ready = _proxy;
+    if (ready != null) return Future.value(ready);
+    // Cancelled admissions can still finish alongside a newer preparation.
+    // Keep one owner for their shared listener, including during shutdown.
+    return _proxyOpening ??= () async {
+      try {
+        final proxy = await AudioProxy.start();
+        if (_closed) {
+          await proxy.close();
+          throw const DownloadStopped();
+        }
+        _proxy = proxy;
+        return proxy;
+      } finally {
+        _proxyOpening = null;
+      }
+    }();
+  }
+
   Future<PlaybackSource> _prepare(
     Track track,
     bool save,
@@ -709,6 +731,7 @@ class PlayerService {
   }) async {
     final identity = libraryIdentity;
     final local = await _downloaded(track);
+    if (_closed || request != _request) throw const DownloadStopped();
     if (local != null) return _local(local);
     final missingDownload = downloads.tasks.any(
       (task) =>
@@ -743,10 +766,17 @@ class PlayerService {
       audio: audio,
       refresh: (isActive) {
         Future<ResolvedAudio> refresh(XmlyClient client) {
-          if (!isActive() || _closed || request != _request) {
+          // Pause/resume can supersede the opening request while retaining this
+          // source. The cache lifetime decides whether a refresh is still valid.
+          if (!isActive() || _closed) {
             throw const DownloadStopped();
           }
-          return client.resolve(track.id, force: true, quality: quality);
+          return client.resolve(
+            track.id,
+            force: true,
+            quality: quality,
+            isActive: isActive,
+          );
         }
 
         return identity == 'anonymous'
@@ -755,15 +785,16 @@ class PlayerService {
       },
     );
     try {
-      _proxy ??= await AudioProxy.start();
+      final proxy = await _playbackProxy();
+      if (_closed || request != _request) throw const DownloadStopped();
       return PlaybackSource(
-        uri: _proxy!.mount(cache),
+        uri: proxy.mount(cache),
         identity: identity,
         kind: 'online',
         requiresReward: reward,
         cache: cache,
         release: () async {
-          await _proxy?.unmount(cache);
+          await proxy.unmount(cache);
           await cache.close();
           final folder = Directory(directory);
           if (await folder.exists()) await folder.delete(recursive: true);
@@ -839,7 +870,12 @@ class PlayerService {
         return source;
       }
       downloads.prioritize(task.id);
-      if (!task.active) await downloads.resume(task.id);
+      if (!task.active) {
+        await downloads.resume(
+          task.id,
+          isActive: () => !_closed && request == _request,
+        );
+      }
       AudioCache? cache;
       while ((cache = pipeline.taskCache(task.id)) == null) {
         if (request != _request || _closed) throw const DownloadStopped();
@@ -854,17 +890,18 @@ class PlayerService {
           throw const XmlyException('download_stopped', '下载尚未就绪，请检查任务');
         await Future<void>.delayed(const Duration(milliseconds: 25));
       }
-      _proxy ??= await AudioProxy.start();
+      final proxy = await _playbackProxy();
+      if (_closed || request != _request) throw const DownloadStopped();
       final leased = retained!;
       final mounted = cache!;
       final source = PlaybackSource(
-        uri: _proxy!.mount(mounted),
+        uri: proxy.mount(mounted),
         identity: task.accountIdentity,
         kind: 'prepaid',
         taskId: task.id,
         cache: mounted,
         release: () async {
-          await _proxy?.unmount(mounted);
+          await proxy.unmount(mounted);
           await pipeline.releaseTask(leased);
         },
       );
@@ -877,9 +914,9 @@ class PlayerService {
 
   Future<void> playLocal(String taskId) => _run(() async {
     final task = downloads.task(taskId);
-    // Check before replacing the user's queue.
-    await _local(task);
     final request = _newRequest();
+    // Check before replacing the user's queue.
+    await _admission(request, () => _local(task));
     ++generation;
     await _commands.synchronized(() async {
       if (request != _request) return;
@@ -893,7 +930,7 @@ class PlayerService {
   });
 
   Future<void> pause() {
-    ++_advanceIntent;
+    _newRequest();
     _manualPaused = true;
     return _run(() => _commands.synchronized(() => _pause()));
   }
@@ -916,12 +953,14 @@ class PlayerService {
   Future<void> resume() => _run(() async {
     final request = _newRequest();
     await _commands.synchronized(() async {
+      if (request != _request) return;
       if (_source == null || _atEnd) {
         await _openCurrent(request);
         return;
       }
       if (sourceKind != 'local' &&
-          (_source!.taskId != null || await _downloaded(current!) != null)) {
+          (_source!.taskId != null ||
+              await _admission(request, () => _downloaded(current!)) != null)) {
         final saved = position;
         await _openCurrent(request, resumePosition: saved);
         return;
@@ -935,9 +974,10 @@ class PlayerService {
   Future<void> switchToLocal() => _run(() async {
     final track = current;
     if (track == null) return;
-    final task = await _downloaded(track);
+    final request = _newRequest();
+    final task = await _admission(request, () => _downloaded(track));
     if (task == null) throw const XmlyException('file_missing', '请先下载本集');
-    final request = _newRequest(), saved = position;
+    final saved = position;
     await _commands.synchronized(
       () => _openCurrent(request, resumePosition: saved, localTaskId: task.id),
     );
@@ -1563,6 +1603,11 @@ class PlayerService {
     await _driverEvents.cancel();
     await _downloadEvents.cancel();
     await _driver.close();
+    try {
+      await _proxyOpening;
+    } catch (_) {
+      // Preparation observes startup failures; no listener remains to close.
+    }
     await _proxy?.close();
     await _changes.close();
   }

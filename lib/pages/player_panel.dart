@@ -42,7 +42,8 @@ class _PlayerPanelState extends State<PlayerPanel> {
     debugLabel: 'Player shortcuts',
     skipTraversal: true,
   );
-  bool _busy = false;
+  bool _busy = false, _interrupting = false;
+  int _action = 0;
   double? _dragPosition;
   String? _error;
   XmlyClient? _favoriteClient;
@@ -263,20 +264,33 @@ class _PlayerPanelState extends State<PlayerPanel> {
       ? '取消收藏'
       : '收藏';
 
-  Future<void> _act(Future<void> Function() command) async {
-    if (_busy) return;
+  bool _commandBlocked({bool interrupt = false}) =>
+      _busy && (!interrupt || _interrupting);
+
+  Future<void> _act(
+    Future<void> Function() command, {
+    bool interrupt = false,
+  }) async {
+    if (_commandBlocked(interrupt: interrupt)) return;
+    final action = ++_action;
     setState(() {
       _busy = true;
+      _interrupting = interrupt;
       _error = null;
     });
     try {
       await command();
     } on XmlyException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted && action == _action) setState(() => _error = error.message);
     } catch (_) {
-      if (mounted) setState(() => _error = '操作未完成，请重试');
+      if (mounted && action == _action) setState(() => _error = '操作未完成，请重试');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && action == _action) {
+        setState(() {
+          _busy = false;
+          _interrupting = false;
+        });
+      }
     }
   }
 
@@ -499,9 +513,12 @@ class _PlayerPanelState extends State<PlayerPanel> {
     IconData icon,
     Future<void> Function()? command, {
     double size = 28,
+    bool interrupt = false,
   }) => IconButton(
     tooltip: tooltip,
-    onPressed: _busy || command == null ? null : () => _act(command),
+    onPressed: _commandBlocked(interrupt: interrupt) || command == null
+        ? null
+        : () => _act(command, interrupt: interrupt),
     icon: Icon(icon, size: size),
   );
 
@@ -528,9 +545,10 @@ class _PlayerPanelState extends State<PlayerPanel> {
       final settings = player.effectiveSettings;
       final message =
           _error ?? _favoriteError ?? player.error ?? player.warning;
+      final canPause = player.playing || player.loading;
       final play = track == null
           ? null
-          : player.playing
+          : canPause
           ? player.pause
           : player.resume;
       final coverUrl = track?.coverUrl?.toString();
@@ -583,12 +601,11 @@ class _PlayerPanelState extends State<PlayerPanel> {
                     ),
                   ),
                   _button(
-                    player.playing ? '暂停' : '播放',
-                    player.playing
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
+                    canPause ? '暂停' : '播放',
+                    canPause ? Icons.pause_rounded : Icons.play_arrow_rounded,
                     play,
                     size: 32,
+                    interrupt: canPause,
                   ),
                   IconButton(
                     tooltip: '播放列表',
@@ -600,7 +617,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
               ),
               LinearProgressIndicator(
                 minHeight: 2,
-                value: player.buffering || _busy
+                value: player.loading || player.buffering || _busy
                     ? null
                     : max > 0
                     ? position / max
@@ -747,7 +764,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
               size: 34,
             ),
             Tooltip(
-              message: _keyHint(player.playing ? '暂停' : '播放', '空格'),
+              message: _keyHint(canPause ? '暂停' : '播放', '空格'),
               child: SizedBox.square(
                 dimension: compact ? 64 : 76,
                 child: FilledButton(
@@ -755,21 +772,29 @@ class _PlayerPanelState extends State<PlayerPanel> {
                     padding: EdgeInsets.zero,
                     shape: const CircleBorder(),
                   ),
-                  onPressed: _busy || play == null ? null : () => _act(play),
-                  child: _busy || player.buffering
-                      ? SizedBox.square(
-                          dimension: 28,
+                  onPressed:
+                      _commandBlocked(interrupt: canPause) || play == null
+                      ? null
+                      : () => _act(play, interrupt: canPause),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (_busy || player.loading || player.buffering)
+                        SizedBox.square(
+                          dimension: compact ? 52 : 62,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             color: colors.onPrimary,
                           ),
-                        )
-                      : Icon(
-                          player.playing
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                          size: 42,
                         ),
+                      Icon(
+                        canPause
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        size: 42,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

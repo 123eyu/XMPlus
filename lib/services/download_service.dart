@@ -1039,27 +1039,29 @@ class DownloadService {
         _notify();
       });
 
-  Future<void> resume(String id) async {
+  Future<void> resume(String id, {bool Function()? isActive}) async {
     _ensureOpen();
     final worker = _workers[id];
     if (worker != null) await worker.done;
+    if (isActive != null && !isActive()) throw const DownloadStopped();
     final item = task(id);
     if (item.state == DownloadState.completed || item.active) return;
     if (!item.processingFailed &&
         (item.needsConfirmation || !item.userConfirmed)) {
       throw const XmlyException('confirmation_required', '请重新确认本次听时和余额');
     }
-    _automaticGuards.remove(id); // A manual continue is a fresh user action.
-    await _change(
-      id,
-      (item) => item.copyWith(
+    await _change(id, (item) {
+      // Playback may have been cancelled while this command waited to update.
+      if (isActive != null && !isActive()) throw const DownloadStopped();
+      _automaticGuards.remove(id); // A manual continue is a fresh user action.
+      return item.copyWith(
         state: DownloadState.queued,
         error: null,
         retryAt: null,
         retryCount: 0,
         attemptedAccounts: const [],
-      ),
-    );
+      );
+    });
     _suspended = false;
     _pump();
   }
