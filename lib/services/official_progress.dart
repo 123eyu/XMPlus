@@ -187,18 +187,34 @@ class OfficialProgress {
   /// shutdown or restart. Only an explicit retry=true permits re-submission.
   Future<void> flush({bool retry = false}) => _flushLock.synchronized(() async {
     final client = _client();
-    if (client == null || !_enabled()) return;
+    if (client == null || !_enabled()) {
+      if (retry) {
+        throw const XmlyException('history_unavailable', '请先登录并开启历史同步');
+      }
+      return;
+    }
+    bool interrupted() {
+      if (_enabled() && identical(client, _client())) return false;
+      if (retry) {
+        throw const XmlyException('history_interrupted', '账号或同步设置已变更，请重新操作');
+      }
+      return true;
+    }
+
     final identity = client.identity;
     final history = XmlyHistory(client, clock: _clock);
     _lastSent = _monotonic();
     final pending = _copy(_readPending(identity));
+    var failed = false, unconfirmed = false;
     for (final key in pending.keys) {
-      if (!_enabled() || !identical(client, _client())) return;
+      if (interrupted()) return;
       final raw = pending[key];
-      if (raw is! Map<String, dynamic> ||
-          raw['identity'] != identity ||
-          (!retry && raw['attempted'] == true))
+      if (raw is! Map<String, dynamic> || raw['identity'] != identity) {
+        failed = true;
+        _error = '待同步云进度格式无效，已保留记录';
         continue;
+      }
+      if (!retry && raw['attempted'] == true) continue;
       var entry = _copy(raw);
       try {
         // Mark even read failures: only explicit retry may repeat this entry.
@@ -210,7 +226,7 @@ class OfficialProgress {
           await _savePending(identity, current);
           return true;
         });
-        if (!marked || !_enabled() || !identical(client, _client())) continue;
+        if (!marked || interrupted()) continue;
         final track = Track.fromJson(entry['track'] as Map<String, dynamic>);
         final position = (entry['position'] as num).toDouble();
         final started = entry['started_at_ms'] as int;
@@ -222,24 +238,37 @@ class OfficialProgress {
           albumId: album,
           trackId: album.isEmpty ? track.id : '',
         );
-        if (!_enabled() || !identical(client, _client())) return;
+        if (interrupted()) return;
         if (official != null &&
             (official['updated_at'] as num) * 1000 > ended) {
           await _removeIfUnchanged(identity, key, entry);
-          _error = '';
           continue;
         }
         await history.sync(track, position, started, ended);
-        if (!identical(client, _client())) continue;
+        if (interrupted()) return;
         await _removeIfUnchanged(identity, key, entry);
         _lastSyncedAt = ended;
-        _error = '';
-      } on Exception {
+      } on Exception catch (error) {
         // Preserve the original absolute wall-clock bounds and pending record.
+        failed = true;
+        unconfirmed |=
+            error is XmlyException && error.code == 'history_unconfirmed';
         _error = '收听进度同步失败，已保留待同步云进度';
       } on TypeError {
+        failed = true;
         _error = '待同步云进度格式无效，已保留记录';
+      } on ArgumentError {
+        failed = true;
+        _error = '待同步声音或进度信息无效，已保留记录；其他进度继续同步';
       }
+    }
+    if (interrupted()) return;
+    if (_readPending(identity).isEmpty) _error = '';
+    if (retry && failed) {
+      throw XmlyException(
+        unconfirmed ? 'history_unconfirmed' : 'history_sync_failed',
+        '历史同步失败，进度已保留',
+      );
     }
   });
 
