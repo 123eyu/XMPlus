@@ -415,7 +415,6 @@ class DownloadService {
     String albumId,
     int page, {
     int? total,
-    bool allowAppended = false,
     List<String> seen = const [],
   }) async {
     Object? failure;
@@ -433,9 +432,7 @@ class DownloadService {
         final offset = (page - 1) * xmlyAlbumPageSize;
         if (result.total > 5000 ||
             result.total < 0 ||
-            total != null &&
-                (result.total < total ||
-                    !allowAppended && result.total != total) ||
+            total != null && result.total != total ||
             result.page != page ||
             result.album.id != albumId ||
             result.tracks.length !=
@@ -536,52 +533,19 @@ class DownloadService {
         job.albumId,
         job.page + 1,
         total: job.total,
-        allowAppended: true,
         seen: job.seen,
       );
       if (!allowed()) return;
-      if (page.total != job.total) {
-        // A larger total is only safe when every previously observed ID still
-        // occupies the same position. Do not treat insertions/reorders as append.
-        if (job.seen.length != job.page * xmlyAlbumPageSize) {
-          throw const XmlyException('catalogue_changed', '专辑目录快照不完整');
-        }
-        final verified = <String>[];
-        for (var number = 1; number <= job.page; number++) {
-          if (!allowed()) return;
-          final previous = await _albumPage(
-            job.accountIdentity,
-            job.settings,
-            job.albumId,
-            number,
-            total: page.total,
-            seen: verified,
-          );
-          if (!allowed()) return;
-          for (final track in previous.tracks) {
-            if (verified.length >= job.seen.length ||
-                track.id != job.seen[verified.length]) {
-              throw const XmlyException('catalogue_changed', '专辑声音顺序已变化');
-            }
-            verified.add(track.id);
-          }
-        }
-      }
-      // Finish only the originally confirmed range. Appended episodes need a
-      // new download request (or the separately consented automatic service).
-      final tracks = page.tracks
-          .take(job.total - job.page * xmlyAlbumPageSize)
-          .toList();
-      await _reconcileOutputs(tracks.map((track) => track.id).toSet());
+      await _reconcileOutputs(page.tracks.map((track) => track.id).toSet());
       final next = DownloadAlbumJob.fromJson(job.toJson())
         ..page = job.page + 1
-        ..seen = [...job.seen, ...tracks.map((track) => track.id)];
+        ..seen = [...job.seen, ...page.tracks.map((track) => track.id)];
       final batch = await _preview(
         job.accountIdentity,
         job.rootDirectory,
         job.settings,
         [
-          for (final track in tracks)
+          for (final track in page.tracks)
             if (!_duplicate(job.accountIdentity, track.id))
               (track: track, taskId: _missingTask(track.id)?.id),
         ],
@@ -1773,9 +1737,6 @@ class DownloadService {
         case 'confirmation_changed':
         case 'confirmation_required':
           return '听时或余额已变化，请重新确认';
-        case 'catalogue_changed':
-        case 'invalid_catalogue':
-          return '专辑目录已变化，任务已保留；请取消专辑任务后重新发起下载并确认';
         case 'usage_uncertain':
         case 'receipt_required':
           return '听时扣除尚未确认，请先核对';
