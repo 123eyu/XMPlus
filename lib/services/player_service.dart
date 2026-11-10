@@ -943,7 +943,9 @@ class PlayerService {
         return;
       }
       if (sourceKind != 'local' &&
-          (_source!.taskId != null || await _downloaded(current!) != null)) {
+          (ledger.needsRestart ||
+              _source!.taskId != null ||
+              await _downloaded(current!) != null)) {
         final saved = position;
         await _openCurrent(request, resumePosition: saved);
         return;
@@ -1129,7 +1131,7 @@ class PlayerService {
     }
     if (_source != null) {
       if (!_source!.supportsRanges) status = '此音频暂不支持快速跳转，跳转时可能需要等待';
-      await ledger.observe(playing: playing, buffering: buffering, speed: rate);
+      await ledger.sampleCurrentState();
       if (_actual && _clock().millisecondsSinceEpoch - _savedAt >= 5000) {
         await _saveProgress();
       }
@@ -1409,14 +1411,11 @@ class PlayerService {
       final settings = effectiveSettings;
       final wasDownload = sourceKind == 'prepaid' || sourceKind == 'local';
       policy.updateSettings(settings);
-      await ledger.observe(
-        playing: playing,
-        buffering: buffering,
-        speed: settings.speed,
-      );
+      await ledger.sampleCurrentState();
+      await _driver.setRate(settings.speed);
       rate = settings.speed;
+      await ledger.sampleCurrentState(speed: rate);
       volume = settings.volume;
-      await _driver.setRate(rate);
       await _driver.setVolume(volume);
       if (_source != null && settings.listenAndDownload && !wasDownload) {
         final saved = position;

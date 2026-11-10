@@ -103,6 +103,8 @@ class UsageLedger {
   final Lock _watchChanges = Lock();
   _Listening? _watch;
 
+  bool get needsRestart => _watch?.suspended ?? false;
+
   static Duration Function() _elapsedClock() {
     final watch = Stopwatch()..start();
     return () => watch.elapsed;
@@ -359,7 +361,7 @@ class UsageLedger {
   }
 
   /// No position argument: seeking can never produce billable seconds.
-  /// Feed actual state periodically as well as on player state/rate changes.
+  /// Record device events immediately; periodic saves use [sampleCurrentState].
   void recordPlaybackState({
     required bool playing,
     required bool buffering,
@@ -367,10 +369,27 @@ class UsageLedger {
   }) {
     if (speed != null) _validSpeed(speed);
     final watch = _watch;
-    if (watch == null) return;
+    if (watch == null || watch.suspended) return;
     _captureElapsed(watch);
     watch.playing = playing && !buffering;
     if (speed != null) watch.speed = speed;
+  }
+
+  /// Save the latest device state without replacing it with queued UI state.
+  Future<void> sampleCurrentState({double? speed}) {
+    if (speed != null) {
+      _validSpeed(speed);
+      final watch = _watch;
+      if (watch != null) {
+        _captureElapsed(watch);
+        watch.speed = speed;
+      }
+    }
+    return observe(
+      playing: _watch?.playing ?? false,
+      buffering: false,
+      stateAlreadyRecorded: true,
+    );
   }
 
   Future<void> observe({
@@ -387,15 +406,17 @@ class UsageLedger {
       final watch = observedWatch;
       if (watch == null || !identical(watch, _watch)) return;
       await _lock(watch.identity).synchronized(() async {
-        await _sample(watch.identity);
-        if (isBlocked(watch.identity)) {
-          watch.playing = false;
-          throw _uncertain;
-        }
-        if (!playing ||
-            _monotonic() - watch.settledAt >= const Duration(seconds: 120)) {
-          // A later device event may already have updated the actual state.
-          await _settleLocked(watch.identity, pause: false);
+        try {
+          await _sample(watch.identity);
+          if (isBlocked(watch.identity)) throw _uncertain;
+          if (!playing ||
+              _monotonic() - watch.settledAt >= const Duration(seconds: 120)) {
+            // A later device event may already have updated the actual state.
+            await _settleLocked(watch.identity, pause: false);
+          }
+        } catch (_) {
+          _suspend(watch);
+          rethrow;
         }
       });
     });
@@ -410,6 +431,12 @@ class UsageLedger {
     watch.sampledAt = now;
   }
 
+  void _suspend(_Listening watch) {
+    _captureElapsed(watch);
+    watch.playing = false;
+    watch.suspended = true;
+  }
+
   Future<void> _sample(String identity) async {
     final watch = _watch;
     if (watch == null || watch.identity != identity) return;
@@ -421,7 +448,7 @@ class UsageLedger {
       await _write(identity, (ledger) => ledger['usage_seconds'] = total);
       watch.unsaved -= amount;
     } catch (_) {
-      watch.playing = false;
+      _suspend(watch);
       rethrow;
     }
   }
@@ -586,7 +613,7 @@ class UsageLedger {
     Map<String, dynamic> operation, {
     required bool online,
   }) async {
-    if (_watch?.identity == identity) _watch!.playing = false;
+    if (_watch?.identity == identity) _suspend(_watch!);
     try {
       await _write(identity, (ledger) {
         final pending = {...operation, 'state': 'uncertain'};
@@ -661,5 +688,6 @@ class _Listening {
   double speed;
   Duration sampledAt, settledAt;
   bool playing = false;
+  bool suspended = false;
   double unsaved = 0;
 }
