@@ -15,23 +15,39 @@ class PlaybackVolumeControl extends StatefulWidget {
 
 class _PlaybackVolumeControlState extends State<PlaybackVolumeControl> {
   bool _saving = false;
+  bool _dismissedWhileSaving = false;
   double? _draft;
   String? _error;
+  double? _failedVolume;
+  bool? _failedMuted;
 
   String _label(double value) => '${value.round()}%';
 
-  Future<void> _save(double value) async {
+  Future<void> _save({double? value, bool? muted}) async {
     if (!mounted || _saving) return;
     setState(() {
       _saving = true;
+      _dismissedWhileSaving = false;
       _draft = value;
       _error = null;
+      _failedVolume = null;
+      _failedMuted = null;
     });
     try {
-      await widget.runtime.player.setMasterVolume(value);
+      if (muted != null) {
+        await widget.runtime.player.setMasterMuted(muted);
+      } else {
+        await widget.runtime.player.setMasterVolume(value!);
+      }
       widget.runtime.changed();
     } catch (_) {
-      if (mounted) setState(() => _error = '主音量保存或应用失败，请重试');
+      if (mounted) {
+        setState(() {
+          _error = '主音量保存或应用失败，请重试';
+          _failedVolume = value;
+          _failedMuted = muted;
+        });
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -48,10 +64,12 @@ class _PlaybackVolumeControlState extends State<PlaybackVolumeControl> {
     builder: (context, _) {
       final current =
           _draft ?? widget.runtime.player.effectiveSettings.masterVolume;
+      final muted = widget.runtime.player.effectiveSettings.masterMuted;
       final theme = Theme.of(context);
       return MenuAnchor(
         consumeOutsideTap: true,
         onClose: () {
+          if (_saving) _dismissedWhileSaving = true;
           if (mounted && !_saving && _draft != null) {
             setState(() => _draft = null);
           }
@@ -88,18 +106,31 @@ class _PlaybackVolumeControlState extends State<PlaybackVolumeControl> {
                     onChanged: (value) {
                       if (!_saving) setState(() => _draft = value);
                     },
-                    onChangeEnd: _save,
+                    onChangeEnd: (value) => _save(value: value),
                   ),
+                  if (muted && _error == null) const Text('已静音，点击喇叭或调整音量可恢复。'),
                   const Text('切换专辑后保持；各专辑的音量设置仍单独生效。'),
                   if (_saving) const Text('正在保存…'),
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        _error!,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.error,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _error!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.error,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => _save(
+                              value: _failedVolume,
+                              muted: _failedMuted,
+                            ),
+                            child: const Text('重试'),
+                          ),
+                        ],
                       ),
                     ),
                 ],
@@ -107,17 +138,45 @@ class _PlaybackVolumeControlState extends State<PlaybackVolumeControl> {
             ),
           ),
         ],
-        builder: (context, controller, _) => Tooltip(
-          message: '调整主音量（所有专辑）',
-          child: TextButton.icon(
-            onPressed: () =>
-                controller.isOpen ? controller.close() : controller.open(),
-            icon: Icon(
-              current == 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-              size: 20,
+        builder: (context, controller, _) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              key: const ValueKey('playbackMuteButton'),
+              tooltip: _failedMuted != null
+                  ? (_failedMuted! ? '重试静音' : '重试取消静音')
+                  : (muted ? '取消静音' : '静音'),
+              isSelected: muted,
+              onPressed: () async {
+                if (_saving) return;
+                // A failed device command may already have saved its target.
+                // Retrying must apply that target, not toggle it back.
+                await _save(muted: _failedMuted ?? !muted);
+                if (mounted &&
+                    _error != null &&
+                    !_dismissedWhileSaving &&
+                    !controller.isOpen) {
+                  controller.open();
+                }
+              },
+              icon: Icon(
+                _failedMuted != null
+                    ? Icons.error_outline_rounded
+                    : muted || current == 0
+                    ? Icons.volume_off_rounded
+                    : Icons.volume_up_rounded,
+                size: 20,
+              ),
             ),
-            label: Text(_label(current)),
-          ),
+            Tooltip(
+              message: '调整主音量（所有专辑）',
+              child: TextButton(
+                onPressed: () =>
+                    controller.isOpen ? controller.close() : controller.open(),
+                child: Text(_label(current)),
+              ),
+            ),
+          ],
         ),
       );
     },

@@ -12,6 +12,7 @@ class PlaybackSettings {
     required this.listenAndDownload,
     required this.volume,
     required this.masterVolume,
+    required this.masterMuted,
   });
 
   final double speed;
@@ -24,7 +25,8 @@ class PlaybackSettings {
   final bool listenAndDownload;
   final double volume;
   final double masterVolume;
-  double get outputVolume => volume * masterVolume / 100;
+  final bool masterMuted;
+  double get outputVolume => masterMuted ? 0 : volume * masterVolume / 100;
 
   factory PlaybackSettings.parse(Map values) => resolve(values);
 
@@ -72,6 +74,10 @@ class PlaybackSettings {
         masterVolume > 100) {
       throw const FormatException('主音量必须在 0–100 之间');
     }
+    final masterMuted = global['masterMuted'] ?? false;
+    if (masterMuted is! bool) {
+      throw const FormatException('主音量静音必须为开关值');
+    }
     return PlaybackSettings._(
       speed: number('speed', 1, 0.5, 3),
       skipIntroSeconds: seconds('skipIntroSeconds', 0, 0, 3600),
@@ -83,6 +89,7 @@ class PlaybackSettings {
       listenAndDownload: boolean('listenAndDownload', false),
       volume: number('volume', 100, 0, 100),
       masterVolume: masterVolume.toDouble(),
+      masterMuted: masterMuted,
     );
   }
 
@@ -97,6 +104,7 @@ class PlaybackSettings {
     'listenAndDownload': listenAndDownload,
     'volume': volume,
     'masterVolume': masterVolume,
+    'masterMuted': masterMuted,
   };
 }
 
