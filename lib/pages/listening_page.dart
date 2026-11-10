@@ -829,7 +829,11 @@ class _ListeningPageState extends State<ListeningPage> {
           position: position,
           positionLabel: '书签位置',
           play: () => _act(
-            () => _runtime.player.playTrack(track, resumePosition: position),
+            () => _runtime.player.playTrack(
+              track,
+              resumePosition: position,
+              manualPosition: true,
+            ),
           ),
           removeLabel: '删除书签',
           remove: () =>
