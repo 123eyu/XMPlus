@@ -367,6 +367,11 @@ class _DownloadPageState extends State<DownloadPage> {
 
   Future<void> _retry(DownloadTask task) async {
     task = _service.task(task.id);
+    if (task.state == DownloadState.awaitingDebit && task.needsConfirmation) {
+      // Drain the worker that reported the changed fee before preparing again.
+      await widget.runtime.pauseDownload(task.id);
+      task = _service.task(task.id);
+    }
     if (task.state != DownloadState.failed &&
         task.state != DownloadState.paused &&
         task.state != DownloadState.cancelled)
@@ -1076,7 +1081,15 @@ class _DownloadPageState extends State<DownloadPage> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                if (task.active)
+                if (task.state == DownloadState.awaitingDebit &&
+                    task.needsConfirmation)
+                  TextButton(
+                    onPressed: () => _run(() => _retry(task)),
+                    child: const Text('重新确认'),
+                  ),
+                if (task.active &&
+                    !(task.state == DownloadState.awaitingDebit &&
+                        task.needsConfirmation))
                   TextButton(
                     onPressed: () =>
                         _run(() => widget.runtime.pauseDownload(task.id)),
