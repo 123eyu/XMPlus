@@ -1664,10 +1664,9 @@ class DownloadService {
     return null;
   }
 
-  static bool _reward(ResolvedAudio audio) =>
-      audio.requiresReward &&
-      audio.track.isPaid != false &&
-      audio.track.isAuthorized != true;
+  // A quota-based authorization may also return isAuthorized.
+  // The resolver retains whether that permission required listening quota.
+  static bool _reward(ResolvedAudio audio) => audio.requiresReward;
   static int _fee(Track track) {
     if (!track.duration.isFinite ||
         track.duration <= 0 ||
