@@ -1875,7 +1875,9 @@ class PlayerService {
   Future<void> removeQueueItem(int index) => _run(() async {
     RangeError.checkValidIndex(index, _queue);
     final trackId = _queue[index].id;
-    _newRequest();
+    // Only removing the current track cancels its pending admission. Editing
+    // another row must not abandon a valid automatic or manual track load.
+    if (trackId == current?.id) _newRequest();
     await _commands.synchronized(() async {
       index = _queue.indexWhere((track) => track.id == trackId);
       if (index < 0) return;
