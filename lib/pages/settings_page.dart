@@ -90,6 +90,7 @@ class _SettingsPageState extends State<SettingsPage> {
       storage: widget.runtime.storage,
       accounts: widget.runtime.accounts,
       onChanged: widget.runtime.changed,
+      updates: widget.runtime,
     ),
     _SettingsSection.backup => BackupPage(
       storage: widget.runtime.storage,

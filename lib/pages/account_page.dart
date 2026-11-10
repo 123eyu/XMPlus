@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -83,12 +84,14 @@ class AccountPage extends StatefulWidget {
     required this.storage,
     required this.accounts,
     this.onChanged,
+    this.updates,
     super.key,
   });
 
   final AppStorage storage;
   final AccountService accounts;
   final VoidCallback? onChanged;
+  final Listenable? updates;
 
   @override
   State<AccountPage> createState() => _AccountPageState();
@@ -98,12 +101,54 @@ class _AccountPageState extends State<AccountPage> {
   final _login = XmlyLogin();
   bool _busy = false;
   String? _error;
+  late String _viewKey;
 
   bool get _autoClaim =>
       (widget.storage.state['settings'] as Map)['autoClaim'] == true;
 
+  String _accountViewKey() {
+    final records = widget.storage.state['accounts'] as Map;
+    return jsonEncode([
+      widget.accounts.primaryAccountId,
+      widget.accounts.activeClient?.identity,
+      widget.accounts.accountIds,
+      _autoClaim,
+      for (final identity in widget.accounts.accountIds)
+        [
+          identity,
+          if (records[identity] case final Map record)
+            for (final field in ['uid', 'deviceHint', 'rewardPaused', 'quota'])
+              record[field],
+        ],
+    ]);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _viewKey = _accountViewKey();
+    widget.updates?.addListener(_changed);
+  }
+
+  @override
+  void didUpdateWidget(covariant AccountPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.updates != widget.updates) {
+      oldWidget.updates?.removeListener(_changed);
+      widget.updates?.addListener(_changed);
+    }
+    _viewKey = _accountViewKey();
+  }
+
+  void _changed() {
+    if (!mounted) return;
+    final key = _accountViewKey();
+    if (key != _viewKey) setState(() => _viewKey = key);
+  }
+
   @override
   void dispose() {
+    widget.updates?.removeListener(_changed);
     _login.close();
     super.dispose();
   }
@@ -382,6 +427,7 @@ class _AccountPageState extends State<AccountPage> {
 
   @override
   Widget build(BuildContext context) {
+    _viewKey = _accountViewKey();
     final records = widget.storage.state['accounts'] as Map;
     final ids = [
       ...widget.accounts.accountIds,

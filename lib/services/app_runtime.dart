@@ -452,6 +452,7 @@ class AppRuntime extends ChangeNotifier {
       await storage.transaction((state) {
         ((state['accounts'] as Map)[identity] as Map)['rewardPaused'] = true;
       });
+      if (!closing && !_closed) notifyListeners();
     }
     return increase > 0 ? increase : null;
   }
