@@ -661,9 +661,25 @@ class MediaProcessor {
     if (containers.intersection(expectedContainers).isEmpty) {
       throw const XmlyException('media_validation', '输出容器校验失败');
     }
+    // MP3 encoding may resample sources outside the encoder's supported rates.
+    // Original audio and other output formats still require the source rate.
+    final sampleRateCompatible =
+        source['sample_rate'] == result['sample_rate'] ||
+        (format == 'mp3' &&
+            const {
+              8000,
+              11025,
+              12000,
+              16000,
+              22050,
+              24000,
+              32000,
+              44100,
+              48000,
+            }.contains(int.tryParse('${result['sample_rate']}')));
     if (result['codec_name'] != expected ||
         (before - after).abs() > math.max(2.0, before * .01) ||
-        source['sample_rate'] != result['sample_rate'] ||
+        !sampleRateCompatible ||
         source['channels'] != result['channels']) {
       throw const XmlyException('media_validation', '处理后的音轨、时长或声道校验失败');
     }
