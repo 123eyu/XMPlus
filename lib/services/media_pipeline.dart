@@ -155,6 +155,7 @@ class MediaPipeline {
     }
     _controls[task.id] = control;
     _directories[task.id] = directory;
+    var completed = false;
     try {
       var source = await _verifiedSource(directory, task);
       if (source == null) {
@@ -199,9 +200,19 @@ class MediaPipeline {
           overwrite: true,
         );
       }
-      return await _process(task, source, control);
+      final result = await _process(task, source, control);
+      completed = true;
+      return result;
     } finally {
-      await cache.pause();
+      // Complete caches have no producer left, but a retained player stream
+      // may still be draining them. Only interruption should stop that reader.
+      if (!completed ||
+          control.paused ||
+          control.cancelled ||
+          !cache.complete ||
+          !_leases.containsKey(task.id)) {
+        await cache.pause();
+      }
       _controls.remove(task.id);
       if (_finished.contains(task.id) && !_leases.containsKey(task.id))
         await _discardFinished(task.id);
