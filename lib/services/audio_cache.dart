@@ -1300,12 +1300,16 @@ class AudioProxy {
     } catch (_) {
       try {
         response.statusCode = HttpStatus.badGateway;
+        response.contentLength = 0;
         await response.close();
       } catch (_) {
         try {
-          (await response.detachSocket(writeHeaders: false)).destroy();
+          // Once headers are sent, neither statusCode nor detachSocket is
+          // legal. A deadline aborts this response's connection even then.
+          response.deadline = Duration.zero;
+          await response.done;
         } catch (_) {
-          /* Client already disconnected. */
+          /* Aborted or already disconnected. */
         }
       }
     }
