@@ -48,6 +48,7 @@ class MediaProcessor {
   // the data-directory writer lock excludes a second application writer.
   static final Lock _outputs = Lock();
   static const _limit = 2 * 1024 * 1024;
+  static const _coverLimit = 5 * 1024 * 1024;
   static const _protocols = ['-protocol_whitelist', 'file,pipe'];
 
   static String _tool(String? directory, String name) => p.join(
@@ -215,21 +216,40 @@ class MediaProcessor {
     final minimum = download['minimumFreeMiB'] ?? 512;
     if (minimum is! int) throw const XmlyException('invalid_space', '可用空间设置无效');
     final sourceSize = await File(source).length();
-    // Lossless PCM-derived FLAC may be much larger than a compressed source.
-    final pcmReserve =
-        (_duration(input) *
-                (int.tryParse('${sourceAudio['sample_rate']}') ?? 48000) *
-                ((sourceAudio['channels'] as num?)?.toInt() ?? 2) *
-                4)
-            .ceil();
-    await _paths.checkRoot(
-      task.rootDirectory,
-      minimumFreeMiB: minimum,
-      reserveBytes: math.max(sourceSize * 2, pcmReserve),
-    );
     final total =
         xmlyPositive(task.track.raw['totalCount']) ??
         xmlyPositive(task.track.raw['total']);
+    var reserve = sourceSize * 2;
+    if (format == 'original') {
+      // Copy/remux never writes decoded PCM. Keep output/replacement room,
+      // plus temporary/embedded metadata and the bounded cover download.
+      if (tagging) {
+        // ffprobe output caps retained source tags at _limit. Allow escaped
+        // metadata files as well as the tags embedded in the final container.
+        reserve += 4 * _limit;
+        reserve +=
+            3 * utf8.encode(jsonEncode(_metadata(task, tags, total))).length;
+      }
+      if (coverEnabled &&
+          task.track.coverUrl != null &&
+          const {'mp3', 'm4a', 'm4b', 'flac'}.contains(extension)) {
+        reserve += 2 * _coverLimit;
+      }
+    } else {
+      // Lossless PCM-derived FLAC may be much larger than a compressed source.
+      final pcmReserve =
+          (_duration(input) *
+                  (int.tryParse('${sourceAudio['sample_rate']}') ?? 48000) *
+                  ((sourceAudio['channels'] as num?)?.toInt() ?? 2) *
+                  4)
+              .ceil();
+      reserve = math.max(reserve, pcmReserve);
+    }
+    await _paths.checkRoot(
+      task.rootDirectory,
+      minimumFreeMiB: minimum,
+      reserveBytes: reserve,
+    );
     final target = _paths.targetPath(
       root: task.rootDirectory,
       track: task.track,
@@ -814,7 +834,7 @@ class MediaProcessor {
             uri = uri.resolve(location);
             continue;
           }
-          const limit = 5 * 1024 * 1024;
+          const limit = _coverLimit;
           if (current.contentLength > limit) {
             definitive = true;
             diagnostic.completeness = '未读取响应体：Content-Length 超过 5 MiB 安全上限';
