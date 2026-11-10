@@ -1187,12 +1187,18 @@ class PlayerService {
       () => _openCurrent(request, resumePosition: saved, localTaskId: task.id),
     );
   });
-  Future<void> seek(double seconds, {int? expectedEpoch}) {
+  Future<void> seek(double seconds, {int? expectedEpoch}) =>
+      _seekTo(() => seconds, expectedEpoch: expectedEpoch);
+
+  Future<void> _seekTo(double Function() target, {int? expectedEpoch}) {
     if (expectedEpoch != null && expectedEpoch != _epoch) return Future.value();
+    final request = _request, trackId = current?.id;
     ++_advanceIntent;
     return _run(
       () => _commands.synchronized(() async {
         if (expectedEpoch != null && expectedEpoch != _epoch) return;
+        if (request != _request || trackId != current?.id) return;
+        final seconds = target();
         if (!seconds.isFinite || seconds < 0) throw ArgumentError('播放位置无效');
         if (_source == null) return;
         _manualChapterPosition = true;
@@ -1212,13 +1218,13 @@ class PlayerService {
     );
   }
 
-  Future<void> seekBackward() => seek(
-    (position - effectiveSettings.seekBackwardSeconds)
+  Future<void> seekBackward() => _seekTo(
+    () => (position - effectiveSettings.seekBackwardSeconds)
         .clamp(0, double.infinity)
         .toDouble(),
   );
   Future<void> seekForward() =>
-      seek(position + effectiveSettings.seekForwardSeconds);
+      _seekTo(() => position + effectiveSettings.seekForwardSeconds);
 
   void _prefetchNext(AudioSnapshot snapshot) {
     final source = _source;
