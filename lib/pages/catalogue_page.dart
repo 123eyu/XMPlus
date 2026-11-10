@@ -29,6 +29,26 @@ typedef AlbumPlayback = Future<void> Function(
   Track? track,
 });
 
+int? _trackOrdinal(Track track) =>
+    track.officialPosition ?? xmlyPositive(track.orderNo);
+
+Future<Track> _locateAlbumTrack(
+  XmlyClient client,
+  String albumId,
+  Track track,
+) async {
+  final id = track.id;
+  if (_trackOrdinal(track) == null) track = await client.track(track.id);
+  final ordinal = _trackOrdinal(track);
+  if (track.id != id ||
+      track.albumId != albumId ||
+      ordinal == null ||
+      ordinal > 5000) {
+    throw const XmlyException('track_position_missing', '无法确定这集在专辑中的位置，请刷新后重试');
+  }
+  return track;
+}
+
 class DiscoveryPage extends StatefulWidget {
   const DiscoveryPage({
     required this.runtime,
@@ -50,6 +70,7 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
   String? _error;
   bool _loading = false;
   int _generation = 0;
+  int _playRequest = 0;
 
   Future<void> _search([int page = 1]) async {
     final generation = ++_generation;
@@ -81,12 +102,13 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
     }
   }
 
-  void _openAlbum(String id) {
+  void _openAlbum(String id, {Track? target}) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => AlbumPageView(
           runtime: widget.runtime,
           albumId: id,
+          initialTrack: target,
           onDownload: widget.onDownload,
           onPlayAlbum: widget.onPlayAlbum,
         ),
@@ -94,9 +116,39 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
     );
   }
 
+  Future<void> _playResult(Track track) async {
+    final request = ++_playRequest;
+    final client = widget.runtime.client,
+        key = widget.runtime.client.cacheIdentity;
+    try {
+      if (track.albumId.isEmpty) {
+        await widget.runtime.player.playTrack(track);
+      } else {
+        final located = await _locateAlbumTrack(client, track.albumId, track);
+        if (!mounted ||
+            request != _playRequest ||
+            !identical(client, widget.runtime.client) ||
+            key != client.cacheIdentity)
+          return;
+        await (widget.onPlayAlbum ?? widget.runtime.player.playAlbum)(
+          track.albumId,
+          track.id,
+          page: (_trackOrdinal(located)! - 1) ~/ xmlyAlbumPageSize + 1,
+          track: located,
+        );
+      }
+    } catch (error) {
+      if (mounted && request == _playRequest) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(_safeError(error))));
+      }
+    }
+  }
+
   @override
   void dispose() {
     _generation++;
+    _playRequest++;
     _query.dispose();
     super.dispose();
   }
@@ -208,15 +260,48 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
                       subtitle: AdaptiveText(
                         '${track.album} · ${_duration(track.duration)}',
                       ),
-                      onTap: track.albumId.isEmpty
-                          ? null
-                          : () => _openAlbum(track.albumId),
-                      trailing: IconButton(
-                        tooltip: '下载',
-                        icon: const Icon(Icons.download_outlined),
-                        onPressed: widget.onDownload == null
-                            ? null
-                            : () => widget.onDownload!([track]),
+                      onTap: () => _playResult(track),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: '播放此集',
+                            icon: const Icon(Icons.play_arrow),
+                            onPressed: () => _playResult(track),
+                          ),
+                          PopupMenuButton<String>(
+                            tooltip: '声音操作',
+                            onSelected: (action) async {
+                              if (action == 'album') {
+                                _openAlbum(track.albumId, target: track);
+                              } else {
+                                try {
+                                  await widget.onDownload?.call([track]);
+                                } catch (error) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(_safeError(error)),
+                                      ),
+                                    );
+                                  }
+                                }
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              if (track.albumId.isNotEmpty)
+                                const PopupMenuItem(
+                                  value: 'album',
+                                  child: Text('查看专辑并定位'),
+                                ),
+                              if (widget.onDownload != null)
+                                const PopupMenuItem(
+                                  value: 'download',
+                                  child: Text('下载'),
+                                ),
+                            ],
+                          ),
+                        ],
                       ),
                     );
                   },
@@ -243,12 +328,14 @@ class AlbumPageView extends StatefulWidget {
   const AlbumPageView({
     required this.runtime,
     required this.albumId,
+    this.initialTrack,
     this.onDownload,
     this.onPlayAlbum,
     super.key,
   });
   final AppRuntime runtime;
   final String albumId;
+  final Track? initialTrack;
   final TrackDownload? onDownload;
   final AlbumPlayback? onPlayAlbum;
   @override
@@ -256,6 +343,9 @@ class AlbumPageView extends StatefulWidget {
 }
 
 class _AlbumPageViewState extends State<AlbumPageView> {
+  final _albumScroll = ScrollController();
+  final _headerKey = GlobalKey();
+  String? _targetWarning;
   final _search = TextEditingController();
   final _range = TextEditingController();
   final _selected = <String, Track>{};
@@ -285,7 +375,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     widget.runtime.addListener(_runtimeChanged);
     _downloaded = _completedTrackIds();
     _restoreCache();
-    _loadPage(1);
+    _loadPage(1, target: widget.initialTrack);
     _scanUpdates();
     _loadSubscription();
   }
@@ -296,6 +386,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     _generation++;
     _search.dispose();
     _range.dispose();
+    _albumScroll.dispose();
     super.dispose();
   }
 
@@ -547,17 +638,59 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     }
   }
 
-  Future<void> _loadPage(int page) async {
+  double get _trackExtent =>
+      (MediaQuery.textScalerOf(context).scale(16) * 2 + 32).clamp(
+        76.0,
+        double.infinity,
+      );
+
+  void _revealTarget(Track target, int generation) {
+    final index = _visible.indexWhere((track) => track.id == target.id);
+    if (index < 0) {
+      setState(() => _targetWarning = '当前目录没有找到这集，目标信息已保留，可重新定位。');
+      return;
+    }
+    setState(() => _targetWarning = null);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || generation != _generation || !_albumScroll.hasClients)
+        return;
+      final header = _headerKey.currentContext?.findRenderObject();
+      if (header is! RenderBox || !header.hasSize) return;
+      final offset = header.size.height + index * _trackExtent;
+      _albumScroll.jumpTo(
+        offset.clamp(
+          _albumScroll.position.minScrollExtent,
+          _albumScroll.position.maxScrollExtent,
+        ),
+      );
+    });
+  }
+
+  Future<void> _loadPage(int page, {Track? target}) async {
     if (_offline) {
+      if (target != null) {
+        final index = _cachedTracks().indexWhere(
+          (track) => track.id == target.id,
+        );
+        if (index >= 0) page = index ~/ _pageSize + 1;
+      }
       setState(() => _showCached(page));
+      if (target != null) _revealTarget(target, _generation);
       return;
     }
     final generation = ++_generation;
+    final client = widget.runtime.client,
+        key = widget.runtime.client.cacheIdentity;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
+      if (target != null) {
+        final located = await _locateAlbumTrack(client, widget.albumId, target);
+        if (!_sameAccount(client, key) || generation != _generation) return;
+        page = (_trackOrdinal(located)! - 1) ~/ _pageSize + 1;
+      }
       if (_filter.isNotEmpty && _complete != null) {
         final filtered = _complete!
             .where(
@@ -576,7 +709,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           });
         }
       } else {
-        final result = await widget.runtime.client.album(
+        final result = await client.album(
           widget.albumId,
           page: page,
           pageSize: _pageSize,
@@ -586,7 +719,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         } catch (_) {
           // Cache metadata and artwork are nonessential to the live request.
         }
-        if (mounted && generation == _generation) {
+        if (_sameAccount(client, key) && generation == _generation) {
           setState(() {
             _offline = false;
             _cachedView = false;
@@ -595,15 +728,26 @@ class _AlbumPageViewState extends State<AlbumPageView> {
             _total = result.total;
             _visible = result.tracks;
           });
+          if (target != null) _revealTarget(target, generation);
         }
       }
     } catch (error) {
-      if (mounted && generation == _generation) {
+      if (_sameAccount(client, key) && generation == _generation) {
         setState(() {
           _restoreCache();
           _offline = _album != null;
           _error = _offline ? null : _safeError(error);
+          if (target != null) _targetWarning = '暂时无法定位这集，目标信息已保留，请重新定位。';
         });
+        if (_offline && target != null) {
+          final index = _cachedTracks().indexWhere(
+            (track) => track.id == target.id,
+          );
+          if (index >= 0) {
+            setState(() => _showCached(index ~/ _pageSize + 1));
+            _revealTarget(target, generation);
+          }
+        }
       }
     } finally {
       if (mounted && generation == _generation) setState(() => _busy = false);
@@ -842,6 +986,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       case 'refresh':
         _offline = false;
         _filter = '';
+        _offline = false;
         _search.clear();
         _loadPage(1);
       case 'tags':
@@ -933,11 +1078,31 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 960),
             child: Scrollbar(
+              controller: _albumScroll,
               child: CustomScrollView(
+                controller: _albumScroll,
                 slivers: [
                   SliverToBoxAdapter(
                     child: Column(
+                      key: _headerKey,
                       children: [
+                        if (widget.initialTrack case final target?)
+                          ListTile(
+                            title: AdaptiveText('搜索目标：${target.title}'),
+                            subtitle: _targetWarning == null
+                                ? null
+                                : Text(_targetWarning!),
+                            trailing: TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () {
+                                      _filter = '';
+                                      _search.clear();
+                                      _loadPage(1, target: target);
+                                    },
+                              child: const Text('重新定位'),
+                            ),
+                          ),
                         if (album != null)
                           Padding(
                             padding: EdgeInsets.all(compact ? 8 : 16),
@@ -1159,12 +1324,14 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                       ],
                     ),
                   ),
-                  SliverList.builder(
+                  SliverFixedExtentList.builder(
+                    itemExtent: _trackExtent,
                     itemCount: _visible.length,
                     itemBuilder: (_, index) {
                       final track = _visible[index];
                       final downloaded = _downloaded.contains(track.id);
                       return ListTile(
+                        selected: track.id == widget.initialTrack?.id,
                         leading: _selectionMode
                             ? Checkbox(
                                 value: _selected.containsKey(track.id),
