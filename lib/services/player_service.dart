@@ -983,14 +983,23 @@ class PlayerService {
             }
           },
         );
-        task = downloads.tasks
-            .where(
-              (item) =>
-                  item.accountIdentity == batch.accountIdentity &&
-                  item.track.id == track.id &&
-                  item.deduplicates,
-            )
-            .firstOrNull;
+        // Preview polling may select a different account for this track.
+        final selectedIdentity =
+            batch.items
+                .where((item) => item.track.id == track.id)
+                .firstOrNull
+                ?.accountIdentity ??
+            batch.accountIdentity;
+        task = retained != null
+            ? downloads.task(retained!)
+            : downloads.tasks
+                  .where(
+                    (item) =>
+                        item.accountIdentity == selectedIdentity &&
+                        item.track.id == track.id &&
+                        item.deduplicates,
+                  )
+                  .firstOrNull;
       }
       if (task == null) throw const XmlyException('task_missing', '没有可用的下载任务');
       if (retained == null) {
@@ -1024,7 +1033,8 @@ class PlayerService {
       final mounted = cache!;
       final source = PlaybackSource(
         uri: _proxy!.mount(mounted),
-        identity: task.accountIdentity,
+        // The task may have rotated accounts while this request awaited a cache.
+        identity: mounted.accountIdentity,
         kind: 'prepaid',
         taskId: task.id,
         cache: mounted,

@@ -78,6 +78,7 @@ class AudioCache {
     }
   }
 
+  String get accountIdentity => _audio.accountIdentity;
   int? get length => _length;
   bool get supportsRanges => _ranges;
   String get sourceFormat => _format;
