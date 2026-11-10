@@ -1008,7 +1008,7 @@ class PlayerService {
                     _tailGeneration == generation &&
                     _tailRequest == request) ||
                 _checkedEpochs.add(epoch))) {
-          await refreshAlbumTail(sourceAlbumId);
+          await refreshAlbumTail(sourceAlbumId, speculative: true);
         }
         if (!active() || cursor + 1 >= _queue.length) return;
         final next = _queue[cursor + 1];
@@ -1123,12 +1123,40 @@ class PlayerService {
         cursor == _queue.length - 1 &&
         sourceAlbumId.isNotEmpty &&
         current?.albumId == sourceAlbumId) {
-      if ((_tailFlight != null &&
-              _tailGeneration == generation &&
-              _tailRequest == _request) ||
-          _checkedEpochs.add(_epoch)) {
+      final pending =
+          _tailFlight != null &&
+          _tailGeneration == generation &&
+          _tailRequest == _request;
+      if (pending || _checkedEpochs.add(_epoch)) {
         // _finish owns _commands. The flight takes that lock only to commit.
-        unawaited(refreshAlbumTail(sourceAlbumId).catchError((Object _) {}));
+        final epoch = _epoch, request = _request, intent = _advanceIntent;
+        final expectedGeneration = generation, album = sourceAlbumId;
+        unawaited(() async {
+          try {
+            await refreshAlbumTail(album);
+          } catch (_) {
+            // A prefetch still running at completion gets one end-of-track
+            // attempt if it fails. Never retry after a newer user command.
+            if (!pending ||
+                _closed ||
+                !_atEnd ||
+                _manualPaused ||
+                _sleepStopped ||
+                epoch != _epoch ||
+                request != _request ||
+                intent != _advanceIntent ||
+                expectedGeneration != generation ||
+                album != sourceAlbumId ||
+                _checkedEpochs.contains(epoch)) {
+              return;
+            }
+            try {
+              await refreshAlbumTail(album);
+            } catch (_) {
+              // The page reports this final error and offers an explicit retry.
+            }
+          }
+        }());
       }
       return;
     }
@@ -1137,7 +1165,7 @@ class PlayerService {
     }
   }
 
-  Future<void> refreshAlbumTail(String albumId) {
+  Future<void> refreshAlbumTail(String albumId, {bool speculative = false}) {
     final album = xmlyIdentifier(albumId),
         expectedGeneration = generation,
         request = _request;
@@ -1311,6 +1339,8 @@ class PlayerService {
         });
       } catch (failure) {
         if (failure is DownloadStopped || !active()) return;
+        if (_epoch == endEpoch) _checkedEpochs.remove(endEpoch);
+        if (speculative && !_atEnd) rethrow;
         error = _message(failure);
         status = '检查更新失败，请重试';
         _notify();
