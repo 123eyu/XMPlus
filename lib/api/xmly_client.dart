@@ -99,7 +99,12 @@ class XmlyClient {
     if (origin == cachedAlbumOrigin)
       return _cachedAlbumEndpoint(method, origin, path);
     if (origin == searchOrigin)
-      return method == 'GET' && path == '/revision/search';
+      return method == 'GET' &&
+          const {
+            '/revision/search',
+            '/revision/comment/queryComments',
+            '/revision/comment/queryReplies',
+          }.contains(path);
     if (origin == collector)
       return method == 'POST' && path == '/nyx/v1/history/merge/android';
     if (origin == welfare)

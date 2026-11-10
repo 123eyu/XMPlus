@@ -13,6 +13,7 @@ import 'playback_settings_page.dart';
 import 'playback_speed_control.dart';
 import 'player_queue_panel.dart';
 import 'playback_volume_control.dart';
+import 'track_comments_panel.dart';
 
 String playbackTime(double seconds) {
   final total = seconds.isFinite && seconds > 0 ? seconds.floor() : 0;
@@ -736,6 +737,9 @@ class _PlayerPanelState extends State<PlayerPanel> {
                 switch (value) {
                   case 'settings':
                     _settings();
+                  case 'comments':
+                    if (track != null)
+                      showTrackComments(_navigator.context, _runtime, track);
                   case 'replay':
                     _act(player.replay);
                   case 'local':
@@ -748,6 +752,8 @@ class _PlayerPanelState extends State<PlayerPanel> {
               },
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'settings', child: Text('播放设置')),
+                if (track != null)
+                  const PopupMenuItem(value: 'comments', child: Text('查看评论')),
                 PopupMenuItem(
                   value: 'replay',
                   enabled: track != null && !_busy,
