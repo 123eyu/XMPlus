@@ -1116,7 +1116,7 @@ class PlayerService {
     }
     if (_manualPaused) return;
     if (effectiveSettings.loopMode == 'single') {
-      await _openCurrent(_newRequest(), resumePosition: 0, manualReplay: true);
+      await _openCurrent(_newRequest(), resumePosition: 0);
       return;
     }
     if (queueSource == 'album' &&
