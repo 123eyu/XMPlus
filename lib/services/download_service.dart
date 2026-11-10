@@ -1081,7 +1081,14 @@ class DownloadService {
       );
     }
     if (reacquire) {
+      final client = item.accountIdentity == 'anonymous'
+          ? anonymous
+          : accounts.clientFor(item.accountIdentity);
       await discardSource?.call(item);
+      // A failed source can still have a valid, non-expiring URL lease. Revoke
+      // only this account/track before admitting the explicit replacement.
+      client.invalidate(item.track.id);
+      await client.flushUrlCache();
       await _change(id, (value) => value.copyWith(processingFailed: false));
     }
     await resume(id);
