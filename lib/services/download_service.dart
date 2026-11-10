@@ -38,10 +38,9 @@ class DownloadControl {
   final void Function(int, int?, double) _progress;
   final Future<void> Function() _processing;
   final Future<void> Function(String) _warning;
-  Future<void> warning(String message) async {
-    await checkpoint();
-    await _warning(message);
-  }
+  // Processing warnings describe an already committed output. Persisting them
+  // must not discard that output when a stop arrives after the commit.
+  Future<void> warning(String message) => _warning(message);
 
   final Completer<void> _stopped = Completer<void>();
   bool _paused = false, _cancelled = false;
@@ -1174,26 +1173,32 @@ class DownloadService {
     for (final item in tasks.where((item) => item.active)) {
       await _change(
         item.id,
-        (value) => value.copyWith(
-          state: DownloadState.paused,
-          bytesPerSecond: 0,
-          retryAt: null,
-          processingFailed:
-              value.processingFailed || value.state == DownloadState.processing,
-        ),
+        (value) => value.state == DownloadState.completed
+            ? value
+            : value.copyWith(
+                state: DownloadState.paused,
+                bytesPerSecond: 0,
+                retryAt: null,
+                processingFailed:
+                    value.processingFailed ||
+                    value.state == DownloadState.processing,
+              ),
       );
     }
     await Future.wait(_workers.values.map((worker) => worker.done).toList());
     for (final item in tasks.where((item) => item.active)) {
       await _change(
         item.id,
-        (value) => value.copyWith(
-          state: DownloadState.paused,
-          bytesPerSecond: 0,
-          retryAt: null,
-          processingFailed:
-              value.processingFailed || value.state == DownloadState.processing,
-        ),
+        (value) => value.state == DownloadState.completed
+            ? value
+            : value.copyWith(
+                state: DownloadState.paused,
+                bytesPerSecond: 0,
+                retryAt: null,
+                processingFailed:
+                    value.processingFailed ||
+                    value.state == DownloadState.processing,
+              ),
       );
     }
   }
@@ -1341,7 +1346,8 @@ class DownloadService {
             // Network producers enter only after normal account admission.
             path = await transfer(task(id), audio, control);
           }
-          await control.checkpoint();
+          // The backend returns only after committing a verified output. A
+          // concurrent pause/cancel must preserve this completed result.
           if (!p.isAbsolute(path)) {
             throw const XmlyException('invalid_output', '媒体处理未返回有效成品路径');
           }
