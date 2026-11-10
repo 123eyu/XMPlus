@@ -230,6 +230,15 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage>
               helperMaxLines: 2,
             ),
             onFieldSubmitted: (value) {
+              if (value.contains('/') ||
+                  value.contains(r'\') ||
+                  value == '.' ||
+                  value == '..') {
+                setState(() {
+                  _error = '文件名不能包含目录路径，请使用“按专辑建立文件夹”';
+                });
+                return;
+              }
               final tokens = RegExp(r'\{([^{}]+)\}')
                   .allMatches(value)
                   .map((match) => match[1]!);
