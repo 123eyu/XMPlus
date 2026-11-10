@@ -373,11 +373,20 @@ class AudioCache {
     }
   }
 
-  Future<void> _fetchWithRetry(int index, int epoch) async {
+  Future<void> _fetchWithRetry(
+    int index,
+    int epoch, {
+    bool verifyOnly = false,
+  }) async {
     for (var attempt = 0; ; attempt++) {
       _diagnostic = null;
       try {
-        await _fetch(index, epoch, resumeSequential: attempt > 0);
+        await _fetch(
+          index,
+          epoch,
+          resumeSequential: attempt > 0,
+          verifyOnly: verifyOnly,
+        );
         return;
       } catch (error, stack) {
         if (!_paused && !_closed) {
@@ -690,8 +699,7 @@ class AudioCache {
             _etag != etag ||
             _modified != modified ||
             _ranges != ranges ||
-            (!ranges && !resumeSequential) ||
-            (!_validated && etag == null && modified == null));
+            (!ranges && !resumeSequential));
     if (changed) await _reset();
     _length = size;
     _etag = etag;
@@ -704,6 +712,7 @@ class AudioCache {
     int index,
     int epoch, {
     bool resumeSequential = false,
+    bool verifyOnly = false,
   }) async {
     final start = index * blockSize;
     final requestedEnd = !_validated || _length == null
@@ -711,6 +720,11 @@ class AudioCache {
         : min(start + blockSize, _length!) - 1;
     final result = await _request(start, requestedEnd, epoch);
     final response = result.response;
+    if (verifyOnly && response.statusCode != HttpStatus.partialContent) {
+      await _discard(response);
+      await _reset();
+      throw const XmlyException('cache_source_changed', '音频来源已变化');
+    }
     if (response.statusCode == 416) {
       final match = RegExp(r'^bytes \*/([0-9]+)$').firstMatch(
         response.headers.value(HttpHeaders.contentRangeHeader) ?? '',
@@ -776,6 +790,10 @@ class AudioCache {
       throw const XmlyException('cache_range', '服务器返回的音频范围不一致');
     }
     final changed = await _metadata(response, total, true);
+    if (verifyOnly && changed) {
+      await _discard(response);
+      throw const XmlyException('cache_source_changed', '音频来源已变化');
+    }
     if (changed &&
         (index != 0 || last != min(start + blockSize - 1, total - 1))) {
       await _discard(response);
@@ -804,11 +822,27 @@ class AudioCache {
       }
       final data = bytes.takeBytes();
       _diagnostic?.responseBytes = () => data;
+      if (verifyOnly) {
+        if (_blocks[index] != sha256.convert(data).toString()) {
+          await _reset();
+          throw const XmlyException('cache_source_changed', '音频来源已变化');
+        }
+        return;
+      }
       if (index == 0) {
         _format = _sniff(data);
         final oldHash = _blocks[0];
         if (oldHash != null && oldHash != sha256.convert(data).toString())
           await _reset();
+        // Without a server validator, verify every retained block before
+        // releasing readers. Matching block zero alone cannot prove that a
+        // previously cached later range still belongs to the same audio.
+        if (!_validated && _etag == null && _modified == null) {
+          final retained = _blocks.keys.where((index) => index != 0).toList();
+          for (final retainedIndex in retained) {
+            await _fetchWithRetry(retainedIndex, epoch, verifyOnly: true);
+          }
+        }
         _validated = true;
       }
       _checkProducer(epoch);
