@@ -360,39 +360,60 @@ class UsageLedger {
 
   /// No position argument: seeking can never produce billable seconds.
   /// Feed actual state periodically as well as on player state/rate changes.
+  void recordPlaybackState({
+    required bool playing,
+    required bool buffering,
+    double? speed,
+  }) {
+    if (speed != null) _validSpeed(speed);
+    final watch = _watch;
+    if (watch == null) return;
+    _captureElapsed(watch);
+    watch.playing = playing && !buffering;
+    if (speed != null) watch.speed = speed;
+  }
+
   Future<void> observe({
     required bool playing,
     required bool buffering,
     double? speed,
-  }) => _watchChanges.synchronized(() async {
-    if (speed != null) _validSpeed(speed);
-    final watch = _watch;
-    if (watch == null) return;
-    await _lock(watch.identity).synchronized(() async {
-      await _sample(watch.identity);
-      if (isBlocked(watch.identity)) {
-        watch.playing = false;
-        throw _uncertain;
-      }
-      watch.playing = playing && !buffering;
-      if (speed != null) watch.speed = speed;
-      if (!playing ||
-          _monotonic() - watch.settledAt >= const Duration(seconds: 120)) {
-        // Pause settles; a periodic settlement must preserve actual playing state.
-        await _settleLocked(watch.identity, pause: !playing);
-      }
+    bool stateAlreadyRecorded = false,
+  }) {
+    if (!stateAlreadyRecorded) {
+      recordPlaybackState(playing: playing, buffering: buffering, speed: speed);
+    }
+    final observedWatch = _watch;
+    return _watchChanges.synchronized(() async {
+      final watch = observedWatch;
+      if (watch == null || !identical(watch, _watch)) return;
+      await _lock(watch.identity).synchronized(() async {
+        await _sample(watch.identity);
+        if (isBlocked(watch.identity)) {
+          watch.playing = false;
+          throw _uncertain;
+        }
+        if (!playing ||
+            _monotonic() - watch.settledAt >= const Duration(seconds: 120)) {
+          // A later device event may already have updated the actual state.
+          await _settleLocked(watch.identity, pause: false);
+        }
+      });
     });
-  });
+  }
 
-  Future<void> _sample(String identity) async {
-    final watch = _watch;
-    if (watch == null || watch.identity != identity) return;
+  void _captureElapsed(_Listening watch) {
     final now = _monotonic();
     final elapsed = now > watch.sampledAt
         ? (now - watch.sampledAt).inMicroseconds / 1000000
         : 0.0;
     watch.unsaved += watch.playing ? elapsed * watch.speed * reportFactor : 0;
     watch.sampledAt = now;
+  }
+
+  Future<void> _sample(String identity) async {
+    final watch = _watch;
+    if (watch == null || watch.identity != identity) return;
+    _captureElapsed(watch);
     if (watch.unsaved == 0) return;
     final amount = watch.unsaved;
     try {

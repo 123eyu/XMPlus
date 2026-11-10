@@ -65,7 +65,29 @@ class PlayerService {
        _clock = clock ?? DateTime.now,
        policy = PlaybackPolicy(clock: clock) {
     _driverEvents = _driver.snapshots.listen((snapshot) {
-      _background(() => _commands.synchronized(() => _observe(snapshot)));
+      final recorded =
+          !_closed &&
+          _source != null &&
+          snapshot.epoch == _epoch &&
+          snapshot.error == null &&
+          snapshot.position.isFinite &&
+          snapshot.position >= 0 &&
+          snapshot.duration.isFinite &&
+          snapshot.duration >= 0;
+      if (recorded) {
+        // Device time boundaries must not wait behind quota/debit requests.
+        // Only the in-memory sample changes here; journal writes stay serialized.
+        ledger.recordPlaybackState(
+          playing: snapshot.playing,
+          buffering: snapshot.buffering,
+          speed: rate,
+        );
+      }
+      _background(
+        () => _commands.synchronized(
+          () => _observe(snapshot, stateAlreadyRecorded: recorded),
+        ),
+      );
     });
     _downloadEvents = downloads.changes.listen((_) {
       _background(() => _commands.synchronized(_downloadChanged));
@@ -1036,7 +1058,10 @@ class PlayerService {
     );
   }
 
-  Future<void> _observe(AudioSnapshot snapshot) async {
+  Future<void> _observe(
+    AudioSnapshot snapshot, {
+    bool stateAlreadyRecorded = false,
+  }) async {
     if (_closed || _source == null || snapshot.epoch != _epoch) return;
     if (snapshot.error != null)
       throw const XmlyException('audio_device', '音频播放失败');
@@ -1064,7 +1089,12 @@ class PlayerService {
       }
     }
     if (playing && !buffering) _actual = true;
-    await ledger.observe(playing: playing, buffering: buffering, speed: rate);
+    await ledger.observe(
+      playing: playing,
+      buffering: buffering,
+      speed: rate,
+      stateAlreadyRecorded: stateAlreadyRecorded,
+    );
     if (_actual)
       await _official.observe(
         'player',
