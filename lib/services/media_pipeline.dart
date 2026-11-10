@@ -98,10 +98,33 @@ class MediaPipeline {
     final source = await _verifiedSource(directory, task);
     if (source == null)
       throw const XmlyException('source_missing', '源缓存已失效，请重新获取音频');
+    await control.checkpoint();
+    final candidate = _caches[task.id];
+    final cache =
+        candidate?.complete == true &&
+            candidate!.directory == directory &&
+            _directories[task.id] == directory
+        ? candidate
+        : null;
     _directories[task.id] = directory;
+    // A paused transfer already verified all source bytes. Re-publish its
+    // retained cache while reprocessing, so playback need not await conversion.
+    if (cache != null) _controls[task.id] = control;
+    var completed = false;
     try {
-      return await _process(task, source, control);
+      final result = await _process(task, source, control);
+      completed = true;
+      return result;
     } finally {
+      if (cache != null) {
+        if (!completed ||
+            control.paused ||
+            control.cancelled ||
+            !_leases.containsKey(task.id)) {
+          await cache.pause();
+        }
+        if (identical(_controls[task.id], control)) _controls.remove(task.id);
+      }
       if (_finished.contains(task.id) && !_leases.containsKey(task.id))
         await _discardFinished(task.id);
     }
