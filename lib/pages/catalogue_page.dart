@@ -45,6 +45,7 @@ class DiscoveryPage extends StatefulWidget {
 
 class _DiscoveryPageState extends State<DiscoveryPage> {
   final _query = TextEditingController();
+  final _scroll = ScrollController();
   String _kind = 'album';
   SearchPage? _result;
   String? _error;
@@ -64,10 +65,16 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
         page: page,
         pageSize: 30,
       );
-      if (mounted && generation == _generation)
+      if (mounted && generation == _generation) {
         setState(() {
           _result = result;
         });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && generation == _generation && _scroll.hasClients) {
+            _scroll.jumpTo(_scroll.position.minScrollExtent);
+          }
+        });
+      }
     } catch (error) {
       if (mounted && generation == _generation)
         setState(() {
@@ -98,6 +105,7 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
   void dispose() {
     _generation++;
     _query.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -108,7 +116,9 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 960),
         child: Scrollbar(
+          controller: _scroll,
           child: CustomScrollView(
+            controller: _scroll,
             slivers: [
               SliverToBoxAdapter(
                 child: Padding(
