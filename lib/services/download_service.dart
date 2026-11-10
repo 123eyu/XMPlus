@@ -1931,7 +1931,8 @@ class DownloadService {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
-    await pauseAll();
+    // A failed load must not overwrite persisted tasks with the empty queue.
+    if (_loaded) await pauseAll();
     await _changes.close();
   }
 }

@@ -717,9 +717,10 @@ class AccountService {
 
   /// Does not own AppStorage; caller closes storage after all services finish.
   /// A failed settlement leaves this service available for manual resolution.
-  Future<void> close() => _accounts.synchronized(() async {
+  /// Startup rollback preserves state because no work has been admitted yet.
+  Future<void> close({bool preserveState = false}) => _accounts.synchronized(() async {
     if (_closed) return;
-    if (_loaded && _clients.isNotEmpty) {
+    if (!preserveState && _loaded && _clients.isNotEmpty) {
       try {
         await _prepareChange();
       } catch (_) {
@@ -727,7 +728,7 @@ class AccountService {
         rethrow;
       }
     }
-    await _cleanupSecrets();
+    if (!preserveState) await _cleanupSecrets();
     for (final client in _clients.values) {
       client.close();
     }
