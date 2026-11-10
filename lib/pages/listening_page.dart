@@ -11,6 +11,108 @@ import '../services/app_runtime.dart';
 import 'catalogue_page.dart';
 import 'player_panel.dart';
 
+class _BookmarkNoteDialog extends StatefulWidget {
+  const _BookmarkNoteDialog({
+    required this.title,
+    required this.position,
+    required this.note,
+    required this.save,
+  });
+  final String title, note;
+  final double position;
+  final Future<void> Function(String) save;
+
+  @override
+  State<_BookmarkNoteDialog> createState() => _BookmarkNoteDialogState();
+}
+
+class _BookmarkNoteDialogState extends State<_BookmarkNoteDialog> {
+  late final _note = TextEditingController(text: widget.note);
+  final _form = GlobalKey<FormState>();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving || !_form.currentState!.validate()) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.save(_note.text.trim());
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = error is XmlyException ? error.message : '备注保存失败，请重试';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_saving,
+    child: AlertDialog(
+      title: const Text('书签备注'),
+      scrollable: true,
+      content: SizedBox(
+        width: 440,
+        child: Form(
+          key: _form,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(widget.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+              Text('书签位置 ${playbackTime(widget.position)}'),
+              const SizedBox(height: 12),
+              TextFormField(
+                key: const ValueKey('bookmarkNote'),
+                controller: _note,
+                enabled: !_saving,
+                autofocus: true,
+                minLines: 2,
+                maxLines: 5,
+                maxLength: 1000,
+                decoration: const InputDecoration(
+                  labelText: '备注（可选）',
+                  hintText: '例如：重点概念、例题；清空可移除备注',
+                ),
+                validator: (text) => (text ?? '').characters.length > 1000
+                    ? '备注不能超过 1000 字'
+                    : null,
+              ),
+              if (_error != null)
+                Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: Text(_saving ? '正在保存…' : '保存备注'),
+        ),
+      ],
+    ),
+  );
+}
+
 class ListeningPage extends StatefulWidget {
   const ListeningPage({
     required this.runtime,
@@ -431,6 +533,48 @@ class _ListeningPageState extends State<ListeningPage>
     );
   }
 
+  Future<void> _editBookmarkNote(
+    int index,
+    Map record,
+    int epoch,
+    String key,
+    String identity,
+  ) async {
+    if (_acting || !_active(epoch, key, identity)) return;
+    final track = Track.fromJson(xmlyMap(record['track']));
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _BookmarkNoteDialog(
+        title: track.title.isEmpty ? track.id : track.title,
+        position: record['position'] is num
+            ? (record['position'] as num).toDouble()
+            : 0,
+        note: record['note'] is String ? record['note'] as String : '',
+        save: (note) async {
+          await _runtime.storage.transaction((state) {
+            if (!_active(epoch, key, identity)) {
+              throw const XmlyException('account_changed', '账号已变化，请重新打开书签');
+            }
+            final library = (state['library'] as Map)[identity] as Map?;
+            final bookmarks = library?['bookmarks'] as List? ?? const [];
+            if (index >= bookmarks.length ||
+                jsonEncode(bookmarks[index]) != jsonEncode(record)) {
+              throw const XmlyException('stale_bookmark', '书签列表已变化，请重新选择');
+            }
+            final updated = Map<String, dynamic>.from(bookmarks[index] as Map);
+            if (note.isEmpty) {
+              updated.remove('note');
+            } else {
+              updated['note'] = note;
+            }
+            bookmarks[index] = updated;
+          });
+          _runtime.changed();
+        },
+      ),
+    );
+  }
+
   static String _message(Object error) =>
       error is XmlyException ? error.message : '加载失败，请重试';
 
@@ -460,9 +604,9 @@ class _ListeningPageState extends State<ListeningPage>
     ),
   );
 
-  bool _matches(Track track) =>
+  bool _matches(Track track, {String extra = ''}) =>
       _query.isEmpty ||
-      '${track.title} ${track.album} ${track.artist} ${track.id}'
+      '${track.title} ${track.album} ${track.artist} ${track.id} $extra'
           .toLowerCase()
           .contains(_query);
 
@@ -531,6 +675,8 @@ class _ListeningPageState extends State<ListeningPage>
     String? removeLabel,
     VoidCallback? remove,
     String positionLabel = '已听',
+    String note = '',
+    VoidCallback? editNote,
   }) {
     final compact = MediaQuery.sizeOf(context).width < 320;
     final epoch = _accountEpoch, key = _currentKey;
@@ -549,6 +695,8 @@ class _ListeningPageState extends State<ListeningPage>
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (note.isNotEmpty)
+            Text(note, maxLines: 3, overflow: TextOverflow.ellipsis),
           if (track.album.isNotEmpty) AdaptiveText(track.album),
           AdaptiveText(
             position > 0
@@ -591,6 +739,9 @@ class _ListeningPageState extends State<ListeningPage>
             case 'remove':
               remove?.call();
               break;
+            case 'note':
+              editNote?.call();
+              break;
           }
         },
         itemBuilder: (_) => [
@@ -601,6 +752,11 @@ class _ListeningPageState extends State<ListeningPage>
           const PopupMenuItem(value: 'download', child: Text('下载')),
           if (track.albumId.isNotEmpty)
             const PopupMenuItem(value: 'album', child: Text('查看专辑')),
+          if (editNote != null)
+            PopupMenuItem(
+              value: 'note',
+              child: Text(note.isEmpty ? '添加备注' : '编辑备注'),
+            ),
           if (remove != null)
             PopupMenuItem(value: 'remove', child: Text(removeLabel ?? '移除')),
         ],
@@ -905,7 +1061,8 @@ class _ListeningPageState extends State<ListeningPage>
       if (record is! Map || record['track'] is! Map) continue;
       try {
         final track = Track.fromJson(xmlyMap(record['track']));
-        if (_matches(track)) rows.add(MapEntry(i, record));
+        final note = record['note'] is String ? record['note'] as String : '';
+        if (_matches(track, extra: note)) rows.add(MapEntry(i, record));
       } on XmlyException {
         continue;
       } on FormatException {
@@ -926,6 +1083,9 @@ class _ListeningPageState extends State<ListeningPage>
           track,
           position: position,
           positionLabel: '书签位置',
+          note: row.value['note'] is String ? row.value['note'] as String : '',
+          editNote: () =>
+              _editBookmarkNote(row.key, row.value, epoch, key, identity),
           play: () => _act(
             () => _runtime.player.playTrack(
               track,
