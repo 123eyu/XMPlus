@@ -946,7 +946,7 @@ class XmlyClient {
     for (final raw in data['list'] as List) {
       final position = (page - 1) * pageSize + tracks.length + 1;
       final value = Track.fromApi(
-        xmlyMap(raw),
+        {...xmlyMap(raw), if (total > 0) 'totalCount': total},
         album: album,
         position: ascending
             ? position

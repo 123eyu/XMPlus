@@ -1698,6 +1698,12 @@ class DownloadService {
     intro: fresh.intro.isEmpty ? selected.intro : fresh.intro,
     raw: {
       ...fresh.raw,
+      if (fresh.albumId.isEmpty || fresh.albumId == selected.albumId)
+        'totalCount':
+            xmlyPositive(fresh.raw['totalCount']) ??
+            xmlyPositive(fresh.raw['total']) ??
+            xmlyPositive(selected.raw['totalCount']) ??
+            xmlyPositive(selected.raw['total']),
       if (selected.officialPosition != null)
         'officialPosition': selected.officialPosition,
     },
