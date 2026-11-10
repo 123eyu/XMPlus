@@ -16,10 +16,12 @@ class UsagePage extends StatefulWidget {
 class _UsagePageState extends State<UsagePage> {
   String? _error;
   bool _busy = false;
+  Map? _accounts;
 
   @override
   void initState() {
     super.initState();
+    _accounts = widget.runtime.storage.state['accounts'] as Map;
     widget.runtime.addListener(_changed);
   }
 
@@ -28,12 +30,15 @@ class _UsagePageState extends State<UsagePage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.runtime != widget.runtime) {
       oldWidget.runtime.removeListener(_changed);
+      _accounts = widget.runtime.storage.state['accounts'] as Map;
       widget.runtime.addListener(_changed);
     }
   }
 
   void _changed() {
-    if (mounted) setState(() {});
+    final accounts = widget.runtime.storage.state['accounts'] as Map;
+    if (!mounted || identical(accounts, _accounts)) return;
+    setState(() => _accounts = accounts);
   }
 
   @override
