@@ -256,6 +256,7 @@ class _AccountPageState extends State<AccountPage> {
         ? rawHint
         : '****';
     final primary = widget.accounts.primaryAccountId == identity;
+    final active = widget.accounts.activeClient?.identity == identity;
     final paused = record['rewardPaused'] == true;
     final quota = record['quota'];
     Quota? verified;
@@ -286,6 +287,11 @@ class _AccountPageState extends State<AccountPage> {
                     padding: EdgeInsets.only(left: 8),
                     child: Chip(label: Text('主账号')),
                   ),
+                if (active && !primary)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: Chip(label: Text('当前使用')),
+                  ),
               ],
             ),
             AdaptiveText('设备 $hint'),
@@ -310,13 +316,13 @@ class _AccountPageState extends State<AccountPage> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                if (!primary)
+                if (!primary || !active)
                   OutlinedButton(
                     onPressed: _busy
                         ? null
                         : () =>
                               _run(() => widget.accounts.setPrimary(identity)),
-                    child: const Text('设为主账号'),
+                    child: Text(primary ? '切回主账号' : '设为主账号'),
                   ),
                 OutlinedButton(
                   onPressed: _busy ? null : () => _quota(identity),
