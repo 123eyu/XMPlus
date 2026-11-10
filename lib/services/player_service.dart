@@ -870,7 +870,12 @@ class PlayerService {
         return source;
       }
       downloads.prioritize(task.id);
-      if (!task.active) await downloads.resume(task.id);
+      if (!task.active) {
+        await downloads.resume(
+          task.id,
+          isActive: () => !_closed && request == _request,
+        );
+      }
       AudioCache? cache;
       while ((cache = pipeline.taskCache(task.id)) == null) {
         if (request != _request || _closed) throw const DownloadStopped();
