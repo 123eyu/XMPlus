@@ -258,6 +258,7 @@ class AlbumPageView extends StatefulWidget {
 class _AlbumPageViewState extends State<AlbumPageView> {
   final _search = TextEditingController();
   final _range = TextEditingController();
+  final _scroll = ScrollController();
   final _selected = <String, Track>{};
   final _fileChecks = <String, Future<DownloadTask?>>{};
   List<DownloadTask> _observedDownloads = [];
@@ -296,6 +297,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     _generation++;
     _search.dispose();
     _range.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -929,11 +931,21 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       ),
       body: SafeArea(
         top: false,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 960),
-            child: Scrollbar(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final padding = EdgeInsets.symmetric(
+              horizontal: ((constraints.maxWidth - 960) / 2).clamp(
+                0.0,
+                double.infinity,
+              ),
+            );
+            return Scrollbar(
+              controller: _scroll,
               child: CustomScrollView(
+                controller: _scroll,
+                scrollBehavior: ScrollConfiguration.of(
+                  context,
+                ).copyWith(scrollbars: false),
                 slivers: [
                   SliverToBoxAdapter(
                     child: Column(
@@ -1220,10 +1232,12 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                       onPage: _loadPage,
                     ),
                   ),
-                ],
+                ].map(
+                  (sliver) => SliverPadding(padding: padding, sliver: sliver),
+                ).toList(),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
