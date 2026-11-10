@@ -647,7 +647,7 @@ class DownloadService {
                 throw const XmlyException('usage_uncertain', '请先核对未确认的听时扣除');
               }
               if (!balances.containsKey(candidate)) {
-                await ledger.settle(candidate);
+                await ledger.settleForDownload(candidate);
                 balances[candidate] = (await ledger.queryQuota(candidate))
                     .remainingSeconds;
               }
