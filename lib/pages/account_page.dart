@@ -548,6 +548,7 @@ class _SmsLoginDialogState extends State<_SmsLoginDialog> {
   Timer? _timer;
   Duration _resendAt = Duration.zero, _expiresAt = Duration.zero;
   String? _challenge, _error;
+  Credentials? _candidate;
   bool _busy = false, _committing = false, _primary = true, _cancelled = false;
 
   int get _cooldown => ((_resendAt - _watch.elapsed).inMilliseconds / 1000)
@@ -559,6 +560,7 @@ class _SmsLoginDialogState extends State<_SmsLoginDialog> {
     _cancelled = true;
     _login.clear();
     _challenge = null;
+    _candidate = null;
     _phone.clear();
     _code.clear();
   }
@@ -567,7 +569,7 @@ class _SmsLoginDialogState extends State<_SmsLoginDialog> {
   void initState() {
     super.initState();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
+      if (!mounted || _candidate != null) return;
       if (_challenge != null && _watch.elapsed >= _expiresAt && !_committing) {
         _login.clear();
         _challenge = null;
@@ -584,6 +586,7 @@ class _SmsLoginDialogState extends State<_SmsLoginDialog> {
     _login.clear();
     _watch.stop();
     _challenge = null;
+    _candidate = null;
     _phone.clear();
     _code.clear();
     _phone.dispose();
@@ -592,7 +595,7 @@ class _SmsLoginDialogState extends State<_SmsLoginDialog> {
   }
 
   Future<void> _send() async {
-    if (_busy || _cooldown > 0) return;
+    if (_busy || _cancelled || _candidate != null || _cooldown > 0) return;
     final mobile = _phone.text.trim();
     if (!RegExp(r'^\+?[0-9]{6,18}$').hasMatch(mobile)) {
       setState(() => _error = '请输入有效手机号（6–18 位数字，可含国际区号 +）。');
@@ -636,19 +639,25 @@ class _SmsLoginDialogState extends State<_SmsLoginDialog> {
 
   Future<void> _verify() async {
     final challenge = _challenge;
-    if (_busy || challenge == null) return;
+    if (_busy || _cancelled || (_candidate == null && challenge == null))
+      return;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final candidate = await _login.verifySms(challenge, _code.text.trim());
-      if (!mounted || _cancelled) return;
-      _code.clear();
-      _phone.clear();
-      _challenge = null;
+      var candidate = _candidate;
+      if (candidate == null) {
+        candidate = await _login.verifySms(challenge!, _code.text.trim());
+        if (!mounted || _cancelled) return;
+        _candidate = candidate;
+        _code.clear();
+        _phone.clear();
+        _challenge = null;
+      }
       setState(() => _committing = true);
       await widget.accounts.commit(candidate, makePrimary: _primary);
+      _candidate = null;
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (mounted)
@@ -686,24 +695,28 @@ class _SmsLoginDialogState extends State<_SmsLoginDialog> {
             children: [
               const Text('先完成安全验证，再由你确认发送短信。登录后仍需核验极速版可用听时；失败不替换原账号。'),
               const SizedBox(height: 16),
-              TextField(
-                controller: _phone,
-                enabled: !_busy && _challenge == null,
-                autocorrect: false,
-                enableSuggestions: false,
-                enableIMEPersonalizedLearning: false,
-                keyboardType: TextInputType.phone,
-                inputFormatters: [LengthLimitingTextInputFormatter(19)],
-                decoration: const InputDecoration(
-                  labelText: '手机号',
-                  border: OutlineInputBorder(),
+              if (_candidate != null)
+                const Text('短信验证已完成，可直接重试登录，无需重新发送短信。')
+              else ...[
+                TextField(
+                  controller: _phone,
+                  enabled: !_busy && _challenge == null,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  enableIMEPersonalizedLearning: false,
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: [LengthLimitingTextInputFormatter(19)],
+                  decoration: const InputDecoration(
+                    labelText: '手机号',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton(
-                onPressed: _busy || _cooldown > 0 ? null : _send,
-                child: Text(_cooldown > 0 ? '$_cooldown 秒后可重发' : '安全验证并发送短信'),
-              ),
+                const SizedBox(height: 12),
+                OutlinedButton(
+                  onPressed: _busy || _cooldown > 0 ? null : _send,
+                  child: Text(_cooldown > 0 ? '$_cooldown 秒后可重发' : '安全验证并发送短信'),
+                ),
+              ],
               if (_challenge != null) ...[
                 const SizedBox(height: 12),
                 TextField(
@@ -754,7 +767,9 @@ class _SmsLoginDialogState extends State<_SmsLoginDialog> {
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed: _busy || _challenge == null ? null : _verify,
+          onPressed: _busy || (_challenge == null && _candidate == null)
+              ? null
+              : _verify,
           child: const Text('验证并登录'),
         ),
       ],
