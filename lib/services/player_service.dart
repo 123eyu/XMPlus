@@ -122,6 +122,7 @@ class PlayerService {
   bool playing = false, buffering = false;
   double position = 0, duration = 0, rate = 1, volume = 100;
   double _observedPosition = 0;
+  double? _endSeekPosition;
   String? error, warning, status;
   bool _closed = false, _loaded = false, _actual = false, _atEnd = false;
   bool _awaitingDuration = false, _manualChapterPosition = false;
@@ -268,6 +269,7 @@ class PlayerService {
     buffering = false;
     _actual = false;
     _atEnd = false;
+    _endSeekPosition = null;
     _sleepStopped = false;
     duration = current?.duration ?? 0;
     position = 0;
@@ -640,6 +642,7 @@ class PlayerService {
         speed: settings.speed,
       );
       _atEnd = false;
+      _endSeekPosition = null;
       _actual = false;
       _sleepStopped = false;
       _manualPaused = false;
@@ -917,7 +920,12 @@ class PlayerService {
     final request = _newRequest();
     await _commands.synchronized(() async {
       if (_source == null || _atEnd) {
-        await _openCurrent(request);
+        final selectedPosition = _atEnd ? _endSeekPosition : null;
+        await _openCurrent(
+          request,
+          resumePosition: selectedPosition,
+          manualReplay: selectedPosition != null,
+        );
         return;
       }
       if (sourceKind != 'local' &&
@@ -951,6 +959,13 @@ class PlayerService {
         _manualChapterPosition = true;
         position = policy.manualSeek(seconds);
         await _driver.seek(position);
+        if (_atEnd) {
+          // Reopen a completed device at the user's selection on resume.
+          // A new source epoch also rearms the chapter completion policy.
+          _endSeekPosition = duration <= 0 || position < duration
+              ? position
+              : null;
+        }
         ++_seekRevision;
         // Seeking itself is never an actual listening observation or history POST.
         _notify();
@@ -1108,6 +1123,7 @@ class PlayerService {
   });
   Future<void> _finish() async {
     _atEnd = true;
+    _endSeekPosition = null;
     final sleep = policy.onChapterEnd();
     await _pause();
     if (sleep != null) {
@@ -1517,6 +1533,7 @@ class PlayerService {
   }
 
   Future<void> _stopSource({bool preserveUnknown = false}) async {
+    _endSeekPosition = null;
     await _driver.pause();
     playing = false;
     if (preserveUnknown) {
