@@ -11,6 +11,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path/path.dart' as p;
+import 'package:url_launcher/url_launcher.dart';
+
+import '../services/browser_captcha.dart';
+import '../services/geetest_document.dart';
 
 /// A new private profile per challenge; never receives application credentials.
 class GeetestDialog extends StatefulWidget {
@@ -41,13 +45,6 @@ class GeetestDialog extends StatefulWidget {
 class _GeetestDialogState extends State<GeetestDialog> {
   static const _installer =
       'https://developer.microsoft.com/microsoft-edge/webview2/';
-  static const _fields = [
-    'captcha_id',
-    'lot_number',
-    'pass_token',
-    'gen_time',
-    'captcha_output',
-  ];
   final _nonce = _newNonce();
   late final String _documentUrl = Platform.isAndroid
       ? 'https://appassets.androidplatform.net/xmplus-captcha/$_nonce/index.html'
@@ -59,6 +56,9 @@ class _GeetestDialogState extends State<GeetestDialog> {
   String? _error;
   bool _runtimeMissing = false;
   String _stage = '运行时检测';
+  BrowserCaptchaSession? _browser;
+  bool _usingBrowser = false, _browserOpening = false;
+  String? _browserError;
 
   static String _newNonce() {
     final random = Random.secure();
@@ -69,6 +69,9 @@ class _GeetestDialogState extends State<GeetestDialog> {
     _finished = true;
     _accepting = false;
     _timeout?.cancel();
+    final browser = _browser;
+    _browser = null;
+    if (browser != null) unawaited(browser.close());
   }
 
   @override
@@ -86,6 +89,7 @@ class _GeetestDialogState extends State<GeetestDialog> {
       PlatformInAppWebViewController.debugLoggingSettings.enabled = false;
       if (Platform.isWindows) {
         final version = await WebViewEnvironment.getAvailableVersion();
+        if (!mounted || _usingBrowser || _finished) return;
         if (version == null || version.isEmpty) {
           _runtimeMissing = true;
           _fail('未检测到 WebView2 运行时。可安装微软官方运行时后重试，或返回 Cookie 登录。');
@@ -96,6 +100,10 @@ class _GeetestDialogState extends State<GeetestDialog> {
             .create(recursive: true);
         final profile = await base.createTemp('session-');
         _profile = profile;
+        if (!mounted || _usingBrowser || _finished) {
+          await _deleteProfile(profile);
+          return;
+        }
         _stage = 'WebView2 环境创建';
         final environment = await WebViewEnvironment.create(
           settings: WebViewEnvironmentSettings(
@@ -104,7 +112,7 @@ class _GeetestDialogState extends State<GeetestDialog> {
             language: 'zh-CN',
           ),
         );
-        if (!mounted) {
+        if (!mounted || _usingBrowser || _finished) {
           await environment.dispose();
           await _deleteProfile(profile);
           return;
@@ -114,7 +122,7 @@ class _GeetestDialogState extends State<GeetestDialog> {
         _fail('此平台暂不能显示安全验证，请返回导入登录信息。');
         return;
       }
-      if (!mounted) return;
+      if (!mounted || _usingBrowser || _finished) return;
       setState(() => _ready = true);
       _timeout = Timer(
         const Duration(seconds: 45),
@@ -122,10 +130,15 @@ class _GeetestDialogState extends State<GeetestDialog> {
       );
     } catch (error) {
       _failStage(error);
+      final profile = _profile;
+      if (profile != null && (!mounted || _usingBrowser || _finished)) {
+        await _deleteProfile(profile);
+      }
     }
   }
 
   void _fail(String message) {
+    if (_usingBrowser) return;
     _accepting = false;
     _timeout?.cancel();
     if (mounted && !_finished) setState(() => _error = message);
@@ -152,9 +165,7 @@ class _GeetestDialogState extends State<GeetestDialog> {
 
   @override
   void dispose() {
-    _accepting = false;
-    _finished = true;
-    _timeout?.cancel();
+    _invalidate();
     final environment = _environment, profile = _profile;
     unawaited(() async {
       try {
@@ -177,41 +188,7 @@ class _GeetestDialogState extends State<GeetestDialog> {
         'gsensebot.com',
       ].any((host) => uri.host == host || uri.host.endsWith('.$host'));
 
-  String _html() {
-    final id = jsonEncode(widget.captchaId), nonce = jsonEncode(_nonce);
-    return '''<!doctype html><html><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; connect-src https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; img-src data: blob: https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; style-src 'unsafe-inline' https://*.geetest.com; font-src data: https://*.geetest.com; frame-src https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; object-src 'none'; base-uri 'none'; form-action 'none'">
-<style>body{font:16px sans-serif;text-align:center;padding:20px}button{font:inherit;padding:12px}</style>
-</head><body><p id="status">正在加载安全验证…</p><button id="verify" hidden>开始验证</button>
-<script>
-(() => {
-  const nonce=$nonce;
-  const emit=(kind,value)=>{if(window===window.top) window.flutter_inappwebview.callHandler('xmlyCaptcha',nonce,kind,value);};
-  const fail=()=>{document.getElementById('status').textContent='安全验证加载失败，请关闭后重试';emit('error',null);};
-  const start=()=>{
-    if(typeof initGeetest4!=='function'){fail();return;}
-    initGeetest4({captchaId:$id,product:'bind',language:'zho',protocol:'https://',onError:fail,offlineCb:fail},captcha=>{
-      captcha.onReady(()=>{
-        document.getElementById('status').textContent='请完成安全验证';
-        const button=document.getElementById('verify');button.hidden=false;
-        button.onclick=()=>captcha.showCaptcha();emit('ready',null);
-        captcha.showCaptcha();
-      }).onSuccess(()=>{
-        const v=captcha.getValidate();
-        if(!v){fail();return;}
-        const out={captcha_id:$id};
-        ['lot_number','pass_token','gen_time','captcha_output'].forEach(k=>out[k]=v[k]);
-        emit('success',out);
-      }).onError(fail).onClose(()=>emit('close',null));
-    });
-  };
-  const load=()=>{const script=document.createElement('script');script.src='https://static.geetest.com/v4/gt4.js';script.onload=start;script.onerror=fail;document.head.appendChild(script);};
-  if(window.flutter_inappwebview?.callHandler){load();}
-  else{window.addEventListener('flutterInAppWebViewPlatformReady',load,{once:true});}
-})();
-</script></body></html>''';
-  }
+  String _html() => geetestDocument(widget.captchaId, bridgeNonce: _nonce);
 
   Future<void> _created(InAppWebViewController controller) async {
     try {
@@ -223,7 +200,7 @@ class _GeetestDialogState extends State<GeetestDialog> {
         if (installed != true)
           throw StateError('Native download guard unavailable');
       }
-      if (!mounted || _finished || _error != null) return;
+      if (!mounted || _finished || _usingBrowser || _error != null) return;
       controller.addJavaScriptHandler(
         handlerName: 'xmlyCaptcha',
         callback: (args) async {
@@ -240,23 +217,14 @@ class _GeetestDialogState extends State<GeetestDialog> {
               _timeout?.cancel();
               break;
             case 'success':
-              final raw = args[2];
-              if (raw is! Map ||
-                  raw.length != _fields.length ||
-                  _fields.any(
-                    (key) =>
-                        raw[key] is! String ||
-                        !RegExp(r'^[\x21-\x7e]{1,8192}$')
-                            .hasMatch(raw[key] as String),
-                  ) ||
-                  raw['captcha_id'] != widget.captchaId) {
+              final result = parseGeetestResult(args[2], widget.captchaId);
+              if (result == null) {
                 _fail('安全验证结果无效，请关闭后重新验证。');
                 return null;
               }
               _finished = true;
               _accepting = false;
-              Navigator.of(context)
-                  .pop({for (final key in _fields) key: raw[key]});
+              Navigator.of(context).pop(result);
               break;
             case 'error':
               _fail('安全验证未完成，请关闭后重试，或使用登录信息导入。');
@@ -292,6 +260,52 @@ class _GeetestDialogState extends State<GeetestDialog> {
     }
   }
 
+  Future<void> _openBrowser() async {
+    if (_browserOpening || _finished) return;
+    _accepting = false;
+    _timeout?.cancel();
+    setState(() {
+      _usingBrowser = true;
+      _browserOpening = true;
+      _browserError = null;
+    });
+    BrowserCaptchaSession? session;
+    try {
+      session = _browser ?? await BrowserCaptchaSession.open(widget.captchaId);
+      if (!mounted || _finished) {
+        await session.close();
+        return;
+      }
+      if (_browser == null) {
+        _browser = session;
+        unawaited(_waitForBrowser(session));
+      }
+      if (!await launchUrl(session.uri, mode: LaunchMode.externalApplication)) {
+        throw StateError('Browser unavailable');
+      }
+    } catch (_) {
+      if (identical(_browser, session)) _browser = null;
+      await session?.close();
+      if (mounted && !_finished) {
+        setState(() => _browserError = '无法打开系统浏览器，请重试，或关闭后导入登录信息。');
+      }
+    } finally {
+      if (mounted) setState(() => _browserOpening = false);
+    }
+  }
+
+  Future<void> _waitForBrowser(BrowserCaptchaSession session) async {
+    final result = await session.result;
+    if (!mounted || _finished || !identical(_browser, session)) return;
+    _browser = null;
+    if (result == null) {
+      setState(() => _browserError = '浏览器验证已过期，请重新打开浏览器。');
+      return;
+    }
+    _invalidate();
+    Navigator.of(context).pop(result);
+  }
+
   @override
   Widget build(BuildContext context) => PopScope(
     onPopInvokedWithResult: (didPop, _) {
@@ -304,7 +318,30 @@ class _GeetestDialogState extends State<GeetestDialog> {
       content: SizedBox(
         width: 440,
         height: min(440.0, MediaQuery.sizeOf(context).height * 0.6),
-        child: _error != null
+        child: _usingBrowser
+            ? SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.open_in_browser, size: 40),
+                    const SizedBox(height: 16),
+                    const Text('请在系统浏览器完成安全验证，然后返回 XMPlus 继续。'),
+                    const SizedBox(height: 12),
+                    const Text('验证成功后仍需由你确认发送短信。'),
+                    if (_browserOpening) const LinearProgressIndicator(),
+                    if (_browserError != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        _browserError!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              )
+            : _error != null
             ? SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -411,6 +448,12 @@ class _GeetestDialogState extends State<GeetestDialog> {
               ),
       ),
       actions: [
+        if (Platform.isWindows)
+          TextButton.icon(
+            onPressed: _browserOpening ? null : _openBrowser,
+            icon: const Icon(Icons.open_in_browser),
+            label: Text(_usingBrowser ? '重新打开浏览器' : '使用系统浏览器验证'),
+          ),
         TextButton(
           onPressed: () {
             _invalidate();
