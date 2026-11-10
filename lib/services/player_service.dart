@@ -825,7 +825,10 @@ class PlayerService {
     }
     return PlaybackSource(
       uri: File(task.finalPath!).absolute.uri,
-      identity: task.accountIdentity,
+      // Complete files need no new billing authorization. Their listening
+      // session belongs to the current listener; taskId retains download and
+      // receipt ownership independently.
+      identity: libraryIdentity,
       kind: 'local',
       taskId: task.id,
     );
