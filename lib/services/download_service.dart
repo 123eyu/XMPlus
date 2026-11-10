@@ -967,10 +967,13 @@ class DownloadService {
             .map((item) => item.id)
             .toList();
         if (replaced != null) {
-          album.taskIds = {...replaced.taskIds, ...album.taskIds}
+          // Detached episodes remain in the global queue with their receipts.
+          // The new job may only own tasks in its current durable seen prefix.
+          album.taskIds = {...replaced.taskIds, ...admitted.map((item) => item.id)}
               .where(
                 (id) =>
                     next.containsKey(id) &&
+                    albumTracks.contains(next[id]!.track.id) &&
                     next[id]!.state != DownloadState.cancelled,
               )
               .toList();
