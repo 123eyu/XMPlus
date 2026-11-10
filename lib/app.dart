@@ -12,6 +12,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'common/theme.dart';
 import 'common/widgets/scroll_behavior.dart';
+import 'common/widgets/app_shutdown_overlay.dart';
 import 'pages/shell_page.dart';
 import 'pages/download_page.dart';
 import 'pages/player_panel.dart';
@@ -32,6 +33,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
   final _navigator = GlobalKey<NavigatorState>();
   final _playerRoutes = _PlayerRouteObserver();
   bool _closeRequested = false;
+  String? _windowCloseError;
   bool _diagnosticsOpen = false;
 
   @override
@@ -65,9 +67,11 @@ class _MyAppState extends State<MyApp> with WindowListener {
   Future<void> onCloseRequested() async {
     if (_closeRequested || !mounted) return;
     _closeRequested = true;
+    if (_windowCloseError != null) setState(() => _windowCloseError = null);
     try {
       final context = _navigator.currentContext;
-      if (!widget.runtime.scheduledExit &&
+      if (!widget.runtime.exitOnly &&
+          !widget.runtime.scheduledExit &&
           widget.runtime.downloads.tasks.any((task) => task.active)) {
         final confirmed = context == null
             ? false
@@ -96,6 +100,17 @@ class _MyAppState extends State<MyApp> with WindowListener {
         } else {
           await windowManager.setPreventClose(false);
           await windowManager.close();
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _windowCloseError = '窗口未能关闭，请重试退出');
+      }
+      if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+        try {
+          await windowManager.setPreventClose(true);
+        } catch (_) {
+          // Keep the retry UI even if the native window call also failed.
         }
       }
     } finally {
@@ -165,76 +180,83 @@ class _MyAppState extends State<MyApp> with WindowListener {
           ),
           child: ColoredBox(
             color: Theme.of(context).colorScheme.surface,
-            child: Overlay.wrap(
-              child: ListenableBuilder(
-                listenable: _playerRoutes,
-                child: child,
-                builder: (context, child) => Column(
-                  children: [
-                    ListenableBuilder(
-                      listenable: widget.runtime,
-                      builder: (context, _) => StreamBuilder<void>(
-                        stream: RequestDiagnostics.instance.changes,
-                        builder: (context, _) {
-                          final diagnostics = RequestDiagnostics.instance;
-                          final settings =
-                              widget.runtime.storage.state['settings'] as Map;
-                          if (settings['showRequestFailureBanner'] != true ||
-                              (diagnostics.entries.isEmpty &&
-                                  diagnostics.persistenceError == null)) {
-                            return const SizedBox.shrink();
-                          }
-                          return Material(
-                            color: Theme.of(context).colorScheme.errorContainer,
-                            child: SafeArea(
-                              bottom: false,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.error_outline),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        '请求失败记录：${diagnostics.entries.length} 条'
-                                        '${diagnostics.persistenceError == null ? '' : '；本地日志保存失败，请复制保留'}',
+            child: AppShutdownOverlay(
+              runtime: widget.runtime,
+              windowError: _windowCloseError,
+              onRetry: () => unawaited(onCloseRequested()),
+              child: Overlay.wrap(
+                child: ListenableBuilder(
+                  listenable: _playerRoutes,
+                  child: child,
+                  builder: (context, child) => Column(
+                    children: [
+                      ListenableBuilder(
+                        listenable: widget.runtime,
+                        builder: (context, _) => StreamBuilder<void>(
+                          stream: RequestDiagnostics.instance.changes,
+                          builder: (context, _) {
+                            final diagnostics = RequestDiagnostics.instance;
+                            final settings =
+                                widget.runtime.storage.state['settings'] as Map;
+                            if (settings['showRequestFailureBanner'] != true ||
+                                (diagnostics.entries.isEmpty &&
+                                    diagnostics.persistenceError == null)) {
+                              return const SizedBox.shrink();
+                            }
+                            return Material(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .errorContainer,
+                              child: SafeArea(
+                                bottom: false,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.error_outline),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          '请求失败记录：${diagnostics.entries.length} 条'
+                                          '${diagnostics.persistenceError == null ? '' : '；本地日志保存失败，请复制保留'}',
+                                        ),
                                       ),
-                                    ),
-                                    TextButton(
-                                      onPressed: _showRequestFailures,
-                                      child: const Text('详情 / 复制'),
-                                    ),
-                                  ],
+                                      TextButton(
+                                        onPressed: _showRequestFailures,
+                                        child: const Text('详情 / 复制'),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                    Expanded(child: child!),
-                    if (_playerRoutes.current?.settings.name !=
-                        PlayerPanel.routeName)
-                      SafeArea(
-                        top: false,
-                        child: ExcludeFocus(
-                          excluding: _playerRoutes.current is PopupRoute,
-                          child: ExcludeSemantics(
+                      Expanded(child: child!),
+                      if (_playerRoutes.current?.settings.name !=
+                          PlayerPanel.routeName)
+                        SafeArea(
+                          top: false,
+                          child: ExcludeFocus(
                             excluding: _playerRoutes.current is PopupRoute,
-                            child: AbsorbPointer(
-                              absorbing: _playerRoutes.current is PopupRoute,
-                              child: PlayerPanel(
-                                runtime: widget.runtime,
-                                navigatorKey: _navigator,
+                            child: ExcludeSemantics(
+                              excluding: _playerRoutes.current is PopupRoute,
+                              child: AbsorbPointer(
+                                absorbing: _playerRoutes.current is PopupRoute,
+                                child: PlayerPanel(
+                                  runtime: widget.runtime,
+                                  navigatorKey: _navigator,
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

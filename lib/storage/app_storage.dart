@@ -27,6 +27,7 @@ class AppStorage {
   final Lock _writes = Lock();
   Map<String, dynamic> _state;
   bool _closed = false;
+  bool _lockClosed = false;
 
   Map<String, dynamic> get state => _state;
 
@@ -136,12 +137,13 @@ class AppStorage {
       });
 
   Future<void> close() => _writes.synchronized(() async {
-    if (_closed) return;
+    if (_lockClosed) return;
     _closed = true;
     try {
       await _lockFile.unlock(0, 1);
     } finally {
       await _lockFile.close();
+      _lockClosed = true;
       _openDirectories.remove(directory);
     }
   });

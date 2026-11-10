@@ -1819,8 +1819,8 @@ class DownloadService {
 
   Future<void> close() async {
     if (_closed) return;
-    _closed = true;
     await pauseAll();
+    _closed = true;
     await _changes.close();
   }
 }
