@@ -877,6 +877,7 @@ class DownloadService {
           }
           final resumed = existing.copyWith(
             outputDeleted: false,
+            warning: existing.outputDeleted ? null : existing.warning,
             track: item.track,
             settings: {
               for (final entry in existing.settings.entries)
