@@ -842,9 +842,7 @@ class _DownloadPageState extends State<DownloadPage> {
     final compact = MediaQuery.sizeOf(context).width < 320;
     final groups = <String, List<DownloadTask>>{};
     for (final task in _service.tasks) {
-      if ((task.state == DownloadState.completed) != downloaded ||
-          task.state == DownloadState.cancelled)
-        continue;
+      if ((task.state == DownloadState.completed) != downloaded) continue;
       groups.putIfAbsent(task.track.albumId, () => []).add(task);
     }
     final albums = groups.entries.toList();
@@ -1076,6 +1074,11 @@ class _DownloadPageState extends State<DownloadPage> {
                           ? '重试处理'
                           : '重试',
                     ),
+                  ),
+                if (task.state == DownloadState.cancelled)
+                  TextButton(
+                    onPressed: () => _run(() => _retry(task)),
+                    child: Text(task.processingFailed ? '恢复并重试处理' : '恢复任务'),
                   ),
                 if (task.processingFailed &&
                     (task.state == DownloadState.failed ||
