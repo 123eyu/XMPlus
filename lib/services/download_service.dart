@@ -904,15 +904,17 @@ class DownloadService {
       if (beforeStart != null) await beforeStart(List.unmodifiable(admitted));
       final album = batch.album;
       if (album != null) {
-        final albumTracks = album.seen.toSet();
-        album.taskIds = next.values
-            .where(
-              (item) =>
-                  albumTracks.contains(item.track.id) &&
-                  item.state != DownloadState.cancelled,
-            )
-            .map((item) => item.id)
-            .toList();
+        // Track actual admissions, including a task resumed with its receipt
+        // or assigned to another account by polling. Matching track IDs alone
+        // must never take ownership of an independent download.
+        album.taskIds =
+            {...?_albums[album.id]?.taskIds, ...admitted.map((item) => item.id)}
+                .where(
+                  (id) =>
+                      next.containsKey(id) &&
+                      next[id]!.state != DownloadState.cancelled,
+                )
+                .toList();
         album.state = 'running';
         album.error = null;
       }
