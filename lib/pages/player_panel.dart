@@ -9,6 +9,7 @@ import '../common/widgets/adaptive_text.dart';
 import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
 import 'playback_settings_page.dart';
+import 'player_queue_panel.dart';
 
 String playbackTime(double seconds) {
   final total = seconds.isFinite && seconds > 0 ? seconds.floor() : 0;
@@ -233,14 +234,11 @@ class _PlayerPanelState extends State<PlayerPanel> {
 
   void _settings() {
     final track = _runtime.player.current;
-    _navigator.push(
-      MaterialPageRoute<void>(
-        builder: (_) => PlaybackSettingsPage(
-          runtime: _runtime,
-          albumId: track?.albumId.isNotEmpty == true ? track!.albumId : null,
-          albumTitle: track?.album,
-        ),
-      ),
+    showQuickPlaybackSettings(
+      _navigator.context,
+      _runtime,
+      albumId: track?.albumId.isNotEmpty == true ? track!.albumId : null,
+      albumTitle: track?.album,
     );
   }
 
@@ -263,151 +261,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
       ) ==
       true;
 
-  Future<void> _queue() => _navigator.push<void>(
-    MaterialPageRoute<void>(
-      builder: (context) => Scaffold(
-        appBar: AppBar(title: const Text('播放列表')),
-        body: SafeArea(
-          top: false,
-          child: ListenableBuilder(
-            listenable: _runtime,
-            builder: (context, _) {
-              final player = _runtime.player;
-              Future<void> run(Future<void> Function() command) async {
-                try {
-                  await command();
-                } catch (error) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          error is XmlyException ? error.message : '队列操作失败，请重试',
-                        ),
-                      ),
-                    );
-                  }
-                }
-              }
-
-              return Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
-                  child: CustomScrollView(
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: Column(
-                          children: [
-                            ListTile(
-                              title: AdaptiveText(
-                                '${player.queue.length} 集 · ${player.queueSourceLabel}',
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                              subtitle: AdaptiveText(
-                                player.queueOrderLabel,
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              trailing: TextButton(
-                                onPressed: player.queue.isEmpty
-                                    ? null
-                                    : () async {
-                                        if (await _confirm(
-                                          context,
-                                          '清空播放队列？',
-                                        )) {
-                                          await run(player.clearQueue);
-                                        }
-                                      },
-                                child: const Text('清空'),
-                              ),
-                            ),
-                            if (player.queueSource == 'album' &&
-                                player.sourceAlbumId.isNotEmpty)
-                              ListTile(
-                                title: const Text('专辑更新'),
-                                trailing: TextButton(
-                                  onPressed: () => run(
-                                    () => player.refreshAlbumTail(
-                                      player.sourceAlbumId,
-                                    ),
-                                  ),
-                                  child: const Text('检查更新'),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      if (player.queue.isEmpty)
-                        const SliverFillRemaining(
-                          hasScrollBody: false,
-                          child: Center(child: Text('队列为空')),
-                        )
-                      else
-                        SliverReorderableList(
-                          itemCount: player.queue.length,
-                          proxyDecorator: (child, index, animation) => Material(
-                            elevation: 4,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .surfaceContainer,
-                            child: child,
-                          ),
-                          onReorderItem: (from, to) =>
-                              run(() => player.moveQueueItem(from, to)),
-                          itemBuilder: (context, index) {
-                            final track = player.queue[index];
-                            return ListTile(
-                              key: ValueKey('queue:$index:${track.id}'),
-                              selected: index == player.cursor,
-                              minLeadingWidth: 32,
-                              horizontalTitleGap: 12,
-                              leading: ReorderableDragStartListener(
-                                index: index,
-                                child: Tooltip(
-                                  message: '拖动调整顺序',
-                                  child: SizedBox(
-                                    width: 32,
-                                    height: 48,
-                                    child: Icon(
-                                      index == player.cursor
-                                          ? Icons.graphic_eq
-                                          : Icons.drag_handle,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              title: AdaptiveText(
-                                track.title.isEmpty ? track.id : track.title,
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                              subtitle: track.album.isEmpty
-                                  ? null
-                                  : AdaptiveText(
-                                      track.album,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall,
-                                    ),
-                              onTap: () =>
-                                  run(() => player.playQueueItem(index)),
-                              trailing: IconButton(
-                                tooltip: '移出队列',
-                                icon: const Icon(Icons.close),
-                                onPressed: () =>
-                                    run(() => player.removeQueueItem(index)),
-                              ),
-                            );
-                          },
-                        ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-    ),
-  );
+  Future<void> _queue() => showPlayerQueuePanel(_navigator.context, _runtime);
 
   Widget _cover(String? url, double size, {bool small = false}) {
     final colors = Theme.of(context).colorScheme;

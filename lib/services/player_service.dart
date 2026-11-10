@@ -1374,7 +1374,7 @@ class PlayerService {
     _notify();
   }
 
-  Future<void> applySettings() => _run(
+  Future<void> applySettings({bool updateSource = true}) => _run(
     () => _commands.synchronized(() async {
       final settings = effectiveSettings;
       final wasDownload = sourceKind == 'prepaid' || sourceKind == 'local';
@@ -1388,7 +1388,10 @@ class PlayerService {
       volume = settings.volume;
       await _driver.setRate(rate);
       await _driver.setVolume(volume);
-      if (_source != null && settings.listenAndDownload && !wasDownload) {
+      if (updateSource &&
+          _source != null &&
+          settings.listenAndDownload &&
+          !wasDownload) {
         final saved = position;
         await _pause();
         await ledger.stopWatch();
