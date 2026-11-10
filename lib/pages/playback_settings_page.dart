@@ -31,7 +31,7 @@ Future<void> persistPlaybackSetting(
     if (key == 'syncHistory' && value is! bool)
       throw const FormatException('同步设置无效');
   });
-  await runtime.player.applySettings();
+  await runtime.player.applySettings(updateSource: key != 'speed');
   runtime.changed();
 }
 
