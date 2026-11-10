@@ -517,7 +517,9 @@ class PlayerService {
           current?.id != id ||
           _sleepStopped)
         return;
-      final sleep = policy.onChapterEnd() ?? policy.pollSleep();
+      // Fetching the next page is not a chapter-completion event. Match the
+      // in-page manual next path while still honoring an elapsed countdown.
+      final sleep = policy.pollSleep();
       if (sleep != null) {
         await _sleep(sleep);
         return;
