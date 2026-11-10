@@ -29,12 +29,16 @@ class PlayerPanel extends StatefulWidget {
   const PlayerPanel({
     required this.runtime,
     this.expanded = false,
+    this.miniWindow = false,
+    this.onExpand,
     this.navigatorKey,
     super.key,
   });
   static const routeName = '/player';
   final AppRuntime runtime;
   final bool expanded;
+  final bool miniWindow;
+  final VoidCallback? onExpand;
   final GlobalKey<NavigatorState>? navigatorKey;
 
   @override
@@ -407,7 +411,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
                 children: [
                   Expanded(
                     child: InkWell(
-                      onTap: _expand,
+                      onTap: widget.onExpand ?? _expand,
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(16, 10, 4, 10),
                         child: Row(
@@ -452,11 +456,18 @@ class _PlayerPanelState extends State<PlayerPanel> {
                     play,
                     size: 32,
                   ),
-                  IconButton(
-                    tooltip: '播放列表',
-                    onPressed: _queue,
-                    icon: const Icon(Icons.queue_music_rounded),
-                  ),
+                  if (widget.miniWindow)
+                    _button(
+                      '下一集',
+                      Icons.skip_next_rounded,
+                      track == null ? null : player.next,
+                    )
+                  else
+                    IconButton(
+                      tooltip: '播放列表',
+                      onPressed: _queue,
+                      icon: const Icon(Icons.queue_music_rounded),
+                    ),
                   const SizedBox(width: 4),
                 ],
               ),
