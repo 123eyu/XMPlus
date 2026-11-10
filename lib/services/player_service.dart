@@ -818,14 +818,23 @@ class PlayerService {
             }
           },
         );
-        task = downloads.tasks
-            .where(
-              (item) =>
-                  item.accountIdentity == batch.accountIdentity &&
-                  item.track.id == track.id &&
-                  item.deduplicates,
-            )
-            .firstOrNull;
+        // Preview polling may select a different account for this track.
+        final selectedIdentity =
+            batch.items
+                .where((item) => item.track.id == track.id)
+                .firstOrNull
+                ?.accountIdentity ??
+            batch.accountIdentity;
+        task = retained != null
+            ? downloads.task(retained!)
+            : downloads.tasks
+                  .where(
+                    (item) =>
+                        item.accountIdentity == selectedIdentity &&
+                        item.track.id == track.id &&
+                        item.deduplicates,
+                  )
+                  .firstOrNull;
       }
       if (task == null) throw const XmlyException('task_missing', '没有可用的下载任务');
       if (retained == null) {
