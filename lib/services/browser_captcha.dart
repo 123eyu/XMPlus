@@ -19,7 +19,11 @@ class BrowserCaptchaSession {
       port: _server.port,
       path: '/$nonce/index.html',
     );
-    _server.listen((request) => unawaited(_handle(request)));
+    _server.listen(
+      (request) => unawaited(_handle(request)),
+      onError: (Object _) => unawaited(close()),
+      onDone: () => unawaited(close()),
+    );
     _expiry = Timer(lifetime, () => unawaited(close()));
   }
 
@@ -102,7 +106,7 @@ class BrowserCaptchaSession {
       final bytes = await request
           .fold<List<int>>(<int>[], (buffer, chunk) {
             if (buffer.length + chunk.length > maxBytes) {
-              throw const FormatException();
+              throw const _BodyTooLarge();
             }
             return buffer..addAll(chunk);
           })
@@ -122,12 +126,22 @@ class BrowserCaptchaSession {
         if (!_closed && !_result.isCompleted) _result.complete(proof);
         await close();
       }
-    } catch (_) {
+    } catch (error) {
       try {
-        await reject(HttpStatus.badRequest);
+        await reject(
+          error is _BodyTooLarge
+              ? HttpStatus.requestEntityTooLarge
+              : error is TimeoutException
+              ? HttpStatus.requestTimeout
+              : HttpStatus.badRequest,
+        );
       } catch (_) {
         // Closing/cancelling a challenge may already have closed this socket.
       }
     }
   }
+}
+
+class _BodyTooLarge implements Exception {
+  const _BodyTooLarge();
 }
