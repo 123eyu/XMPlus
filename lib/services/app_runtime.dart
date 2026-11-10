@@ -133,6 +133,7 @@ class AppRuntime extends ChangeNotifier {
   String? lifecycleError;
   Timer? _rewardTimer;
   bool _refreshingRewards = false;
+  int _rewardGeneration = 0;
   final Map<String, Quota> _rewardChecks = {};
   int libraryRevision = 0;
 
@@ -320,9 +321,13 @@ class AppRuntime extends ChangeNotifier {
     );
   }
 
+  bool get _automaticRewardsEnabled =>
+      !closing &&
+      !_closed &&
+      (storage.state['settings'] as Map)['autoClaim'] == true;
+
   Future<int?> _claimForDownload(String identity, XmlyClient client) async {
-    if (closing || (storage.state['settings'] as Map)['autoClaim'] != true)
-      return null;
+    if (!_automaticRewardsEnabled) return null;
     final record = (storage.state['accounts'] as Map)[identity] as Map?;
     if (record == null ||
         record['rewardPaused'] == true ||
@@ -350,11 +355,16 @@ class AppRuntime extends ChangeNotifier {
     String identity,
     XmlyClient client,
   ) async {
+    final generation = _rewardGeneration;
+    bool allowed() =>
+        generation == _rewardGeneration && _automaticRewardsEnabled;
+    if (!allowed()) return null;
     final rewards = XmlyRewards(client, automaticEnabled: true);
     var increase = 0;
     try {
       final before = await client.queryQuota();
-      final after = await rewards.refresh();
+      if (!allowed()) return null;
+      final after = await rewards.refresh(shouldContinue: allowed);
       _rewardChecks[identity] = after;
       increase = after.remainingSeconds - before.remainingSeconds;
     } catch (_) {
@@ -435,8 +445,10 @@ class AppRuntime extends ChangeNotifier {
   }
 
   void _configureRewards() {
-    final enabled = (storage.state['settings'] as Map)['autoClaim'] == true;
+    final enabled = _automaticRewardsEnabled;
     if (!enabled) {
+      // Re-enabling starts a new run; an in-flight old run stays cancelled.
+      _rewardGeneration++;
       _rewardTimer?.cancel();
       _rewardTimer = null;
     } else {
@@ -448,17 +460,19 @@ class AppRuntime extends ChangeNotifier {
   }
 
   Future<void> _refreshRewards() async {
-    if (_refreshingRewards ||
-        closing ||
-        (storage.state['settings'] as Map)['autoClaim'] != true)
-      return;
+    if (_refreshingRewards || !_automaticRewardsEnabled) return;
+    final generation = _rewardGeneration;
+    bool allowed() =>
+        generation == _rewardGeneration && _automaticRewardsEnabled;
     _refreshingRewards = true;
     try {
       for (final identity in accounts.accountIds.toList()) {
+        if (!allowed()) break;
         final record = (storage.state['accounts'] as Map)[identity] as Map;
         if (record['rewardPaused'] == true) continue;
         try {
           await accounts.runWithAccount(identity, (client) async {
+            if (!allowed()) return;
             await _refreshAccountRewards(identity, client);
           });
         } catch (_) {
@@ -503,6 +517,7 @@ class AppRuntime extends ChangeNotifier {
     if (_closed) return true;
     if (closing) return false;
     closing = true;
+    _rewardGeneration++;
     autoDownloads.suspend();
     _rewardTimer?.cancel();
     _rewardTimer = null;
