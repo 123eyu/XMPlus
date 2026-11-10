@@ -876,6 +876,7 @@ class DownloadService {
             throw const XmlyException('task_busy', '下载任务已变化，请重新确认');
           }
           final resumed = existing.copyWith(
+            outputDeleted: false,
             track: item.track,
             settings: {
               for (final entry in existing.settings.entries)
@@ -997,13 +998,15 @@ class DownloadService {
     retryAt: null,
     processingFailed: false,
     outputMissing: true,
+    outputDeleted: false,
   );
 
   DownloadTask? _missingTask(String trackId) => _tasks.values
       .where(
         (item) =>
             item.track.id == trackId &&
-            item.state == DownloadState.failed &&
+            (item.state == DownloadState.failed ||
+                item.state == DownloadState.paused) &&
             item.outputMissing,
       )
       .firstOrNull;
@@ -1014,8 +1017,21 @@ class DownloadService {
     _ensureOpen();
     await _change(
       id,
-      (item) =>
-          item.state == DownloadState.completed ? _missingOutput(item) : item,
+      (item) => item.state == DownloadState.completed
+          ? item.copyWith(
+              state: DownloadState.paused,
+              finalPath: null,
+              error: null,
+              warning: '音频已主动删除，可重新下载',
+              bytesPerSecond: 0,
+              retryAt: null,
+              processingFailed: false,
+              outputMissing: true,
+              outputDeleted: true,
+              userConfirmed: false,
+              needsConfirmation: true,
+            )
+          : item,
     );
   }
 
@@ -1354,6 +1370,7 @@ class DownloadService {
               error: null,
               processingFailed: false,
               outputMissing: false,
+              outputDeleted: false,
             ),
           );
           return;

@@ -673,12 +673,12 @@ class _DownloadPageState extends State<DownloadPage> {
               (task.finalPath == null || _available[task.id] == false),
         )
         .length;
-    final states = <DownloadState, int>{};
+    final states = <String, int>{};
     for (final task in tasks) {
-      states.update(task.state, (count) => count + 1, ifAbsent: () => 1);
+      states.update(_taskState(task), (count) => count + 1, ifAbsent: () => 1);
     }
     final summary = [
-      for (final entry in states.entries) '${_state(entry.key)} ${entry.value}',
+      for (final entry in states.entries) '${entry.key} ${entry.value}',
       if (missing > 0) '文件缺失 $missing',
     ].join(' · ');
     final title = albumId.isEmpty
@@ -1014,7 +1014,7 @@ class _DownloadPageState extends State<DownloadPage> {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             Text(
-              '${task.track.album} · ${_state(task.state)}',
+              '${task.track.album} · ${_taskState(task)}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
@@ -1061,7 +1061,9 @@ class _DownloadPageState extends State<DownloadPage> {
                   TextButton(
                     onPressed: () => _run(() => _retry(task)),
                     child: Text(
-                      task.needsConfirmation && !task.processingFailed
+                      task.outputDeleted
+                          ? '重新下载'
+                          : task.needsConfirmation && !task.processingFailed
                           ? '重新确认'
                           : '继续',
                     ),
@@ -1127,6 +1129,11 @@ String _bytes(int value) => value < 1024
     : value < 1024 * 1024
     ? '${(value / 1024).toStringAsFixed(1)}KiB'
     : '${(value / (1024 * 1024)).toStringAsFixed(1)}MiB';
+String _taskState(DownloadTask task) =>
+    task.state == DownloadState.paused && task.outputDeleted
+    ? '音频已删除'
+    : _state(task.state);
+
 String _state(DownloadState state) => switch (state) {
   DownloadState.queued => '等待中',
   DownloadState.awaitingDebit => '等待扣时确认',
