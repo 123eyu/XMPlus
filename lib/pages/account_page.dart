@@ -41,9 +41,10 @@ String _accountError(Object error) {
     'uncertain' => '请求结果未知，请先在官方 App 核对，不要重复领取。',
     'reward_rejected' => '领取未成功，请在官方 App 检查。',
     'reward_paused' => '领取已暂停，请先在官方 App 核对，再选择恢复领取。',
-    'unsettled' => '还有未结算或结果未知的扣时，请先核对原账号。',
+    'unsettled' || 'usage_uncertain' => '还有未结算或结果未知的扣时，请先核对原账号。',
     'integration_required' => '暂时无法安全切换账号，原账号已保留。',
     'credential_write_failed' => '安全凭据保存失败，原账号已保留。',
+    'credential_mismatch' => '请导入该账号的 Cookie，并保留原设备 ID；其他账号不能恢复此记录。',
     'credential_read_failed' ||
     'credential_missing' ||
     'credential_invalid' => '无法读取登录信息，请重新导入原账号。',
@@ -123,11 +124,14 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
-  Future<void> _openImport() async {
+  Future<void> _openImport({String? recoveryIdentity}) async {
     final changed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _CredentialDialog(accounts: widget.accounts),
+      builder: (_) => _CredentialDialog(
+        accounts: widget.accounts,
+        recoveryIdentity: recoveryIdentity,
+      ),
     );
     if (!mounted || changed != true) return;
     widget.onChanged?.call();
@@ -256,6 +260,9 @@ class _AccountPageState extends State<AccountPage> {
         ? rawHint
         : '****';
     final primary = widget.accounts.primaryAccountId == identity;
+    final missing = widget.accounts.missingCredentialAccountIds.contains(
+      identity,
+    );
     final paused = record['rewardPaused'] == true;
     final quota = record['quota'];
     Quota? verified;
@@ -290,57 +297,77 @@ class _AccountPageState extends State<AccountPage> {
             ),
             AdaptiveText('设备 $hint'),
             const SizedBox(height: 8),
-            Text(
-              remaining == null
-                  ? '可用听时：未核验'
-                  : '可用听时：${remaining ~/ 3600} 小时 ${(remaining % 3600) ~/ 60} 分 ${remaining % 60} 秒',
-            ),
-            if (checked != null)
-              AdaptiveText(
-                '核验于 ${checked.toString().split('.').first}',
-                style: Theme.of(context).textTheme.bodySmall,
+            if (missing) ...[
+              const Text('安全凭据缺失，请重新导入原账号。已有资料、下载和扣时记录均已保留。'),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () => _openImport(recoveryIdentity: identity),
+                icon: const Icon(Icons.key),
+                label: const Text('恢复此账号登录'),
               ),
-            if (paused)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: Text('领取已暂停，请先在官方 App 核对上一次结果。'),
+            ] else ...[
+              Text(
+                remaining == null
+                    ? '可用听时：未核验'
+                    : '可用听时：${remaining ~/ 3600} 小时 ${(remaining % 3600) ~/ 60} 分 ${remaining % 60} 秒',
               ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (!primary)
-                  OutlinedButton(
+              if (checked != null)
+                AdaptiveText(
+                  '核验于 ${checked.toString().split('.').first}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              if (paused)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text('领取已暂停，请先在官方 App 核对上一次结果。'),
+                ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
                     onPressed: _busy
                         ? null
-                        : () =>
-                              _run(() => widget.accounts.setPrimary(identity)),
-                    child: const Text('设为主账号'),
+                        : () => _openImport(recoveryIdentity: identity),
+                    icon: const Icon(Icons.key),
+                    label: const Text('更新登录'),
                   ),
-                OutlinedButton(
-                  onPressed: _busy ? null : () => _quota(identity),
-                  child: const Text('查询听时'),
-                ),
-                OutlinedButton(
-                  onPressed: _busy || paused
-                      ? null
-                      : () => _claim(identity, uid),
-                  child: const Text('领取一次'),
-                ),
-                if (paused)
+                  if (!primary)
+                    OutlinedButton(
+                      onPressed: _busy
+                          ? null
+                          : () => _run(
+                              () => widget.accounts.setPrimary(identity),
+                            ),
+                      child: const Text('设为主账号'),
+                    ),
                   OutlinedButton(
-                    onPressed: _busy
-                        ? null
-                        : () => _resumeRewards(identity, uid),
-                    child: const Text('核对后恢复自动领取'),
+                    onPressed: _busy ? null : () => _quota(identity),
+                    child: const Text('查询听时'),
                   ),
-                TextButton(
-                  onPressed: _busy ? null : () => _remove(identity, uid),
-                  child: const Text('移除'),
-                ),
-              ],
-            ),
+                  OutlinedButton(
+                    onPressed: _busy || paused
+                        ? null
+                        : () => _claim(identity, uid),
+                    child: const Text('领取一次'),
+                  ),
+                  if (paused)
+                    OutlinedButton(
+                      onPressed: _busy
+                          ? null
+                          : () => _resumeRewards(identity, uid),
+                      child: const Text('核对后恢复自动领取'),
+                    ),
+                  TextButton(
+                    onPressed: _busy ? null : () => _remove(identity, uid),
+                    child: const Text('移除'),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -350,7 +377,10 @@ class _AccountPageState extends State<AccountPage> {
   @override
   Widget build(BuildContext context) {
     final records = widget.storage.state['accounts'] as Map;
-    final ids = widget.accounts.accountIds;
+    final ids = [
+      ...widget.accounts.accountIds,
+      ...widget.accounts.missingCredentialAccountIds,
+    ];
     return PopScope(
       canPop: !_busy,
       child: Center(
@@ -424,8 +454,9 @@ class _AccountPageState extends State<AccountPage> {
 }
 
 class _CredentialDialog extends StatefulWidget {
-  const _CredentialDialog({required this.accounts});
+  const _CredentialDialog({required this.accounts, this.recoveryIdentity});
   final AccountService accounts;
+  final String? recoveryIdentity;
   @override
   State<_CredentialDialog> createState() => _CredentialDialogState();
 }
@@ -450,7 +481,11 @@ class _CredentialDialogState extends State<_CredentialDialog> {
     });
     try {
       final candidate = Credentials.parse(_cookie.text);
-      await widget.accounts.commit(candidate, makePrimary: _primary);
+      await widget.accounts.commit(
+        candidate,
+        makePrimary: _primary,
+        recoveryIdentity: widget.recoveryIdentity,
+      );
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (mounted) setState(() => _error = _accountError(error));
@@ -463,8 +498,8 @@ class _CredentialDialogState extends State<_CredentialDialog> {
   Widget build(BuildContext context) => PopScope(
     canPop: !_busy,
     child: AlertDialog(
-      title: const Text(
-        'Cookie 登录',
+      title: Text(
+        widget.recoveryIdentity == null ? 'Cookie 登录' : '恢复原账号登录',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -496,14 +531,20 @@ class _CredentialDialogState extends State<_CredentialDialog> {
                   border: OutlineInputBorder(),
                 ),
               ),
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('设为主账号'),
-                value: _primary,
-                onChanged: _busy
-                    ? null
-                    : (value) => setState(() => _primary = value!),
-              ),
+              if (widget.recoveryIdentity != null)
+                const Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: Text('使用原账号和原设备 ID。恢复后保留主账号选择；结果未知的扣时仍需核对。'),
+                )
+              else
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('设为主账号'),
+                  value: _primary,
+                  onChanged: _busy
+                      ? null
+                      : (value) => setState(() => _primary = value!),
+                ),
               if (_error != null)
                 Text(
                   _error!,

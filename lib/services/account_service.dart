@@ -43,6 +43,7 @@ class AccountService {
   final Lock _accounts = Lock();
   final Map<String, XmlyClient> _clients = {};
   final Map<String, XmlyClient> _settlementClients = {};
+  final Set<String> _missingCredentials = {};
   bool _loaded = false;
   bool _closed = false;
   bool _admissionPaused = false;
@@ -56,10 +57,15 @@ class AccountService {
   String? get primaryAccountId => storage.state['primaryAccountId'] as String?;
   XmlyClient? get activeClient => _clients[storage.state['activeAccountId']];
   List<String> get accountIds => List.unmodifiable(_clients.keys);
+  List<String> get missingCredentialAccountIds =>
+      List.unmodifiable(_missingCredentials);
 
   XmlyClient clientFor(String identity) {
     _ensureLoaded();
     final client = _settlementClients[identity] ?? _clients[identity];
+    if (client == null && _missingCredentials.contains(identity)) {
+      throw const AccountException('credential_missing', '安全凭据缺失，请重新导入原账号');
+    }
     if (client == null) throw const AccountException('missing', '请先登录此账号');
     return client;
   }
@@ -82,6 +88,8 @@ class AccountService {
     if (_closed) throw const AccountException('closed', '账号服务已关闭');
     if (_loaded) return;
     final restored = <String, XmlyClient>{};
+    final referenced = <String>{};
+    final missing = <String>{};
     try {
       final accounts = storage.state['accounts'] as Map;
       for (final entry in accounts.entries) {
@@ -94,6 +102,7 @@ class AccountService {
         if (ref is! String || !_validRef(ref, entry.key as String)) {
           throw const AccountException('corrupt', '账号凭据引用无效，请恢复备份');
         }
+        referenced.add(entry.key as String);
         final String? secret;
         try {
           secret = await secrets.read(ref);
@@ -104,7 +113,8 @@ class AccountService {
           );
         }
         if (secret == null) {
-          throw const AccountException('credential_missing', '安全凭据缺失，请重新导入原账号');
+          missing.add(entry.key as String);
+          continue;
         }
         final Credentials credentials;
         try {
@@ -121,10 +131,10 @@ class AccountService {
           urlCacheDirectory: _urlCacheDirectory,
         );
       }
-      if ((restored.isNotEmpty &&
-              (!restored.containsKey(primaryAccountId) ||
-                  !restored.containsKey(storage.state['activeAccountId']))) ||
-          (restored.isEmpty &&
+      if ((referenced.isNotEmpty &&
+              (!referenced.contains(primaryAccountId) ||
+                  !referenced.contains(storage.state['activeAccountId']))) ||
+          (referenced.isEmpty &&
               (primaryAccountId != null ||
                   storage.state['activeAccountId'] != null))) {
         throw const AccountException('corrupt', '主账号资料无效，请恢复备份');
@@ -136,6 +146,7 @@ class AccountService {
         );
       }
       _clients.addAll(restored);
+      _missingCredentials.addAll(missing);
       _loaded = true;
       await _cleanupSecrets();
       for (final client in restored.values) {
@@ -149,6 +160,7 @@ class AccountService {
         await client.flushUrlCache();
       }
       _clients.clear();
+      _missingCredentials.clear();
       _loaded = false;
       rethrow;
     }
@@ -157,8 +169,25 @@ class AccountService {
   Future<void> commit(
     Credentials credentials, {
     bool makePrimary = true,
+    String? recoveryIdentity,
   }) => _accounts.synchronized(() async {
     _ensureLoaded();
+    if (recoveryIdentity != null &&
+        (credentials.identity != recoveryIdentity ||
+            (!_missingCredentials.contains(recoveryIdentity) &&
+                !_clients.containsKey(recoveryIdentity)))) {
+      throw const AccountException(
+        'credential_mismatch',
+        '请导入原账号的 Cookie，并保留原设备 ID',
+      );
+    }
+    // A same-identity renewal that keeps both selections is not an account
+    // switch. Explicit recovery also permits renewing a backup account.
+    final recovering =
+        recoveryIdentity != null ||
+        (_clients.containsKey(credentials.identity) &&
+            storage.state['activeAccountId'] == credentials.identity &&
+            (!makePrimary || primaryAccountId == credentials.identity));
     // A candidate is never mounted during validation.
     final candidate = XmlyClient(credentials: credentials);
     var committed = false;
@@ -168,12 +197,27 @@ class AccountService {
       if (quota.remainingSeconds < 0) {
         throw const AccountException('quota_invalid', '无法核验账号可用听时');
       }
-      if (_clients.containsKey(credentials.identity)) {
+      if ((storage.state['accounts'] as Map).containsKey(
+        credentials.identity,
+      )) {
         // New admissions remain locked; only existing same-identity usage
         // can use the verified token revision while the old token expires.
         _settlementClients[credentials.identity] = candidate;
       }
-      await _prepareChange();
+      if (recovering && quiesceForRestore != null) {
+        // Repair only this identity's credential. Unknown operations remain
+        // blocked and reachable for reconciliation after authentication.
+        _admissionPaused = true;
+        await quiesceForRestore!();
+      } else {
+        if (recovering && _containsUnknown(storage.state['accounts'])) {
+          throw const AccountException(
+            'integration_required',
+            '请先连接账号恢复的任务暂停及听时保存服务',
+          );
+        }
+        await _prepareChange();
+      }
       final identity = credentials.identity;
       final previous = (storage.state['accounts'] as Map)[identity] as Map?;
       final oldRef = previous?['credentialRef'] as String?;
@@ -198,7 +242,7 @@ class AccountService {
       }
       await storage.transaction((state) {
         final accounts = state['accounts'] as Map<String, dynamic>;
-        _assertSettled(accounts);
+        if (!recovering) _assertSettled(accounts);
         // Same uid/device identity retains every existing ledger/receipt.
         final record = Map<String, dynamic>.from(
           accounts[identity] as Map? ?? {},
@@ -214,9 +258,11 @@ class AccountService {
         });
         record.putIfAbsent('ledger', () => <String, dynamic>{});
         accounts[identity] = record;
-        state['activeAccountId'] = identity;
-        if (makePrimary || state['primaryAccountId'] == null) {
-          state['primaryAccountId'] = identity;
+        if (!recovering) {
+          state['activeAccountId'] = identity;
+          if (makePrimary || state['primaryAccountId'] == null) {
+            state['primaryAccountId'] = identity;
+          }
         }
         (state['credentialCleanup'] as List).remove(newRef);
         if (oldRef != null) _scheduleCleanup(state, oldRef);
@@ -556,6 +602,7 @@ class AccountService {
     }
     candidate.attachUrlCache(_urlCacheDirectory);
     _clients[candidate.identity] = candidate;
+    _missingCredentials.remove(candidate.identity);
   }
 
   Future<void> _prepareChange() async {
