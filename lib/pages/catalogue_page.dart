@@ -687,9 +687,8 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   Future<void> _loadPage(int page, {Track? target}) async {
     if (_offline) {
       if (target != null) {
-        final index = _cachedTracks().indexWhere(
-          (track) => track.id == target.id,
-        );
+        final index = _orderedForDisplay(_cachedTracks())
+            .indexWhere((track) => track.id == target.id);
         if (index >= 0) page = index ~/ _pageSize + 1;
       }
       setState(() => _showCached(page));
@@ -704,10 +703,12 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       _error = null;
     });
     try {
+      int? targetOrdinal;
       if (target != null) {
         final located = await _locateAlbumTrack(client, widget.albumId, target);
         if (!_sameAccount(client, key) || generation != _generation) return;
-        page = (_trackOrdinal(located)! - 1) ~/ _pageSize + 1;
+        targetOrdinal = _trackOrdinal(located)!;
+        page = (targetOrdinal - 1) ~/ _pageSize + 1;
       }
       if (_filter.isNotEmpty && _complete != null) {
         final filtered = _orderedForDisplay(_complete!)
@@ -727,12 +728,27 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           });
         }
       } else {
-        final result = await client.album(
+        var result = await client.album(
           widget.albumId,
           page: page,
           pageSize: _pageSize,
           ascending: _ascending,
         );
+        if (!_sameAccount(client, key) || generation != _generation) return;
+        if (!_ascending &&
+            targetOrdinal != null &&
+            targetOrdinal <= result.total) {
+          final targetPage = (result.total - targetOrdinal) ~/ _pageSize + 1;
+          if (targetPage != page) {
+            page = targetPage;
+            result = await client.album(
+              widget.albumId,
+              page: page,
+              pageSize: _pageSize,
+              ascending: false,
+            );
+          }
+        }
         if (_sameAccount(client, key) && generation == _generation) {
           setState(() {
             _offline = false;
@@ -756,9 +772,8 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           if (target != null) _targetWarning = '暂时无法定位这集，目标信息已保留，请重新定位。';
         });
         if (_offline && target != null) {
-          final index = _cachedTracks().indexWhere(
-            (track) => track.id == target.id,
-          );
+          final index = _orderedForDisplay(_cachedTracks())
+              .indexWhere((track) => track.id == target.id);
           if (index >= 0) {
             setState(() => _showCached(index ~/ _pageSize + 1));
             _revealTarget(target, generation);
