@@ -445,20 +445,28 @@ class PlayerService {
         });
       });
 
-  Future<void> playTrack(Track track, {double? resumePosition}) =>
-      _run(() async {
-        final request = _newRequest();
-        ++generation;
-        await _commands.synchronized(() async {
-          if (request != _request) return;
-          await _stopSource();
-          await _saveQueue([track], 0, '');
-          _queue = [track];
-          cursor = 0;
-          sourceAlbumId = '';
-          await _openCurrent(request, resumePosition: resumePosition);
-        });
-      });
+  Future<void> playTrack(
+    Track track, {
+    double? resumePosition,
+    bool manualPosition = false,
+  }) => _run(() async {
+    final request = _newRequest();
+    ++generation;
+    await _commands.synchronized(() async {
+      if (request != _request) return;
+      await _stopSource();
+      await _saveQueue([track], 0, '');
+      _queue = [track];
+      cursor = 0;
+      sourceAlbumId = '';
+      await _openCurrent(
+        request,
+        resumePosition: resumePosition,
+        // Bookmarks bypass chapter skipping just like a manual seek.
+        manualReplay: manualPosition,
+      );
+    });
+  });
   Future<void> playQueueItem(int index) => _run(() async {
     RangeError.checkValidIndex(index, _queue);
     final request = _newRequest();
