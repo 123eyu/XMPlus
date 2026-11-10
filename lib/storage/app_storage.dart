@@ -27,7 +27,7 @@ class AppStorage {
   final Lock _writes = Lock();
   Map<String, dynamic> _state;
   bool _closed = false;
-  bool _lockClosed = false;
+  bool _lockClosed = false, _lockUnlocked = false;
 
   Map<String, dynamic> get state => _state;
 
@@ -140,7 +140,10 @@ class AppStorage {
     if (_lockClosed) return;
     _closed = true;
     try {
-      await _lockFile.unlock(0, 1);
+      if (!_lockUnlocked) {
+        await _lockFile.unlock(0, 1);
+        _lockUnlocked = true;
+      }
     } finally {
       await _lockFile.close();
       _lockClosed = true;
