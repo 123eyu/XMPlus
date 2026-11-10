@@ -10,6 +10,7 @@ import '../models/xmly_models.dart';
 import 'account_service.dart';
 import 'audio_cache.dart';
 import 'download_paths.dart';
+import 'file_paths.dart';
 import 'download_service.dart';
 import 'media_processor.dart';
 
@@ -84,7 +85,7 @@ class MediaPipeline {
       }
     }
     return p.join(
-      task.rootDirectory,
+      absoluteFilePath(task.rootDirectory),
       '.xmly-cache',
       task.accountIdentity,
       task.track.number,

@@ -11,6 +11,7 @@ import 'package:synchronized/synchronized.dart';
 
 import '../api/xmly_client.dart';
 import '../models/xmly_models.dart';
+import 'file_paths.dart';
 import 'request_diagnostics.dart';
 
 /// The sole upstream byte producer for one account/track/task directory.
@@ -62,7 +63,7 @@ class AudioCache {
     Future<void> Function()? checkpoint,
     void Function(int received, int? total, double rate)? onProgress,
   }) async {
-    final path = p.normalize(p.absolute(directory));
+    final path = absoluteFilePath(directory);
     if (!_openDirectories.add(Platform.isWindows ? path.toLowerCase() : path)) {
       throw const XmlyException('cache_in_use', '此缓存正在使用');
     }

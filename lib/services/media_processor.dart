@@ -10,6 +10,7 @@ import 'package:synchronized/synchronized.dart';
 import '../models/download_task.dart';
 import '../models/xmly_models.dart';
 import 'download_paths.dart';
+import 'file_paths.dart';
 import 'android_platform.dart';
 
 import 'request_diagnostics.dart';
@@ -289,7 +290,7 @@ class MediaProcessor {
         target,
         conflict: conflict,
       );
-      if (p.equals(source, p.normalize(p.absolute(destination)))) {
+      if (p.equals(source, absoluteFilePath(destination))) {
         throw const XmlyException('invalid_commit', '源音频不能作为输出文件');
       }
       if (conflict == 'skip' &&

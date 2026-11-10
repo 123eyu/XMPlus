@@ -10,6 +10,7 @@ import 'package:win32/win32.dart' as win;
 
 import '../models/xmly_models.dart';
 import 'android_platform.dart';
+import 'file_paths.dart';
 
 /// Filesystem policy shared by downloads and the media processor. No audio or
 /// account operation belongs here; callers validate media before [commit].
@@ -257,8 +258,8 @@ class DownloadPaths {
     String destination, {
     bool overwrite = false,
   }) async {
-    final source = p.normalize(p.absolute(temporary));
-    final target = p.normalize(p.absolute(destination));
+    final source = absoluteFilePath(temporary);
+    final target = absoluteFilePath(destination);
     final sourceCanonical = await File(source).resolveSymbolicLinks();
     final targetParent = await Directory(p.dirname(target))
         .resolveSymbolicLinks();
@@ -299,7 +300,7 @@ class DownloadPaths {
     if (root.isEmpty || root.contains('\x00') || !p.isAbsolute(root)) {
       throw const XmlyException('download_directory', '请选择绝对路径的下载目录');
     }
-    return p.normalize(root);
+    return absoluteFilePath(root);
   }
 
   static String _shorten(String text, int units, int bytes) {
