@@ -743,10 +743,17 @@ class PlayerService {
       audio: audio,
       refresh: (isActive) {
         Future<ResolvedAudio> refresh(XmlyClient client) {
-          if (!isActive() || _closed || request != _request) {
+          // Pause/resume can supersede the opening request while retaining this
+          // source. The cache lifetime decides whether a refresh is still valid.
+          if (!isActive() || _closed) {
             throw const DownloadStopped();
           }
-          return client.resolve(track.id, force: true, quality: quality);
+          return client.resolve(
+            track.id,
+            force: true,
+            quality: quality,
+            isActive: isActive,
+          );
         }
 
         return identity == 'anonymous'
@@ -893,7 +900,7 @@ class PlayerService {
   });
 
   Future<void> pause() {
-    ++_advanceIntent;
+    _newRequest();
     _manualPaused = true;
     return _run(() => _commands.synchronized(() => _pause()));
   }
@@ -916,12 +923,14 @@ class PlayerService {
   Future<void> resume() => _run(() async {
     final request = _newRequest();
     await _commands.synchronized(() async {
+      if (request != _request) return;
       if (_source == null || _atEnd) {
         await _openCurrent(request);
         return;
       }
       if (sourceKind != 'local' &&
-          (_source!.taskId != null || await _downloaded(current!) != null)) {
+          (_source!.taskId != null ||
+              await _admission(request, () => _downloaded(current!)) != null)) {
         final saved = position;
         await _openCurrent(request, resumePosition: saved);
         return;
