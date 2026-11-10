@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../common/widgets/local_panel.dart';
 import '../services/app_runtime.dart';
 import '../services/playback_policy.dart';
+import 'playback_volume_control.dart';
 
 /// Commit first: a failed disk write must not change the live playback policy.
 Future<void> persistPlaybackSetting(
@@ -444,6 +445,15 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                       ),
                     ),
                   _section('声音', [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: PlaybackVolumeControl(runtime: widget.runtime),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text('主音量对所有专辑生效，与下面的专辑音量共同控制响度。'),
+                    ),
+                    const Divider(indent: 16, endIndent: 16),
                     _slider(
                       'speed',
                       '播放倍速',
@@ -456,7 +466,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                     const Divider(indent: 16, endIndent: 16),
                     _slider(
                       'volume',
-                      '音量',
+                      widget.albumId == null ? '默认专辑音量' : '专辑音量',
                       resolved.volume,
                       0,
                       100,

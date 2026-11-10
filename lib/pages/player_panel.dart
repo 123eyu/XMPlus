@@ -11,6 +11,7 @@ import '../services/app_runtime.dart';
 import 'playback_settings_page.dart';
 import 'playback_speed_control.dart';
 import 'player_queue_panel.dart';
+import 'playback_volume_control.dart';
 
 String playbackTime(double seconds) {
   final total = seconds.isFinite && seconds > 0 ? seconds.floor() : 0;
@@ -468,6 +469,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
                     ? null
                     : () => _favoriteAction(track),
               ),
+              PlaybackVolumeControl(runtime: _runtime),
               _button(
                 '添加书签',
                 Icons.bookmark_add_outlined,
