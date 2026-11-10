@@ -382,6 +382,31 @@ class MediaProcessor {
             originalFormats.contains(extension)) {
           await _copy(source, output, checkpoint);
         } else {
+          String? metadataPath;
+          if (tagging) {
+            final metadata = <String, String>{
+              for (final entry in xmlyMap(
+                xmlyMap(input['format'])['tags'],
+              ).entries)
+                if (entry.value is String) entry.key: entry.value as String,
+            };
+            for (final entry in _metadata(task, tags, total).entries) {
+              metadata.removeWhere(
+                (key, _) => key.toLowerCase() == entry.key.toLowerCase(),
+              );
+              if (entry.value.isNotEmpty) metadata[entry.key] = entry.value;
+            }
+            final contents = StringBuffer(';FFMETADATA1\n');
+            for (final entry in metadata.entries) {
+              contents.writeln(
+                '${_escapeMetadata(entry.key)}=${_escapeMetadata(entry.value)}',
+              );
+            }
+            metadataPath = p.join(temporary.path, 'tags.ffmetadata');
+            await File(
+              metadataPath,
+            ).writeAsString(contents.toString(), encoding: utf8, flush: true);
+          }
           final args = [
             '-v',
             'error',
@@ -391,11 +416,22 @@ class MediaProcessor {
             '-i',
             source,
             if (cover != null) ...[..._protocols, '-i', cover],
+            if (metadataPath != null) ...[
+              ..._protocols,
+              '-f',
+              'ffmetadata',
+              '-i',
+              metadataPath,
+            ],
             '-map',
             '0:a:0',
             if (cover != null) ...['-map', '1:v:0'],
             '-map_metadata',
-            tagging || format == 'original' ? '0' : '-1',
+            metadataPath != null
+                ? (cover == null ? '1' : '2')
+                : format == 'original'
+                ? '0'
+                : '-1',
             '-map_chapters',
             '-1',
             '-c:a',
@@ -419,7 +455,6 @@ class MediaProcessor {
               '-metadata:s:v:0',
               'comment=Cover (front)',
             ],
-            if (tagging) ..._metadata(task, tags, total),
             if (extension == 'mp3') ...['-id3v2_version', '3'],
             if (const {'m4a', 'm4b'}.contains(extension)) ...[
               '-movflags',
@@ -597,7 +632,17 @@ class MediaProcessor {
     );
   }
 
-  static List<String> _metadata(
+  static String _escapeMetadata(String value) {
+    if (value.contains('\u0000')) {
+      throw const XmlyException('media_tags', '标签内容无效');
+    }
+    return value.replaceAllMapped(
+      RegExp(r'[\\=;#\r\n]'),
+      (match) => '\\${match[0]}',
+    );
+  }
+
+  static Map<String, String> _metadata(
     DownloadTask task,
     Map<String, dynamic> options,
     int? total,
@@ -629,12 +674,7 @@ class MediaProcessor {
     };
     final year = '${track.raw['year'] ?? ''}';
     if (RegExp(r'^[12][0-9]{3}$').hasMatch(year)) tags['date'] = year;
-    return [
-      for (final entry in tags.entries) ...[
-        '-metadata',
-        '${entry.key}=${entry.value}',
-      ],
-    ];
+    return tags;
   }
 
   static void _compatible(
