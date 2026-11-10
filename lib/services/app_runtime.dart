@@ -285,8 +285,10 @@ class AppRuntime extends ChangeNotifier {
       settings: {
         'download': {
           ...(settings['download'] as Map? ?? const {}),
+          // Automatic consent is bound to this account, including later retries.
           'polling':
-              polling ?? (settings['download'] as Map?)?['polling'] != false,
+              !automatic &&
+              (polling ?? (settings['download'] as Map?)?['polling'] != false),
           if (automatic) 'retryLimit': 0,
         },
         'media': settings['media'] ?? <String, dynamic>{},
