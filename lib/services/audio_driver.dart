@@ -36,11 +36,20 @@ abstract class AudioDriver {
 
 void requireLocalAudio(Uri uri) {
   if (uri.scheme == 'file' &&
-      uri.host.isEmpty &&
-      uri.path.isNotEmpty &&
+      (uri.host.isEmpty || Platform.isWindows) &&
+      uri.userInfo.isEmpty &&
+      !uri.hasPort &&
+      uri.hasAbsolutePath &&
       !uri.hasQuery &&
-      !uri.hasFragment)
-    return;
+      !uri.hasFragment) {
+    try {
+      // Windows file hosts are UNC shares already supported by downloads.
+      uri.toFilePath(windows: Platform.isWindows);
+      return;
+    } on UnsupportedError {
+      // Malformed file URIs must not become a different native media resource.
+    }
+  }
   if (uri.scheme == 'http' &&
       uri.host == '127.0.0.1' &&
       uri.hasPort &&
@@ -211,6 +220,11 @@ class MediaKitAudioDriver implements AudioDriver {
   @override
   Future<void> open(Uri localUri, {required int epoch}) async {
     requireLocalAudio(localUri);
+    // media_kit's file URI sanitizer can turn a named UNC host into a local
+    // directory. Give it the native file path to preserve the share and escapes.
+    final resource = localUri.scheme == 'file'
+        ? localUri.toFilePath(windows: Platform.isWindows)
+        : localUri.toString();
     _cancelResume();
     await _run(() async {
       _opening = true;
@@ -219,7 +233,7 @@ class MediaKitAudioDriver implements AudioDriver {
         await player.stop();
         await _releaseFocus();
         _epoch = epoch;
-        await player.open(Media(localUri.toString()), play: false);
+        await player.open(Media(resource), play: false);
         await player.setPitch(1.0);
       } finally {
         _opening = false;
