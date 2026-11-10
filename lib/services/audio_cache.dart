@@ -280,7 +280,11 @@ class AudioCache {
         }
         if (next == null) break;
         try {
+          final before = downloadedBytes;
           await _fetchWithRetry(next, epoch);
+          // Verification of an already cached prefix is not forward progress:
+          // repeatedly authorizing only that prefix must still hit the limit.
+          if (downloadedBytes > before) _refreshAttempts = 0;
         } on XmlyException catch (error) {
           if (error.code != 'media_unauthorized') rethrow;
           await _refreshAuthorization(epoch);
@@ -327,7 +331,7 @@ class AudioCache {
       if (_refresh == null || _refreshAttempts >= 3) {
         throw const XmlyException('media_unauthorized', '音频授权仍然失效，自动重新获取次数已用尽');
       }
-      // One budget for the entire cache authorization, not one per block.
+      // Bound consecutive renewals that fail to produce new cached bytes.
       _refreshAttempts++;
       late ResolvedAudio audio;
       try {
