@@ -1064,13 +1064,20 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       ),
       body: SafeArea(
         top: false,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 960),
-            child: Scrollbar(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final padding = EdgeInsets.symmetric(
+              horizontal: ((constraints.maxWidth - 960) / 2).clamp(
+                0.0,
+                double.infinity,
+              ),
+            );
+            return Scrollbar(
               controller: _albumScroll,
               child: CustomScrollView(
                 controller: _albumScroll,
+                scrollBehavior: ScrollConfiguration.of(context)
+                    .copyWith(scrollbars: false),
                 slivers: [
                   SliverToBoxAdapter(
                     child: Column(
@@ -1377,10 +1384,10 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                       onPage: _loadPage,
                     ),
                   ),
-                ],
+                ].map((sliver) => SliverPadding(padding: padding, sliver: sliver)).toList(),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
