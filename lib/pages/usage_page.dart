@@ -17,6 +17,31 @@ class _UsagePageState extends State<UsagePage> {
   String? _error;
   bool _busy = false;
 
+  @override
+  void initState() {
+    super.initState();
+    widget.runtime.addListener(_changed);
+  }
+
+  @override
+  void didUpdateWidget(covariant UsagePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.runtime != widget.runtime) {
+      oldWidget.runtime.removeListener(_changed);
+      widget.runtime.addListener(_changed);
+    }
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    widget.runtime.removeListener(_changed);
+    super.dispose();
+  }
+
   Future<void> _reconcile(
     String identity,
     String operationId,
