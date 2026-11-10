@@ -603,9 +603,7 @@ class DownloadService {
               0,
               null,
               selection.taskId,
-              selection.taskId == null
-                  ? identity
-                  : task(selection.taskId!).accountIdentity,
+              _selectionIdentity(identity, selection.taskId),
             ),
         ]),
         balance: null,
@@ -626,9 +624,7 @@ class DownloadService {
       Object? failure;
       DownloadBatchItem? item;
       final attempted = <String>[];
-      final selectionIdentity = selection.taskId == null
-          ? identity
-          : task(selection.taskId!).accountIdentity;
+      final selectionIdentity = _selectionIdentity(identity, selection.taskId);
       final candidates = _candidates(
         selectionIdentity,
         settings,
@@ -718,6 +714,21 @@ class DownloadService {
       owner: this,
       album: album,
     );
+  }
+
+  String _selectionIdentity(String requested, String? taskId) {
+    if (taskId == null) return requested;
+    final existing = task(taskId);
+    if (_hasDebit(existing.accountIdentity, taskId, existing.track.id) &&
+        existing.accountIdentity != requested) {
+      throw const XmlyException(
+        'original_account_required',
+        '原任务含已确认或未知的扣时，请选择原账号继续；账号已移除时请先恢复登录',
+      );
+    }
+    // Without a receipt-bound authorization, reuse the task identity while
+    // honoring the account explicitly chosen for this new request.
+    return requested;
   }
 
   Future<T> _previewAccount<T>(
@@ -1734,6 +1745,8 @@ class DownloadService {
     // Never persist third-party messages (they can contain signed URLs/secrets).
     if (error is XmlyException) {
       switch (error.code) {
+        case 'original_account_required':
+          return '原任务含已确认或未知的扣时，请先登录并选择原账号继续';
         case 'confirmation_changed':
         case 'confirmation_required':
           return '听时或余额已变化，请重新确认';
