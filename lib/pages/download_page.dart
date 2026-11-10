@@ -781,8 +781,9 @@ class _DownloadPageState extends State<DownloadPage> {
           ? null
           : CoverImage(
               uri: task.track.coverUrl,
-              localPath:
-                  widget.runtime.albumCache[task.track.albumId]?.coverPath,
+              localPath: task.track.albumId.isEmpty
+                  ? null
+                  : widget.runtime.albumCache[task.track.albumId]?.coverPath,
               downloaded: available,
               size: 44,
             ),
