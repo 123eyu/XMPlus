@@ -993,14 +993,11 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           ),
         );
       case 'settings':
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => PlaybackSettingsPage(
-              runtime: widget.runtime,
-              albumId: widget.albumId,
-              albumTitle: _album?.title,
-            ),
-          ),
+        showQuickPlaybackSettings(
+          context,
+          widget.runtime,
+          albumId: widget.albumId,
+          albumTitle: _album?.title,
         );
     }
   }
