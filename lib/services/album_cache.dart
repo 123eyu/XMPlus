@@ -216,9 +216,21 @@ class AlbumCache extends ChangeNotifier {
         coverUrl: album.coverUrl ?? previousAlbum?.coverUrl,
         total: album.total,
       );
+      // A complete observation replaces the catalogue. Partial observations
+      // replace only their known positions, in either display order; keep the
+      // remaining cached pages, but retire positions beyond the new total.
+      final complete = observed.length == page.total;
+      final positions = observed
+          .map((track) => track.officialPosition)
+          .whereType<int>()
+          .toSet();
       final tracks = <String, Track>{
-        for (final track in previous?.tracks ?? const <Track>[])
-          track.id: _trackMetadata(track.toJson(), mergedAlbum),
+        if (!complete)
+          for (final track in previous?.tracks ?? const <Track>[])
+            if (track.officialPosition == null ||
+                (track.officialPosition! <= page.total &&
+                    !positions.contains(track.officialPosition)))
+              track.id: _trackMetadata(track.toJson(), mergedAlbum),
       };
       for (final track in observed) {
         final oldPosition = tracks[track.id]?.officialPosition;
