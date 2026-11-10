@@ -393,6 +393,9 @@ class AppRuntime extends ChangeNotifier {
   }
 
   Future<void> pauseAllDownloads() async {
+    // Invalidate before awaiting playback or queue locks: a late catalogue or
+    // authorization result must not create new work after this pause command.
+    autoDownloads.invalidatePending();
     if (player.currentTaskId != null) await player.pause();
     await downloads.pauseAll();
   }
