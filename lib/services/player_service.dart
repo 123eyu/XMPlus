@@ -1374,8 +1374,9 @@ class PlayerService {
     _notify();
   }
 
-  Future<void> setMasterVolume(double value) => _run(
-    () => _commands.synchronized(() async {
+  Future<void> setMasterVolume(double value) => _commands.synchronized(
+    () async {
+      if (_closed) throw StateError('播放器已关闭');
       if (!value.isFinite || value < 0 || value > 100) {
         throw const FormatException('主音量必须在 0–100 之间');
       }
@@ -1391,7 +1392,7 @@ class PlayerService {
       await _driver.setVolume(nextVolume);
       volume = nextVolume;
       _notify();
-    }),
+    },
   );
 
   Future<void> applySettings() => _run(
