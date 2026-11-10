@@ -511,11 +511,12 @@ class PlayerService {
     // The tail commits under _commands; never join its network work under that lock.
     await refreshAlbumTail(album);
     await _commands.synchronized(() async {
+      // A later sleep changes _advanceIntent; a consumed earlier sleep must not
+      // suppress this explicit next command after its catalogue request returns.
       if (intent != _advanceIntent ||
           expectedGeneration != generation ||
           epoch != _epoch ||
-          current?.id != id ||
-          _sleepStopped)
+          current?.id != id)
         return;
       final sleep = policy.onChapterEnd() ?? policy.pollSleep();
       if (sleep != null) {
@@ -927,6 +928,7 @@ class PlayerService {
         return;
       }
       _official.start('player', current!, _progressIdentity);
+      _sleepStopped = false;
       _manualPaused = false;
       await _driver.play();
       _notify();
