@@ -1010,13 +1010,18 @@ class DownloadService {
 
   /// Called only after a user-authorized file deletion succeeds.
   /// Keep the original task/account/receipt so retry cannot charge a new task.
-  Future<void> markAudioDeleted(String id) async {
+  Future<void> markAudioDeleted(String id, {String? expectedPath}) async {
     _ensureOpen();
-    await _change(
-      id,
-      (item) =>
-          item.state == DownloadState.completed ? _missingOutput(item) : item,
-    );
+    await _change(id, (item) {
+      if (expectedPath != null &&
+          (item.state != DownloadState.completed ||
+              item.finalPath != expectedPath)) {
+        throw const XmlyException('download_changed', '下载记录已变化，请刷新后检查音频');
+      }
+      return item.state == DownloadState.completed
+          ? _missingOutput(item)
+          : item;
+    });
   }
 
   Future<void> _reconcileOutputs(Set<String> trackIds) =>

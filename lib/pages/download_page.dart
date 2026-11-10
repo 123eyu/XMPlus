@@ -130,11 +130,70 @@ Future<bool> deleteDownloadedAudio(
     ),
   );
   if (confirmed != true) return false;
-  await runtime.player.stopTaskReference(task.id);
-  final file = File(path);
-  if (await file.exists()) await file.delete();
-  await runtime.downloads.markAudioDeleted(task.id);
+  await _deleteAudioGroup(runtime, [task]);
   return true;
+}
+
+String _audioPathKey(String path) =>
+    Platform.isWindows ? p.normalize(path).toLowerCase() : p.normalize(path);
+
+Future<void> _deleteAudioGroup(
+  AppRuntime runtime,
+  List<DownloadTask> tasks, {
+  void Function(int bytes)? onDeleted,
+}) async {
+  final path = tasks.first.finalPath!;
+  final key = _audioPathKey(path);
+  final ids = tasks.map((task) => task.id).toSet();
+  void validate() {
+    for (final expected in tasks) {
+      final current = runtime.downloads.task(expected.id);
+      if (current.state != DownloadState.completed ||
+          current.finalPath != expected.finalPath ||
+          current.accountIdentity != expected.accountIdentity ||
+          current.track.id != expected.track.id) {
+        throw const XmlyException('download_changed', '下载记录已变化，请重新选择后删除');
+      }
+    }
+    if (runtime.downloads.tasks.any(
+      (task) =>
+          task.finalPath != null &&
+          _audioPathKey(task.finalPath!) == key &&
+          !ids.contains(task.id),
+    )) {
+      throw const XmlyException('shared_audio', '其他下载记录也引用此文件，请一并选择后删除');
+    }
+  }
+
+  validate();
+  for (final task in tasks) {
+    await runtime.player.stopTaskReference(task.id);
+  }
+  validate();
+  final type = await FileSystemEntity.type(path, followLinks: false);
+  if (type != FileSystemEntityType.notFound) {
+    if (type != FileSystemEntityType.file) {
+      throw const XmlyException('audio_changed', '音频路径已不是普通文件，请检查下载目录');
+    }
+    final file = File(path);
+    final bytes = await file.length();
+    validate();
+    await file.delete();
+    onDeleted?.call(bytes);
+  }
+  for (final task in tasks) {
+    try {
+      await runtime.downloads.markAudioDeleted(
+        task.id,
+        expectedPath: task.finalPath,
+      );
+    } catch (_) {
+      throw const XmlyException(
+        'audio_record_update_failed',
+        '音频文件已不在原路径，但记录更新未完成，请刷新后重试',
+      );
+    }
+  }
 }
 
 Future<void> setAlbumAutoDownload(
@@ -287,6 +346,9 @@ class _DownloadPageState extends State<DownloadPage> {
   int _availabilityEpoch = 0;
   Map<String, bool> _available = const {};
   final _expandedAlbums = <String>{};
+  final _selectedDownloads = <String>{};
+  bool _selectingDownloads = false, _deletingAudio = false;
+  int _deletionDone = 0, _deletionTotal = 0;
   StreamSubscription<void>? _taskChanges;
 
   @override
@@ -303,8 +365,12 @@ class _DownloadPageState extends State<DownloadPage> {
 
   void _tasksChanged() {
     if (!mounted) return;
-    setState(() {});
-    unawaited(_refreshAvailability(_service.tasks));
+    setState(() {
+      _selectedDownloads.retainAll(
+        _service.tasks.where(_canSelectAudio).map((task) => task.id),
+      );
+    });
+    if (!_deletingAudio) unawaited(_refreshAvailability(_service.tasks));
   }
 
   void _cacheChanged() {
@@ -320,6 +386,8 @@ class _DownloadPageState extends State<DownloadPage> {
     oldWidget.runtime.albumCache.removeListener(_cacheChanged);
     _availabilityKey = null;
     _available = const {};
+    _selectedDownloads.clear();
+    _selectingDownloads = false;
     _listen();
   }
 
@@ -628,9 +696,144 @@ class _DownloadPageState extends State<DownloadPage> {
   }
 
   Future<void> _delete(DownloadTask task) async {
-    if (await deleteDownloadedAudio(context, widget.runtime, task)) {
+    if (_deletingAudio) return;
+    setState(() {
+      _deletingAudio = true;
+      _deletionDone = 0;
+      _deletionTotal = 0;
+    });
+    try {
+      if (await deleteDownloadedAudio(context, widget.runtime, task)) {
+        _availabilityKey = null;
+        await _refreshAvailability(_service.tasks);
+      }
+    } finally {
+      if (mounted) setState(() => _deletingAudio = false);
+    }
+  }
+
+  bool _canSelectAudio(DownloadTask task) =>
+      task.state == DownloadState.completed && task.finalPath != null;
+
+  void _selectAudio(Iterable<DownloadTask> tasks) {
+    if (_deletingAudio) return;
+    final ids = tasks.where(_canSelectAudio).map((task) => task.id).toSet();
+    if (ids.isEmpty) return;
+    setState(() {
+      _selectingDownloads = true;
+      if (ids.every(_selectedDownloads.contains)) {
+        _selectedDownloads.removeAll(ids);
+      } else {
+        _selectedDownloads.addAll(ids);
+      }
+    });
+  }
+
+  Future<void> _deleteSelectedAudio() async {
+    if (_deletingAudio || _selectedDownloads.isEmpty) return;
+    final runtime = widget.runtime;
+    final groups = <String, List<DownloadTask>>{};
+    for (final task in _service.tasks) {
+      if (_canSelectAudio(task) && _selectedDownloads.contains(task.id)) {
+        groups.putIfAbsent(_audioPathKey(task.finalPath!), () => []).add(task);
+      }
+    }
+    if (groups.isEmpty) return;
+    final count = groups.values.fold(0, (sum, tasks) => sum + tasks.length);
+    setState(() {
+      _deletingAudio = true;
+      _deletionDone = 0;
+      _deletionTotal = 0;
+      _error = null;
+    });
+    try {
+      var estimatedBytes = 0, unknownSizes = 0;
+      for (final tasks in groups.values) {
+        try {
+          final stat = await File(tasks.first.finalPath!).stat();
+          if (stat.type == FileSystemEntityType.file) {
+            estimatedBytes += stat.size;
+          } else if (stat.type != FileSystemEntityType.notFound) {
+            unknownSizes++;
+          }
+        } on FileSystemException {
+          unknownSizes++;
+        }
+      }
+      if (!mounted || widget.runtime != runtime) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          scrollable: true,
+          title: Text('删除 $count 条声音的音频？'),
+          content: Text(
+            '共 ${groups.length} 个文件，预计释放 ${_bytes(estimatedBytes)}'
+            '${unknownSizes > 0 ? "（另有 $unknownSizes 个文件大小未知）" : ""}。\n\n'
+            '正在使用这些文件的播放会停止。下载任务和扣时记录保留，可在之后重新下载。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('删除所选音频'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted || widget.runtime != runtime) return;
+      setState(() => _deletionTotal = groups.length);
+      var freedBytes = 0, deletedFiles = 0;
+      final failures = <String>[];
+      final cleared = <String>{};
+      for (final tasks in groups.values) {
+        try {
+          await _deleteAudioGroup(
+            runtime,
+            tasks,
+            onDeleted: (bytes) {
+              freedBytes += bytes;
+              deletedFiles++;
+            },
+          );
+          cleared.addAll(tasks.map((task) => task.id));
+        } catch (error) {
+          failures.add(
+            '${tasks.first.track.title}：${error is XmlyException ? error.message : "删除或记录更新未完成，请刷新后重试"}',
+          );
+        }
+        if (mounted && widget.runtime == runtime) {
+          setState(() => _deletionDone++);
+        }
+      }
+      if (!mounted || widget.runtime != runtime) return;
+      setState(() {
+        _selectedDownloads.removeAll(cleared);
+        if (_selectedDownloads.isEmpty) _selectingDownloads = false;
+        _error = failures.isEmpty
+            ? null
+            : '${failures.length} 个文件未完全处理；已删除的文件不会恢复。\n'
+                  '${failures.take(3).join('\n')}'
+                  '${failures.length > 3 ? "\n其余未完成项已保留选择。" : ""}';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '已删除 $deletedFiles 个文件，释放 ${_bytes(freedBytes)}'
+            '${failures.isEmpty ? "" : "；${failures.length} 项未完成"}',
+          ),
+        ),
+      );
       _availabilityKey = null;
       await _refreshAvailability(_service.tasks);
+    } catch (_) {
+      if (mounted && widget.runtime == runtime) {
+        setState(() => _error = '无法准备批量删除，请刷新后重试');
+      }
+    } finally {
+      if (mounted) setState(() => _deletingAudio = false);
     }
   }
 
@@ -690,6 +893,11 @@ class _DownloadPageState extends State<DownloadPage> {
         : '专辑 $albumId';
     final expansionKey = '${downloaded ? 'downloaded' : 'tasks'}:$albumId';
     final expanded = _expandedAlbums.contains(expansionKey);
+    final selectable = tasks.where(_canSelectAudio).toList();
+    final selected = selectable
+        .where((task) => _selectedDownloads.contains(task.id))
+        .length;
+    final selecting = downloaded && _selectingDownloads;
     void toggle() => setState(() {
       if (expanded) {
         _expandedAlbums.remove(expansionKey);
@@ -706,7 +914,22 @@ class _DownloadPageState extends State<DownloadPage> {
               horizontal: compact ? 8 : 16,
               vertical: 6,
             ),
-            leading: compact
+            leading: selecting
+                ? Tooltip(
+                    message: '全选此专辑',
+                    child: Checkbox(
+                      tristate: true,
+                      value: selected == 0
+                          ? false
+                          : selected == selectable.length
+                          ? true
+                          : null,
+                      onChanged: _deletingAudio || selectable.isEmpty
+                          ? null
+                          : (_) => _selectAudio(selectable),
+                    ),
+                  )
+                : compact
                 ? null
                 : CoverImage(
                     uri: album?.coverUrl ?? tasks.first.track.coverUrl,
@@ -745,9 +968,14 @@ class _DownloadPageState extends State<DownloadPage> {
                 ),
               ],
             ),
-            onTap: albumId.isEmpty
+            onTap: selecting
+                ? (_deletingAudio ? null : () => _selectAudio(selectable))
+                : albumId.isEmpty
                 ? toggle
                 : () => _run(() => _openAlbum(albumId)),
+            onLongPress: downloaded && !_deletingAudio
+                ? () => _selectAudio(selectable)
+                : null,
             trailing: IconButton(
               tooltip: expanded ? '收起声音与操作' : '展开声音与操作',
               icon: Icon(expanded ? Icons.expand_less : Icons.expand_more),
@@ -777,7 +1005,15 @@ class _DownloadPageState extends State<DownloadPage> {
   Widget _downloadedTrack(DownloadTask task, bool compact) {
     final available = _available[task.id] == true;
     return ListTile(
-      leading: compact
+      selected: _selectingDownloads && _selectedDownloads.contains(task.id),
+      leading: _selectingDownloads
+          ? Checkbox(
+              value: _selectedDownloads.contains(task.id),
+              onChanged: _deletingAudio || !_canSelectAudio(task)
+                  ? null
+                  : (_) => _selectAudio([task]),
+            )
+          : compact
           ? null
           : CoverImage(
               uri: task.track.coverUrl,
@@ -792,28 +1028,37 @@ class _DownloadPageState extends State<DownloadPage> {
             ? (available ? '已下载' : '音频文件已不存在')
             : '正在检查本地文件',
       ),
-      onTap: available
+      onTap: _deletingAudio
+          ? null
+          : _selectingDownloads
+          ? () => _selectAudio([task])
+          : available
           ? () => _run(() => widget.runtime.player.playLocal(task.id))
           : null,
-      trailing: PopupMenuButton<String>(
-        tooltip: '已下载声音操作',
-        onSelected: (action) => _run(() async {
-          switch (action) {
-            case 'play':
-              await widget.runtime.player.playLocal(task.id);
-            case 'open':
-              await _open(task);
-            case 'delete':
-              await _delete(task);
-          }
-        }),
-        itemBuilder: (_) => [
-          if (available) const PopupMenuItem(value: 'play', child: Text('播放')),
-          const PopupMenuItem(value: 'open', child: Text('打开目录')),
-          if (available)
-            const PopupMenuItem(value: 'delete', child: Text('删除音频')),
-        ],
-      ),
+      onLongPress: _deletingAudio ? null : () => _selectAudio([task]),
+      trailing: _selectingDownloads
+          ? null
+          : PopupMenuButton<String>(
+              enabled: !_deletingAudio,
+              tooltip: '已下载声音操作',
+              onSelected: (action) => _run(() async {
+                switch (action) {
+                  case 'play':
+                    await widget.runtime.player.playLocal(task.id);
+                  case 'open':
+                    await _open(task);
+                  case 'delete':
+                    await _delete(task);
+                }
+              }),
+              itemBuilder: (_) => [
+                if (available)
+                  const PopupMenuItem(value: 'play', child: Text('播放')),
+                const PopupMenuItem(value: 'open', child: Text('打开目录')),
+                if (available)
+                  const PopupMenuItem(value: 'delete', child: Text('删除音频')),
+              ],
+            ),
     );
   }
 
@@ -851,7 +1096,7 @@ class _DownloadPageState extends State<DownloadPage> {
     final jobs = _service.albumJobs
         .where((job) => job.state != 'completed' && job.state != 'cancelled')
         .toList();
-    return Scrollbar(
+    final list = Scrollbar(
       child: ListView.builder(
         key: PageStorageKey(
           downloaded ? 'downloaded-albums' : 'download-tasks',
@@ -956,6 +1201,79 @@ class _DownloadPageState extends State<DownloadPage> {
           );
         },
       ),
+    );
+    if (!downloaded) return list;
+    final selectable = _service.tasks.where(_canSelectAudio).toList();
+    final allSelected =
+        selectable.isNotEmpty &&
+        selectable.every((task) => _selectedDownloads.contains(task.id));
+    return Column(
+      children: [
+        Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 8 : 16,
+            vertical: 8,
+          ),
+          child: Column(
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (!_selectingDownloads)
+                    OutlinedButton.icon(
+                      onPressed: _deletingAudio || selectable.isEmpty
+                          ? null
+                          : () => setState(() => _selectingDownloads = true),
+                      icon: const Icon(Icons.checklist),
+                      label: const Text('多选音频'),
+                    )
+                  else ...[
+                    Text('已选 ${_selectedDownloads.length} 条'),
+                    TextButton(
+                      onPressed: _deletingAudio
+                          ? null
+                          : () => _selectAudio(selectable),
+                      child: Text(allSelected ? '取消全选' : '全选'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: _deletingAudio || _selectedDownloads.isEmpty
+                          ? null
+                          : _deleteSelectedAudio,
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('删除所选音频'),
+                    ),
+                    TextButton(
+                      onPressed: _deletingAudio
+                          ? null
+                          : () => setState(() {
+                              _selectingDownloads = false;
+                              _selectedDownloads.clear();
+                            }),
+                      child: const Text('取消多选'),
+                    ),
+                  ],
+                ],
+              ),
+              if (_deletingAudio) ...[
+                const SizedBox(height: 8),
+                LinearProgressIndicator(
+                  value: _deletionTotal == 0
+                      ? null
+                      : _deletionDone / _deletionTotal,
+                ),
+                Text(
+                  _deletionTotal == 0
+                      ? '正在准备删除'
+                      : '正在处理 $_deletionDone / $_deletionTotal 个文件',
+                ),
+              ],
+            ],
+          ),
+        ),
+        Expanded(child: list),
+      ],
     );
   }
 
