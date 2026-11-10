@@ -368,13 +368,14 @@ class _DownloadPageState extends State<DownloadPage> {
   Future<void> _retry(DownloadTask task) async {
     task = _service.task(task.id);
     if (task.state != DownloadState.failed &&
-        task.state != DownloadState.paused)
+        task.state != DownloadState.paused &&
+        task.state != DownloadState.cancelled)
       return;
     if (task.processingFailed) {
       await _service.retry(task.id);
       return;
     }
-    if (task.needsConfirmation) {
+    if (task.needsConfirmation || !task.userConfirmed) {
       final batch = await _service.prepareRetry(task.id);
       if (!mounted) return;
       if (await confirmDownloadBatch(context, batch))
@@ -847,9 +848,7 @@ class _DownloadPageState extends State<DownloadPage> {
     final compact = MediaQuery.sizeOf(context).width < 320;
     final groups = <String, List<DownloadTask>>{};
     for (final task in _service.tasks) {
-      if ((task.state == DownloadState.completed) != downloaded ||
-          task.state == DownloadState.cancelled)
-        continue;
+      if ((task.state == DownloadState.completed) != downloaded) continue;
       groups.putIfAbsent(task.track.albumId, () => []).add(task);
     }
     if (downloaded) {
@@ -1102,6 +1101,11 @@ class _DownloadPageState extends State<DownloadPage> {
                           ? '重试处理'
                           : '重试',
                     ),
+                  ),
+                if (task.state == DownloadState.cancelled)
+                  TextButton(
+                    onPressed: () => _run(() => _retry(task)),
+                    child: Text(task.processingFailed ? '恢复并重试处理' : '恢复任务'),
                   ),
                 if (task.processingFailed &&
                     (task.state == DownloadState.failed ||
