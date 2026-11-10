@@ -114,6 +114,27 @@ class OfficialProgress {
           previous['ended_at_ms'] is int &&
           (previous['ended_at_ms'] as int) > observed.$2)
         return;
+      final sameObservation =
+          previous is Map &&
+          previous['identity'] == session.identity &&
+          previous['track'] is Map &&
+          (previous['track'] as Map)['id'] == track.id &&
+          previous['position'] == observed.$1 &&
+          previous['started_at_ms'] == session.started &&
+          previous['ended_at_ms'] == observed.$2;
+      // A pause/buffer event cannot recreate an acknowledged record or make an
+      // attempted snapshot eligible again. Leave in-flight records unchanged so
+      // their acknowledgement can still remove them.
+      if (!actual && !sameObservation) return;
+      if (sameObservation) {
+        if (previous['attempted'] == true ||
+            previous['terminal'] == true ||
+            !terminal)
+          return;
+        pending[key] = {...previous, 'terminal': true};
+        await _savePending(session.identity, pending);
+        return;
+      }
       final safeTrack = track.toJson();
       safeTrack['raw'] = {
         'album_id': album,
