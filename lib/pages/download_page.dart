@@ -280,6 +280,7 @@ class DownloadPage extends StatefulWidget {
 }
 
 class _DownloadPageState extends State<DownloadPage> {
+  final _refreshingAlbums = <String>{};
   DownloadService get _service => widget.runtime.downloads;
   AutoDownloadService get _autoDownloads => widget.runtime.autoDownloads;
   String? _error;
@@ -817,6 +818,21 @@ class _DownloadPageState extends State<DownloadPage> {
     );
   }
 
+  Future<void> _refreshAlbum(String id) async {
+    if (!_refreshingAlbums.add(id)) return;
+    setState(() {});
+    try {
+      final batch = await _service.prepareAlbumRefresh(id);
+      if (!mounted || !await confirmDownloadBatch(context, batch) || !mounted) {
+        return;
+      }
+      await _service.enqueue(batch, confirmed: true);
+    } finally {
+      _refreshingAlbums.remove(id);
+      if (mounted) setState(() {});
+    }
+  }
+
   Future<void> _cancelAlbum(String id) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -917,6 +933,20 @@ class _DownloadPageState extends State<DownloadPage> {
                                     ),
                                     child: Text(
                                       job.state == 'failed' ? '重试专辑' : '继续专辑',
+                                    ),
+                                  ),
+                                if (job.state == 'failed' ||
+                                    job.state == 'paused')
+                                  TextButton(
+                                    onPressed:
+                                        _refreshingAlbums.contains(job.id)
+                                        ? null
+                                        : () =>
+                                              _run(() => _refreshAlbum(job.id)),
+                                    child: Text(
+                                      _refreshingAlbums.contains(job.id)
+                                          ? '正在刷新…'
+                                          : '刷新并重新确认',
                                     ),
                                   ),
                                 TextButton(

@@ -117,6 +117,8 @@ class DownloadBatch {
     required this.createdAt,
     required this.owner,
     this.album,
+    this.replacedAlbum,
+    this.albumRefreshToken,
   });
   final String accountIdentity, rootDirectory;
   final Map<String, dynamic> settings;
@@ -125,6 +127,8 @@ class DownloadBatch {
   final DateTime createdAt;
   final DownloadService owner;
   final DownloadAlbumJob? album;
+  final DownloadAlbumJob? replacedAlbum;
+  final Object? albumRefreshToken;
   String? get albumId => album?.albumId;
   int? get albumTotalCount => album?.total;
   List<Track> get tracks => List.unmodifiable(items.map((item) => item.track));
@@ -215,6 +219,7 @@ class DownloadService {
       {};
   final Set<String> _stopping = {};
   final Map<String, bool Function()> _automaticGuards = {};
+  final Map<String, Object> _albumRefreshTokens = {};
   bool _loaded = false, _closed = false, _suspended = false;
   int _parallelism = 3;
   String? _priority;
@@ -409,6 +414,48 @@ class DownloadService {
     );
   }
 
+  /// A changed catalogue needs a new confirmation, including unseen episodes.
+  /// The original job remains intact until that confirmation is committed.
+  Future<DownloadBatch> prepareAlbumRefresh(String id) async {
+    _ensureOpen();
+    final job = _albums[id];
+    if (job == null) throw const XmlyException('task_missing', '专辑任务已不存在');
+    final token = Object();
+    _albumRefreshTokens[id] = token;
+    _checkAlbumRefresh(job, token);
+    final fresh = await prepareAlbum(
+      job.albumId,
+      accountIdentity: job.accountIdentity,
+      rootDirectory: job.rootDirectory,
+      settings: job.settings,
+      previewBilling: job.settings['billingPreviewPending'] != true,
+    );
+    _checkAlbumRefresh(job, token);
+    return DownloadBatch._(
+      accountIdentity: fresh.accountIdentity,
+      rootDirectory: fresh.rootDirectory,
+      settings: fresh.settings,
+      items: fresh.items,
+      balance: fresh.balance,
+      createdAt: fresh.createdAt,
+      owner: this,
+      album: DownloadAlbumJob.fromJson({...fresh.album!.toJson(), 'id': id}),
+      replacedAlbum: job,
+      albumRefreshToken: token,
+    );
+  }
+
+  void _checkAlbumRefresh(DownloadAlbumJob job, Object? token) {
+    if (!identical(_albums[job.id], job) ||
+        token == null ||
+        !identical(_albumRefreshTokens[job.id], token) ||
+        !const {'failed', 'paused'}.contains(job.state) ||
+        _albumWorkers.contains(job.id) ||
+        job.taskIds.any((id) => _workers.containsKey(id) || task(id).active)) {
+      throw const XmlyException('task_changed', '专辑任务已变化，请重新刷新并确认');
+    }
+  }
+
   Future<AlbumPage> _albumPage(
     String identity,
     Map settings,
@@ -458,6 +505,7 @@ class DownloadService {
   }
 
   Future<void> pauseAlbum(String id) async {
+    _albumRefreshTokens.remove(id);
     final job = _albums[id]!;
     job.state = 'paused';
     await _updates.synchronized(() => _save(_tasks));
@@ -468,6 +516,7 @@ class DownloadService {
   }
 
   Future<void> cancelAlbum(String id) async {
+    _albumRefreshTokens.remove(id);
     final job = _albums[id]!;
     job.state = 'cancelled';
     await _updates.synchronized(() => _save(_tasks));
@@ -478,6 +527,7 @@ class DownloadService {
   }
 
   Future<void> resumeAlbum(String id) async {
+    _albumRefreshTokens.remove(id);
     _ensureOpen();
     final job = _albums[id]!;
     if (job.state == 'completed' || job.state == 'cancelled') return;
@@ -827,6 +877,9 @@ class DownloadService {
     Future<void> admit(XmlyClient _) => _updates.synchronized(() async {
       _ensureOpen();
       if (allowed != null && !allowed()) throw const DownloadStopped();
+      final replaced = batch.replacedAlbum;
+      if (replaced != null)
+        _checkAlbumRefresh(replaced, batch.albumRefreshToken);
       final next = Map<String, DownloadTask>.from(_tasks);
       final admitted = <DownloadTask>[];
       for (final item in batch.items) {
@@ -913,11 +966,22 @@ class DownloadService {
             )
             .map((item) => item.id)
             .toList();
+        if (replaced != null) {
+          album.taskIds = {...replaced.taskIds, ...album.taskIds}
+              .where(
+                (id) =>
+                    next.containsKey(id) &&
+                    next[id]!.state != DownloadState.cancelled,
+              )
+              .toList();
+        }
         album.state = 'running';
         album.error = null;
       }
       await storage.transaction((state) {
         if (allowed != null && !allowed()) throw const DownloadStopped();
+        if (replaced != null)
+          _checkAlbumRefresh(replaced, batch.albumRefreshToken);
         state['downloads'] = next.values.map((item) => item.toJson()).toList();
         state['downloadAlbums'] = [
           for (final job in _albums.values)
@@ -934,6 +998,7 @@ class DownloadService {
         ..clear()
         ..addAll(next);
       if (album != null) _albums[album.id] = album;
+      if (replaced != null) _albumRefreshTokens.remove(replaced.id);
       _parallelism = parallelism;
       _suspended = false;
       _notify();
@@ -1163,6 +1228,7 @@ class DownloadService {
   }
 
   Future<void> pauseAll() async {
+    _albumRefreshTokens.clear();
     _suspended = true;
     for (final job in _albums.values) {
       if (job.state == 'running') job.state = 'paused';
@@ -1199,6 +1265,7 @@ class DownloadService {
   }
 
   Future<void> resumeAll() async {
+    _albumRefreshTokens.clear();
     _ensureOpen();
     await Future.wait(
       _workers.values
@@ -1737,6 +1804,9 @@ class DownloadService {
         case 'confirmation_changed':
         case 'confirmation_required':
           return '听时或余额已变化，请重新确认';
+        case 'catalogue_changed':
+        case 'invalid_catalogue':
+          return '专辑目录已变化，请刷新并重新确认；已下载内容和扣时记录保留';
         case 'usage_uncertain':
         case 'receipt_required':
           return '听时扣除尚未确认，请先核对';
