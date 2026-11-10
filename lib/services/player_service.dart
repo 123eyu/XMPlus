@@ -1173,7 +1173,8 @@ class PlayerService {
         final selectedPosition = _atEnd ? _endSeekPosition : null;
         await _openCurrent(
           request,
-          resumePosition: selectedPosition,
+          // Completed chapters restart instead of restoring their end marker.
+          resumePosition: _atEnd ? selectedPosition ?? 0 : null,
           manualReplay: selectedPosition != null,
         );
         return;
