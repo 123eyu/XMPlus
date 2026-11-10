@@ -646,6 +646,8 @@ class _AlbumPageViewState extends State<AlbumPageView> {
 
   Future<void> _download({bool all = false}) async {
     if (_busy) return;
+    final range = _range.text.trim();
+    final selected = _selected.values.toList();
     setState(() {
       _busy = true;
       _error = null;
@@ -655,9 +657,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         await requestAlbumDownloads(context, widget.runtime, widget.albumId);
         return;
       }
-      final requested = _range.text.trim().isNotEmpty
-          ? XmlyCatalogue.selectRange(await _all(), _range.text)
-          : _selected.values.toList();
+      final requested = range.isNotEmpty
+          ? XmlyCatalogue.selectRange(await _all(), range)
+          : selected;
       final downloaded = _completedTrackIds();
       final tracks = requested
           .where((track) => !downloaded.contains(track.id))
