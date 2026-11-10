@@ -228,32 +228,32 @@ Future<bool> confirmDownloadBatch(
                   const SizedBox(height: 8),
                   const Text('逐集扣除整首时长，下载失败或取消不自动退回。原任务重试不会重复扣时。'),
                 ],
-                const SizedBox(height: 12),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 260),
-                  child: Scrollbar(
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: batch.items.length,
-                      itemBuilder: (_, index) {
-                        final item = batch.items[index];
-                        return ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            item.track.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            item.error ??
-                                '${item.accountIdentity != batch.accountIdentity ? "已切换账号 · " : ""}${item.seconds} 秒',
-                          ),
-                        );
-                      },
+                if (batch.items.isNotEmpty) const SizedBox(height: 12),
+                if (batch.items.isNotEmpty)
+                  SizedBox(
+                    height: (batch.items.length * 72.0).clamp(72.0, 260.0),
+                    child: Scrollbar(
+                      child: ListView.builder(
+                        itemCount: batch.items.length,
+                        itemBuilder: (_, index) {
+                          final item = batch.items[index];
+                          return ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              item.track.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              item.error ??
+                                  '${item.accountIdentity != batch.accountIdentity ? "已切换账号 · " : ""}${item.seconds} 秒',
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
