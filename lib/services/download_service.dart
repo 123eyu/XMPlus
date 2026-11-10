@@ -1288,6 +1288,8 @@ class DownloadService {
           state: DownloadState.queued,
           error: null,
           retryAt: null,
+          retryCount: 0,
+          attemptedAccounts: const [],
         ),
       );
     }
