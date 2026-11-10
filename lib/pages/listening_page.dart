@@ -26,8 +26,12 @@ class ListeningPage extends StatefulWidget {
   State<ListeningPage> createState() => _ListeningPageState();
 }
 
-class _ListeningPageState extends State<ListeningPage> {
+class _ListeningPageState extends State<ListeningPage>
+    with SingleTickerProviderStateMixin {
   final _search = TextEditingController();
+  late final TabController _tabs;
+  Timer? _favoriteSearchTimer;
+  bool _favoriteSearchPaused = false;
   final _busy = [false, false, false, false];
   final List<String?> _errors = [null, null, null, null];
   final _requests = [0, 0, 0, 0];
@@ -51,6 +55,8 @@ class _ListeningPageState extends State<ListeningPage> {
   @override
   void initState() {
     super.initState();
+    _tabs = TabController(length: 5, vsync: this)
+      ..addListener(_searchTabChanged);
     _accountKey = _currentKey;
     _libraryRevision = _runtime.libraryRevision;
     _accountAvailable = _signedIn;
@@ -81,6 +87,8 @@ class _ListeningPageState extends State<ListeningPage> {
   }
 
   void _resetAccount() {
+    _favoriteSearchTimer?.cancel();
+    _favoriteSearchPaused = false;
     _accountKey = _currentKey;
     _libraryRevision = _runtime.libraryRevision;
     _accountAvailable = _signedIn;
@@ -265,8 +273,83 @@ class _ListeningPageState extends State<ListeningPage> {
         setState(() => _errors[3] = _message(error));
       }
     } finally {
-      if (_valid(3, request, epoch, key)) setState(() => _busy[3] = false);
+      if (_valid(3, request, epoch, key)) {
+        setState(() => _busy[3] = false);
+        _scheduleFavoriteSearch();
+      }
     }
+  }
+
+  void _searchTabChanged() {
+    _scheduleFavoriteSearch();
+  }
+
+  void _searchChanged() {
+    setState(() => _favoriteSearchPaused = false);
+    _scheduleFavoriteSearch();
+  }
+
+  void _scheduleFavoriteSearch() {
+    _favoriteSearchTimer?.cancel();
+    if (!mounted ||
+        !_signedIn ||
+        _tabs.index != 3 ||
+        _query.isEmpty ||
+        _favoriteSearchPaused ||
+        _busy[3] ||
+        !_moreFavorites ||
+        _errors[3] != null)
+      return;
+    _favoriteSearchTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted &&
+          _tabs.index == 3 &&
+          _query.isNotEmpty &&
+          !_favoriteSearchPaused) {
+        unawaited(_loadFavorites());
+      }
+    });
+  }
+
+  Widget _favoriteSearchStatus(int matches) {
+    final complete =
+        _favoritePage > 0 && !_moreFavorites && !_busy[3] && _errors[3] == null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        children: [
+          Text(
+            complete
+                ? '已搜索全部 ${_favorites.length} 条收藏，匹配 $matches 条'
+                : '${_favoriteSearchPaused || _errors[3] != null ? '搜索已暂停' : '正在搜索'}：已检索 ${_favorites.length} 条收藏，匹配 $matches 条，尚未检索完整列表',
+          ),
+          if (!complete)
+            TextButton(
+              onPressed: () {
+                final failed = _errors[3] != null;
+                setState(() {
+                  _favoriteSearchPaused =
+                      !_favoriteSearchPaused && _errors[3] == null;
+                  if (!_favoriteSearchPaused) _errors[3] = null;
+                });
+                if (!_favoriteSearchPaused && failed && !_busy[3]) {
+                  unawaited(
+                    _loadFavorites(
+                      reset: !_moreFavorites || _favoritePage == 0,
+                    ),
+                  );
+                } else {
+                  _scheduleFavoriteSearch();
+                }
+              },
+              child: Text(
+                _favoriteSearchPaused || _errors[3] != null ? '继续搜索' : '暂停搜索',
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   bool _active(int epoch, String key, String identity) =>
@@ -752,7 +835,13 @@ class _ListeningPageState extends State<ListeningPage> {
         itemCount: items.length + 2 + (_moreFavorites ? 1 : 0),
         itemBuilder: (_, index) {
           if (index == 0)
-            return _sectionState(3, () => _loadFavorites(reset: true));
+            return Column(
+              children: [
+                _sectionState(3, () => _loadFavorites(reset: true)),
+                if (_signedIn && _query.isNotEmpty)
+                  _favoriteSearchStatus(items.length),
+              ],
+            );
           if (index == 1) {
             return items.isEmpty
                 ? _empty(
@@ -760,7 +849,12 @@ class _ListeningPageState extends State<ListeningPage> {
                         ? '登录后查看收藏'
                         : _query.isEmpty
                         ? '暂无收藏'
-                        : '没有匹配的收藏',
+                        : _moreFavorites ||
+                              _busy[3] ||
+                              _errors[3] != null ||
+                              _favoritePage == 0
+                        ? '已加载收藏中没有匹配项'
+                        : '全部收藏中没有匹配项',
                   )
                 : const SizedBox.shrink();
           }
@@ -869,7 +963,7 @@ class _ListeningPageState extends State<ListeningPage> {
                     Expanded(
                       child: TextField(
                         controller: _search,
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (_) => _searchChanged(),
                         decoration: const InputDecoration(
                           hintText: '搜索更新、订阅、历史、收藏和书签',
                           prefixIcon: Icon(Icons.search),
@@ -890,11 +984,12 @@ class _ListeningPageState extends State<ListeningPage> {
                 ),
               ),
             ),
-            const SliverToBoxAdapter(
+            SliverToBoxAdapter(
               child: TabBar(
+                controller: _tabs,
                 isScrollable: true,
                 tabAlignment: TabAlignment.start,
-                tabs: [
+                tabs: const [
                   Tab(text: '听更新'),
                   Tab(text: '订阅'),
                   Tab(text: '历史'),
@@ -907,6 +1002,7 @@ class _ListeningPageState extends State<ListeningPage> {
               const SliverToBoxAdapter(child: LinearProgressIndicator()),
           ],
           body: TabBarView(
+            controller: _tabs,
             children: [
               _updatesTab(),
               _subscriptionsTab(),
@@ -923,6 +1019,9 @@ class _ListeningPageState extends State<ListeningPage> {
   @override
   void dispose() {
     ++_accountEpoch;
+    _favoriteSearchTimer?.cancel();
+    _tabs.removeListener(_searchTabChanged);
+    _tabs.dispose();
     _runtime.removeListener(_runtimeChanged);
     _search.dispose();
     super.dispose();
