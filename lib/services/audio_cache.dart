@@ -1041,13 +1041,15 @@ class AudioCache {
   ) async* {
     if (start < 0 || (endExclusive != null && endExclusive < start))
       throw RangeError('Invalid audio range');
-    _resume();
+    // A retained playback URL may read cached bytes while paused, but only an
+    // explicit ensureComplete() from the download owner may restart production.
+    if (!_paused || _closed) _resume();
     var initialGeneration = _generation;
     var offset = start;
     while (!cancelled.isCompleted &&
         (endExclusive == null || offset < endExclusive)) {
       final changed = _changed.future;
-      _checkState();
+      if (!_paused || _closed) _checkState();
       if (_generation != initialGeneration) {
         if (offset != start)
           throw const XmlyException('cache_source_changed', '音频来源已变化，请重新打开');
@@ -1059,7 +1061,8 @@ class AudioCache {
         break;
       }
       final index = offset ~/ blockSize;
-      if (!_validated || !_blocks.containsKey(index)) _need(index).ignore();
+      if (!_paused && (!_validated || !_blocks.containsKey(index)))
+        _need(index).ignore();
       int available = 0;
       File? file;
       if (_validated && _blocks.containsKey(index)) {
@@ -1071,6 +1074,7 @@ class AudioCache {
       }
       final within = offset % blockSize;
       if (file == null || available <= within) {
+        _checkState();
         await Future.any([changed, cancelled.future]);
         continue;
       }
