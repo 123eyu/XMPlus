@@ -108,15 +108,23 @@ class _PlayerPanelState extends State<PlayerPanel> {
     }
     final player = _runtime.player;
     if (player.current == null) return KeyEventResult.ignored;
+    final canPause = player.playing || player.loading;
     final command = switch (event.logicalKey) {
-      LogicalKeyboardKey.space => player.playing ? player.pause : player.resume,
+      LogicalKeyboardKey.space => canPause ? player.pause : player.resume,
       LogicalKeyboardKey.arrowLeft => player.seekBackward,
       LogicalKeyboardKey.arrowRight => player.seekForward,
       _ => null,
     };
     if (command == null) return KeyEventResult.ignored;
     // One command per press; repeats must not toggle or enqueue more seeks.
-    if (event is KeyDownEvent && !_busy) unawaited(_act(command));
+    if (event is KeyDownEvent) {
+      unawaited(
+        _act(
+          command,
+          interrupt: event.logicalKey == LogicalKeyboardKey.space && canPause,
+        ),
+      );
+    }
     return KeyEventResult.handled;
   }
 
