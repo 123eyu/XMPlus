@@ -43,15 +43,26 @@ class XmlyCatalogue {
     for (final value in [track.orderNo, track.raw['order_no'], track.raw['orderNo'], track.raw['orderNum'], track.raw['sequence'], track.raw['index'], track.episode]) {
       try { return episodeNumber(value); } on XmlyException { /* Try the next original ordinal field. */ }
     }
-    return titleEpisode(track);
+    return null;
   }
   static Track selectEpisode(List<Track> items, Object episode) {
     final number = episodeNumber(episode);
-    final titled = items.any((item) => titleEpisode(item) != null);
-    final matches = items.where((item) => (titled ? titleEpisode(item) : _itemOrder(item)) == number).toList();
-    if (matches.length > 1) throw const XmlyException('ambiguous_episode', '该集数对应多个声音，请直接选择声音', definitive: true);
-    if (matches.isEmpty) throw const XmlyException('episode_not_found', '专辑中没有找到该集', definitive: true);
-    return matches.single;
+    for (final parse in const [titleEpisode, _itemOrder]) {
+      var hasEpisodes = false;
+      Track? match;
+      for (final item in items) {
+        final value = parse(item);
+        if (value == null) continue;
+        hasEpisodes = true;
+        if (value != number) continue;
+        if (match != null) throw const XmlyException('ambiguous_episode', '该集数对应多个声音，请直接选择声音', definitive: true);
+        match = item;
+      }
+      if (match != null) return match;
+      // Official ordinals are a fallback only if no title supplies an episode.
+      if (hasEpisodes) break;
+    }
+    throw const XmlyException('episode_not_found', '专辑中没有找到该集', definitive: true);
   }
   Future<List<Track>> album(String albumId, {int pageSize = xmlyAlbumPageSize}) async {
     if (!RegExp(r'^[1-9][0-9]{0,18}$').hasMatch(albumId)) throw const XmlyException('invalid_id', '专辑 ID 必须是正整数', definitive: true);

@@ -33,7 +33,7 @@ class ArchiveImport {
     this._owner,
     this.sameOrigin,
     List<String> summary,
-    List<String> missingDirectories,
+    Iterable<String> missingDirectories,
   ) : summary = List.unmodifiable(summary),
       missingDirectories = List.unmodifiable(missingDirectories);
   final String _payload;
@@ -256,20 +256,18 @@ class ConfigArchive {
     }
 
     await roots(payload);
+    final sameOrigin = payload['meta.json']['origin'] == _origin;
     final summary = <String>[
       if (payload.containsKey('setting.json')) '替换应用设置',
       if (payload.containsKey('library.json')) '替换本地书签',
       if (account != null)
         '合并 ${(account['accounts'] as List).length} 个账号及账本，未完成任务保持暂停',
-      if (account?['downloads'] != null &&
-          payload['meta.json']['origin'] == _origin)
-        '保留本机仍存在的已完成音频关联',
+      if (account?['downloads'] != null && sameOrigin) '保留本机仍存在的已完成音频关联',
       if (account != null) '现有未确认扣时和已确认收据不会删除',
       if (account?['downloads'] != null ||
           (payload['library.json'] as Map?)?['downloads'] != null)
         '恢复下载记录及整专辑分页进度，任务保持暂停并需重新确认',
-      if (account != null && payload['meta.json']['origin'] != _origin)
-        '其他资料目录的下载收据仅作历史，不抵扣新下载',
+      if (account != null && !sameOrigin) '其他资料目录的下载收据仅作历史，不抵扣新下载',
       if ((payload['setting.json'] as Map?)?.containsKey('autoDownloads') ==
           true)
         '自动下载新声音需在本机重新开启',
@@ -278,9 +276,9 @@ class ConfigArchive {
     return ArchiveImport._(
       jsonEncode(payload),
       this,
-      payload['meta.json']['origin'] == _origin,
+      sameOrigin,
       summary,
-      missing.toList(),
+      missing,
     );
   }
 
@@ -295,7 +293,7 @@ class ConfigArchive {
     (payload['setting.json'] as Map?)?.remove('autoDownloads');
     Future<void> relocate(Object? node) async {
       if (node is Map) {
-        for (final key in node.keys.toList()) {
+        for (final key in node.keys) {
           final value = node[key];
           if (_rootKeys.contains(key) && value is String && value.isNotEmpty) {
             final replacement = relocatedRoots[value];

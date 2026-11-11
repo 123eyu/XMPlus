@@ -59,10 +59,7 @@ class MediaProcessor {
     '$name${Platform.isWindows ? '.exe' : ''}',
   );
 
-  Future<void> checkTools({Future<void> Function()? checkpoint}) =>
-      _checkTools(checkpoint);
-
-  Future<void> _checkTools(Future<void> Function()? checkpoint) async {
+  Future<void> checkTools({Future<void> Function()? checkpoint}) async {
     for (final entry in [(ffmpegPath, 'ffmpeg'), (ffprobePath, 'ffprobe')]) {
       final output = await _run(
         entry.$1,
@@ -193,7 +190,7 @@ class MediaProcessor {
   ) async {
     await checkpoint?.call();
     final source = await _localFile(sourcePath);
-    await _checkTools(checkpoint);
+    await checkTools(checkpoint: checkpoint);
     final input = await _probe(source, checkpoint);
     await _decode(source, checkpoint);
     final expectedDuration = task.track.duration;

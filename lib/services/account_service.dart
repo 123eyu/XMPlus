@@ -172,8 +172,9 @@ class AccountService {
     String? recoveryIdentity,
   }) => _accounts.synchronized(() async {
     _ensureLoaded();
+    final identity = credentials.identity;
     if (recoveryIdentity != null &&
-        (credentials.identity != recoveryIdentity ||
+        (identity != recoveryIdentity ||
             (!_missingCredentials.contains(recoveryIdentity) &&
                 !_clients.containsKey(recoveryIdentity)))) {
       throw const AccountException(
@@ -185,9 +186,9 @@ class AccountService {
     // switch. Explicit recovery also permits renewing a backup account.
     final recovering =
         recoveryIdentity != null ||
-        (_clients.containsKey(credentials.identity) &&
-            storage.state['activeAccountId'] == credentials.identity &&
-            (!makePrimary || primaryAccountId == credentials.identity));
+        (_clients.containsKey(identity) &&
+            storage.state['activeAccountId'] == identity &&
+            (!makePrimary || primaryAccountId == identity));
     // A candidate is never mounted during validation.
     final candidate = XmlyClient(credentials: credentials);
     var committed = false;
@@ -197,12 +198,10 @@ class AccountService {
       if (quota.remainingSeconds < 0) {
         throw const AccountException('quota_invalid', '无法核验账号可用听时');
       }
-      if ((storage.state['accounts'] as Map).containsKey(
-        credentials.identity,
-      )) {
+      if ((storage.state['accounts'] as Map).containsKey(identity)) {
         // New admissions remain locked; only existing same-identity usage
         // can use the verified token revision while the old token expires.
-        _settlementClients[credentials.identity] = candidate;
+        _settlementClients[identity] = candidate;
       }
       if (recovering && quiesceForRestore != null) {
         // Repair only this identity's credential. Unknown operations remain
@@ -218,7 +217,6 @@ class AccountService {
         }
         await _prepareChange();
       }
-      final identity = credentials.identity;
       final previous = (storage.state['accounts'] as Map)[identity] as Map?;
       final oldRef = previous?['credentialRef'] as String?;
       newRef = '$_prefix$identity.${const Uuid().v4()}';
@@ -268,7 +266,7 @@ class AccountService {
       committed = true;
       await _replaceClient(candidate);
     } finally {
-      _settlementClients.remove(credentials.identity);
+      _settlementClients.remove(identity);
       if (!committed) candidate.close();
       // No old key is ever deleted before a successful reference commit.
       if (newRef != null) await _cleanupSecrets();

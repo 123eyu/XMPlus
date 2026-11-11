@@ -154,7 +154,7 @@ class AutoDownloadService {
     if (all is! Map) return;
     for (final entry in all.entries) {
       if (entry.key is! String || entry.value is! Map) continue;
-      for (final album in (entry.value as Map).keys.toList()) {
+      for (final album in (entry.value as Map).keys) {
         if (_closed || _suspended || generation != _generation) return;
         if (album is String) await scanAlbum(entry.key as String, album);
       }
@@ -261,23 +261,28 @@ class AutoDownloadService {
     return value.cast<String>().toSet();
   }
 
+  static const _invalidCatalogue = XmlyException(
+    'auto_catalogue',
+    '专辑列表不完整，自动下载已停止',
+  );
+
   static Map<String, Track> _pending(Object? value, String albumId) {
     if (value is! List)
       throw const XmlyException('auto_invalid', '自动下载资料无效，请关闭后重新开启');
-    return {
-      for (final item in value)
-        for (final track in _catalogue([
-          Track.fromJson(Map<String, dynamic>.from(item as Map)),
-        ], albumId))
-          track.id: track,
-    };
+    final pending = <String, Track>{};
+    for (final item in value) {
+      final track = Track.fromJson(Map<String, dynamic>.from(item as Map));
+      if (track.albumId != albumId) throw _invalidCatalogue;
+      pending[track.id] = track;
+    }
+    return pending;
   }
 
   static List<Track> _catalogue(List<Track> tracks, String albumId) {
+    final ids = <String>{};
     if (tracks.length > 5000 ||
-        tracks.any((track) => track.albumId != albumId) ||
-        tracks.map((track) => track.id).toSet().length != tracks.length) {
-      throw const XmlyException('auto_catalogue', '专辑列表不完整，自动下载已停止');
+        tracks.any((track) => track.albumId != albumId || !ids.add(track.id))) {
+      throw _invalidCatalogue;
     }
     return tracks;
   }
