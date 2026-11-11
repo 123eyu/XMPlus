@@ -391,15 +391,16 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     } catch (error) {
       if (mounted) {
         setState(() {
-          _error = '历史同步失败，进度已保留';
-          if (error is XmlyException) {
-            _historyResult = switch (error.code) {
-              'history_unconfirmed' => '部分进度未获确认，请稍后手动重试',
-              'history_unavailable' => '请先登录并开启历史同步',
-              'history_interrupted' => '账号或同步设置已变更，请重新操作',
-              _ => null,
-            };
+          final code = error is XmlyException ? error.code : null;
+          if (code != 'history_unavailable' && code != 'history_interrupted') {
+            _error = '历史同步失败，进度已保留';
           }
+          _historyResult = switch (code) {
+            'history_unconfirmed' => '部分进度未获确认，请稍后手动重试',
+            'history_unavailable' => '请先登录并开启历史同步',
+            'history_interrupted' => '账号或同步设置已变更，请重新操作',
+            _ => null,
+          };
         });
       }
     } finally {

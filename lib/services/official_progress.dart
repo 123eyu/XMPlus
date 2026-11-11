@@ -216,13 +216,8 @@ class OfficialProgress {
       }
       return;
     }
-    bool interrupted() {
-      if (_enabled() && identical(client, _client())) return false;
-      if (retry) {
-        throw const XmlyException('history_interrupted', '账号或同步设置已变更，请重新操作');
-      }
-      return true;
-    }
+    bool sameClient() => identical(client, _client());
+    bool active() => _enabled() && sameClient();
 
     final identity = client.identity;
     final history = XmlyHistory(client, clock: _clock);
@@ -230,7 +225,7 @@ class OfficialProgress {
     final pending = _copy(_readPending(identity));
     var failed = false, unconfirmed = false;
     for (final key in pending.keys) {
-      if (interrupted()) return;
+      if (!active()) break;
       final raw = pending[key];
       if (raw is! Map<String, dynamic> || raw['identity'] != identity) {
         failed = true;
@@ -249,7 +244,8 @@ class OfficialProgress {
           await _savePending(identity, current);
           return true;
         });
-        if (!marked || interrupted()) continue;
+        if (!active()) break;
+        if (!marked) continue;
         final track = Track.fromJson(entry['track'] as Map<String, dynamic>);
         final position = (entry['position'] as num).toDouble();
         final started = entry['started_at_ms'] as int;
@@ -262,18 +258,16 @@ class OfficialProgress {
           _error = '部分声音缺少专辑信息，已保留待同步记录；其他进度继续同步';
           continue;
         }
-        final official = await history.progress(
-          albumId: album,
-          trackId: album.isEmpty ? track.id : '',
-        );
-        if (interrupted()) return;
+        final official = await history.progress(albumId: album);
+        if (!active()) break;
         if (official != null &&
             (official['updated_at'] as num) * 1000 > ended) {
           await _removeIfUnchanged(identity, key, entry);
           continue;
         }
         await history.sync(track, position, started, ended);
-        if (interrupted()) return;
+        // Revoking consent blocks new writes, not cleanup of an existing ACK.
+        if (!sameClient()) break;
         await _removeIfUnchanged(identity, key, entry);
         _lastSyncedAt = ended;
       } on Exception catch (error) {
@@ -290,8 +284,13 @@ class OfficialProgress {
         _error = '待同步声音或进度信息无效，已保留记录；其他进度继续同步';
       }
     }
-    if (interrupted()) return;
-    if (_readPending(identity).isEmpty) _error = '';
+    if (sameClient() && _readPending(identity).isEmpty) _error = '';
+    if (!active()) {
+      if (retry) {
+        throw const XmlyException('history_interrupted', '账号或同步设置已变更，请重新操作');
+      }
+      return;
+    }
     if (retry && failed) {
       throw XmlyException(
         unconfirmed ? 'history_unconfirmed' : 'history_sync_failed',
