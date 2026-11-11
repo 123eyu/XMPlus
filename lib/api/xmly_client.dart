@@ -22,6 +22,7 @@ class XmlyClient {
   static const searchOrigin = 'https://www.ximalaya.com';
   static const collector = 'https://xdcs-collector.ximalaya.com';
   static const welfare = 'https://m.ximalaya.com';
+  static const paidOrigin = 'https://mpaywsa.ximalaya.com';
   static const _maxResponse = 2 * 1024 * 1024;
   static const _maxCachedAlbumResponse = 16 * 1024 * 1024;
   static const _qualities = ['m4a_128', 'm4a_64', 'mp3_64', 'mp3_32', 'm4a_24'];
@@ -64,6 +65,7 @@ class XmlyClient {
   }
   String get identity => credentials?.identity ?? 'anonymous';
   String get cacheIdentity => credentials?.cacheIdentity ?? 'anonymous';
+
   /// Serializes balance mutations for one account/device, including clients
   /// using refreshed credentials. Callers acquire account/ledger locks first.
   Future<T> withBalanceChange<T>(Future<T> Function() action) async {
@@ -76,6 +78,7 @@ class XmlyClient {
       if (--changes.users == 0) _balanceChanges.remove(key);
     }
   }
+
   bool get accountAvailable => credentials != null && !_expired;
   Map<String, String> context() {
     final value = _requireAccount();
@@ -113,6 +116,10 @@ class XmlyClient {
   static bool _endpoint(String method, String origin, String path) {
     if (origin == cachedAlbumOrigin)
       return _cachedAlbumEndpoint(method, origin, path);
+    if (origin == paidOrigin)
+      return method == 'GET' &&
+          RegExp(r'^/mobile/track/pay/[1-9][0-9]{0,18}/ts-[0-9]+$')
+              .hasMatch(path);
     if (origin == searchOrigin)
       return method == 'GET' &&
           const {
@@ -1257,6 +1264,51 @@ class XmlyClient {
     return value;
   }
 
+  /// Validate a full paid authorization before it can enter the normal media
+  /// probe/cache path. Sample metadata may coexist with an authorized full file.
+  static ({Uri uri, String quality}) paidAudio(
+    Map<String, dynamic> metadata, {
+    required String trackId,
+    required String albumId,
+    required String uid,
+  }) {
+    if (metadata['ret'] != 0)
+      throw const XmlyException(
+        'permission_denied',
+        '未获得付费声音的完整权限',
+        definitive: true,
+      );
+    _matchingId(metadata, xmlyIdentifier(trackId));
+    if ('${metadata['albumId'] ?? ''}' != xmlyIdentifier(albumId))
+      throw const XmlyException(
+        'id_mismatch',
+        '返回的专辑 ID 不匹配',
+        definitive: true,
+      );
+    if (metadata['isAuthorized'] != true)
+      throw const XmlyException(
+        'permission_denied',
+        '未获得付费声音的完整权限',
+        definitive: true,
+      );
+    if (metadata['isPreview'] == true || metadata['isTrial'] == true)
+      throw const XmlyException(
+        'preview_only',
+        '仅获得试听音频，不能下载完整声音',
+        definitive: true,
+      );
+    final uri = mediaUri(XmlyCrypto.paidMediaUrl(metadata, uid: uid));
+    if (uri.path.toLowerCase().contains('_preview_'))
+      throw const XmlyException(
+        'preview_only',
+        '仅获得试听音频，不能下载完整声音',
+        definitive: true,
+      );
+    // Official parseChargeJsonAndGetUrl selects the default 64-kbit resource,
+    // not the requested quality or highestQualityLevel (which is only a ceiling).
+    return (uri: uri, quality: uri.path.endsWith('.m4a') ? 'm4a_64' : 'mp3_64');
+  }
+
   static final _mediaRedirectPath = RegExp(
     r'^/mobile/redirect/free/play/[1-9][0-9]{0,18}(?:/[01])?$',
   );
@@ -1688,6 +1740,7 @@ class XmlyClient {
         '仅获得试听音频，不能下载完整声音',
         definitive: true,
       );
+    final track = _withCatalogueMetadata(Track.fromApi(info));
     final candidates = <String, Uri>{};
     void add(String type, Object? value, {bool encrypted = false}) {
       if (value is! String || value.isEmpty || candidates.containsKey(type))
@@ -1727,6 +1780,23 @@ class XmlyClient {
         }
       }
     }
+    if (candidates.isEmpty &&
+        accountAvailable &&
+        (info['isPaid'] ?? info['is_paid']) != false) {
+      final metadata = await request(
+        'GET',
+        paidOrigin,
+        '/mobile/track/pay/$number/ts-${DateTime.now().millisecondsSinceEpoch}',
+        query: {'device': 'android'},
+      );
+      final paid = paidAudio(
+        metadata,
+        trackId: number,
+        albumId: track.albumId,
+        uid: _requireAccount().uid,
+      );
+      candidates[paid.quality] = paid.uri;
+    }
     if (candidates.isEmpty)
       throw const XmlyException(
         'permission_denied',
@@ -1756,7 +1826,6 @@ class XmlyClient {
       }
       if (evictedVerified || cached?.verified == true) _saveUrlCache();
     }
-    final track = _withCatalogueMetadata(Track.fromApi(info));
     _remember(track);
     if (!_closed &&
         !_expired &&
