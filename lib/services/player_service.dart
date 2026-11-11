@@ -1791,8 +1791,11 @@ class PlayerService {
   }
 
   Future<void> retryHistory() async {
-    await _official.flush(retry: true);
-    _notify();
+    try {
+      await _official.flush(retry: true);
+    } finally {
+      _notify();
+    }
   }
 
   Future<void> setMasterVolume(double value) =>

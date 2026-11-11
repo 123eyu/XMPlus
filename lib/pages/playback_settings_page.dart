@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../common/widgets/local_panel.dart';
+import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
 import '../services/playback_policy.dart';
 import 'playback_volume_control.dart';
@@ -120,6 +121,7 @@ class PlaybackSettingsPage extends StatefulWidget {
 class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
   bool _busy = false;
   String? _error;
+  String? _historyResult;
   final Map<String, double> _drafts = {};
 
   Map get _settings => widget.runtime.storage.state['settings'] as Map;
@@ -376,6 +378,35 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     await _save('syncHistory', value);
   }
 
+  Future<void> _retryHistory() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+      _historyResult = null;
+    });
+    try {
+      await widget.runtime.player.retryHistory();
+      if (mounted) setState(() => _historyResult = '历史同步完成');
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = '历史同步失败，进度已保留';
+          if (error is XmlyException) {
+            _historyResult = switch (error.code) {
+              'history_unconfirmed' => '部分进度未获确认，请稍后手动重试',
+              'history_unavailable' => '请先登录并开启历史同步',
+              'history_interrupted' => '账号或同步设置已变更，请重新操作',
+              _ => null,
+            };
+          }
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _downloadOption(String key, bool value) async {
     if (_busy) return;
     setState(() {
@@ -572,17 +603,11 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                       ),
                       ListTile(
                         title: const Text('重试历史同步'),
-                        trailing: const Icon(Icons.sync),
-                        onTap: _busy
+                        subtitle: _historyResult == null
                             ? null
-                            : () async {
-                                try {
-                                  await widget.runtime.player.retryHistory();
-                                } catch (_) {
-                                  if (mounted)
-                                    setState(() => _error = '历史同步失败，进度已保留');
-                                }
-                              },
+                            : Text(_historyResult!),
+                        trailing: const Icon(Icons.sync),
+                        onTap: _busy ? null : _retryHistory,
                       ),
                     ]),
                     _section('下载与定时', [
