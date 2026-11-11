@@ -353,7 +353,10 @@ class UsageLedger {
       await _recover(identity);
       _guard(identity);
       final quota = await clientFor(identity).queryQuota();
-      if (quota.remainingSeconds - debt(identity) <= 0) throw _insufficient;
+      final newDevice = quota.newDevice && quota.remainingSeconds == 0;
+      if (!newDevice && quota.remainingSeconds - debt(identity) <= 0) {
+        throw _insufficient;
+      }
       _watch = _Listening(identity, normalized, speed, _monotonic());
     });
   });
@@ -503,7 +506,8 @@ class UsageLedger {
       final amount = seconds > maxSeconds ? maxSeconds : seconds;
       await clientFor(identity).withBalanceChange(() async {
         final quota = await clientFor(identity).queryQuota();
-        if (quota.remainingSeconds < amount) throw _insufficient;
+        final newDevice = quota.newDevice && quota.remainingSeconds == 0;
+        if (!newDevice && quota.remainingSeconds < amount) throw _insufficient;
         final operation = <String, dynamic>{
           'operationId': const Uuid().v4(),
           'accountIdentity': identity,
@@ -558,7 +562,11 @@ class UsageLedger {
                     .debitSeconds(operation['seconds'] as int))
                 .remainingSeconds;
     } catch (error) {
-      if (error is XmlyException && error.definitive) {
+      // A generic rejection is not operation-specific proof for a report on
+      // a device without a balance bucket. Keep its journal replay-blocking.
+      if (error is XmlyException &&
+          error.definitive &&
+          !(online && balanceBefore == 0)) {
         try {
           await _finish(
             identity,
@@ -576,6 +584,7 @@ class UsageLedger {
       throw _uncertain;
     }
     operation['balanceAfter'] = balanceAfter;
+    // A new-device flag describes quota, not whether this report was applied.
     if (!freeDay && balanceBefore - balanceAfter != operation['seconds']) {
       await _markUncertain(identity, operation, online: online);
       throw _uncertain;
@@ -677,6 +686,14 @@ class UsageLedger {
     // in the official app must remain saveable when that query is unavailable.
     // Validate the mounted identity without making another network request.
     queryClient(identity);
+    // A report may be accepted without deducting anything on a new device.
+    // Neither manual balance-based answer proves whether it was applied.
+    if (online && operation['balanceBefore'] == 0) {
+      throw const XmlyException(
+        'usage_uncertain',
+        '新设备没有可核对的余额变动，已保留听时记录，不会重复上报',
+      );
+    }
     await _finish(
       identity,
       operation,

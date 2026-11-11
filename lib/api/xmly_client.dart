@@ -1548,6 +1548,54 @@ class XmlyClient {
     }
   });
 
+  /// Only for a task with a matching, confirmed, non-historical debit receipt.
+  /// Reuses an already verified lease; never obtains a new authorization.
+  Future<ResolvedAudio?> cachedPrepaidAudio(
+    String trackId, {
+    String? quality,
+  }) => _resolveLock.synchronized(() async {
+    final requestedQuality = quality ?? this.quality;
+    if (requestedQuality != 'auto' && !_qualities.contains(requestedQuality)) {
+      throw const XmlyException('invalid_quality', '音质设置无效', definitive: true);
+    }
+    final number = xmlyIdentifier(trackId);
+    final epoch = _urlEpoch;
+    await _urlCacheReady;
+    if (_closed || !accountAvailable || epoch != _urlEpoch) return null;
+    for (final candidateQuality
+        in requestedQuality == 'auto' ? _qualities : [requestedQuality]) {
+      final key = _urlKey(number, candidateQuality);
+      final entry = _urls[key];
+      if (entry == null ||
+          !entry.verified ||
+          entry.authorizedTrack == null ||
+          entry.requiresReward != true ||
+          (entry.deadline != null &&
+              !entry.deadline!.isAfter(DateTime.now()))) {
+        continue;
+      }
+      final track = entry.authorizedTrack!;
+      final ResolvedAudio audio;
+      try {
+        audio = await _resolvedAudio(entry, track, true);
+      } on XmlyException catch (error) {
+        if (error.code == 'media_unauthorized') return null;
+        rethrow;
+      }
+      if (_closed ||
+          !accountAvailable ||
+          epoch != _urlEpoch ||
+          !identical(_urls[key], entry) ||
+          (entry.deadline != null &&
+              !entry.deadline!.isAfter(DateTime.now()))) {
+        return null;
+      }
+      _remember(track);
+      return audio;
+    }
+    return null;
+  });
+
   Future<ResolvedAudio> _resolveOnce(
     String trackId, {
     required bool force,
@@ -1905,6 +1953,13 @@ class XmlyClient {
         return audio;
       } catch (error) {
         cancel.cancel();
+        if (error is XmlyException &&
+            error.code == 'media_unauthorized' &&
+            identical(_urls[key], entry)) {
+          // A rejected track authorization cannot fall back to a cached
+          // sibling quality. Revoke even if the caller stopped the probe.
+          _invalidateUrls(entry.number);
+        }
         if (_closed || policy?.stopped == true) {
           // A cancelled read must not wait for the diagnostic disk queue before
           // releasing its caller. Preserve the failure record independently.
