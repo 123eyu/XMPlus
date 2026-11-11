@@ -205,9 +205,11 @@ class PlaybackPolicy {
     double actualPosition, {
     double? duration,
     bool completed = false,
+    bool allowCompletion = true,
   }) {
-    if (!_started || _finished) return false;
+    if (!_started) return false;
     if (duration != null) _duration = _knownDuration(duration);
+    if (_finished || !allowCompletion) return false;
     final atEnd =
         actualPosition.isFinite && _duration > 0 && actualPosition >= _duration;
     final atOutro =

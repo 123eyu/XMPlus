@@ -719,7 +719,7 @@ class PlayerService {
     return (position: saved.toDouble(), updatedAt: updated);
   }
 
-  Future<double> _resumePosition(Track track) async {
+  Future<double> _resumePosition(Track track, int request) async {
     final local = _localProgress(track);
     final client = _historyClient;
     if (!_syncHistory || client == null) return local?.position ?? 0;
@@ -732,15 +732,17 @@ class PlayerService {
       if (cloud != null &&
           (local == null ||
               (cloud['updated_at'] as num) * 1000 > local.updatedAt)) {
-        if (cloud['incomplete'] == true) {
+        if (request == _request && cloud['incomplete'] == true) {
           _sourceWarning = '云历史查询较慢，已使用本次查到的最新进度';
         }
         return (cloud['position'] as num).toDouble();
       }
     } catch (_) {
-      _sourceWarning = local == null
-          ? '云进度暂不可用，将从片头开始'
-          : '云进度暂不可用，已使用本地进度';
+      if (request == _request) {
+        _sourceWarning = local == null
+            ? '云进度暂不可用，将从片头开始'
+            : '云进度暂不可用，已使用本地进度';
+      }
     }
     return local?.position ?? 0;
   }
@@ -824,7 +826,7 @@ class PlayerService {
     try {
       final resume =
           saved ??
-          await _admission(request, () => _resumePosition(track)) ??
+          await _admission(request, () => _resumePosition(track, request)) ??
           0.0;
       if (request != _request) {
         await _release();
@@ -1400,13 +1402,12 @@ class PlayerService {
     }
     // Opening/seeking can emit a paused position before the first real play.
     // Such a snapshot must not consume this chapter's completion event.
-    final finished =
-        _actual &&
-        policy.observe(
-          position,
-          duration: duration,
-          completed: snapshot.completed,
-        );
+    final finished = policy.observe(
+      position,
+      duration: duration,
+      completed: snapshot.completed,
+      allowCompletion: _actual,
+    );
     if (finished && !_atEnd)
       await _finish();
     else
@@ -1451,7 +1452,8 @@ class PlayerService {
   Future<void> _finish() async {
     _atEnd = true;
     // Completion owns advancement even when its page was prefetched before a seek.
-    _endAdvanceIntent = _advanceIntent;
+    final intent = _advanceIntent;
+    _endAdvanceIntent = intent;
     _endSeekPosition = null;
     final sleep = policy.onChapterEnd();
     if (sleep != null) {
@@ -1459,7 +1461,7 @@ class PlayerService {
       return;
     }
     await _pause();
-    if (_manualPaused) return;
+    if (_manualPaused || intent != _advanceIntent) return;
     if (effectiveSettings.loopMode == 'single') {
       await _openCurrent(_newRequest(), resumePosition: 0);
       return;
@@ -1474,7 +1476,7 @@ class PlayerService {
           _tailRequest == _request;
       if (pending || _checkedEpochs.add(_epoch)) {
         // _finish owns _commands; the tail takes that lock only to commit.
-        final epoch = _epoch, request = _request, intent = _advanceIntent;
+        final epoch = _epoch, request = _request;
         final expectedGeneration = generation, album = sourceAlbumId;
         unawaited(() async {
           try {
@@ -1668,6 +1670,7 @@ class PlayerService {
           status = added.isEmpty ? '已听到最新一集' : '已更新 ${added.length} 集';
           _notify();
           if (_atEnd &&
+              active() &&
               _epoch == endEpoch &&
               _endAdvanceIntent == _advanceIntent &&
               current?.id == last.id &&
