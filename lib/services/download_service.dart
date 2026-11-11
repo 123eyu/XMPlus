@@ -764,7 +764,30 @@ class DownloadService {
           Future<DownloadBatchItem> read(XmlyClient client) async {
             await checkpoint?.call();
             await control?.checkpoint();
-            if (candidate != 'anonymous' && refreshed.add(candidate)) {
+            final receipt = _receipt(
+              candidate,
+              selection.taskId,
+              selection.track.id,
+            );
+            final quality =
+                (settings['download'] as Map?)?['quality'] as String?;
+            final cached =
+                receipt == null || _freshResolves.contains(selection.taskId)
+                ? null
+                : await readRequests(
+                    client,
+                    settings,
+                    () => client.cachedPrepaidAudio(
+                      selection.track.id,
+                      quality: quality,
+                    ),
+                    control: control,
+                    cancelled: cancelled,
+                    checkpoint: checkpoint,
+                  );
+            if (cached == null &&
+                candidate != 'anonymous' &&
+                refreshed.add(candidate)) {
               await readRequests(
                 client,
                 settings,
@@ -775,23 +798,17 @@ class DownloadService {
               );
             }
             await control?.checkpoint();
-            final audio = await readRequests(
-              client,
-              settings,
-              () => client.resolve(
-                selection.track.id,
-                quality: (settings['download'] as Map?)?['quality'] as String?,
-              ),
-              control: control,
-              cancelled: cancelled,
-              checkpoint: checkpoint,
-            );
+            final audio =
+                cached ??
+                await readRequests(
+                  client,
+                  settings,
+                  () => client.resolve(selection.track.id, quality: quality),
+                  control: control,
+                  cancelled: cancelled,
+                  checkpoint: checkpoint,
+                );
             _identity(audio, candidate, selection.track.id);
-            final receipt = _receipt(
-              candidate,
-              selection.taskId,
-              selection.track.id,
-            );
             final seconds = _reward(audio) && receipt == null
                 ? _fee(audio.track)
                 : 0;
@@ -1372,14 +1389,19 @@ class DownloadService {
       );
     }
     if (reacquire) {
-      final client = item.accountIdentity == 'anonymous'
-          ? anonymous
-          : accounts.clientFor(item.accountIdentity);
-      await discardSource?.call(item);
-      // A failed source can still have a valid, non-expiring URL lease. Revoke
-      // only this account/track before admitting the explicit replacement.
-      client.invalidate(item.track.id);
-      await client.flushUrlCache();
+      Future<void> revoke(XmlyClient client) async {
+        await discardSource?.call(item);
+        // Revoke all qualities for just this account/track, including leases
+        // with no known expiry, before allowing an explicit replacement.
+        client.invalidate(item.track.id);
+        await client.flushUrlCache();
+      }
+
+      if (item.accountIdentity == 'anonymous') {
+        await revoke(anonymous);
+      } else {
+        await accounts.runWithAccount(item.accountIdentity, revoke);
+      }
       await _change(id, (value) => value.copyWith(processingFailed: false));
       _freshResolves.add(id);
     }
@@ -1877,8 +1899,22 @@ class DownloadService {
               )) {
         throw const XmlyException('usage_uncertain', '请先核对本集未确认的听时扣除');
       }
+      final previous = _receipt(current.accountIdentity, id, current.track.id);
+      final fresh = _freshResolves.contains(id);
+      final quality =
+          (current.settings['download'] as Map?)?['quality'] as String?;
+      final cached = previous == null || fresh
+          ? null
+          : await readRequests(
+              client,
+              current.settings,
+              () =>
+                  client.cachedPrepaidAudio(current.track.id, quality: quality),
+              control: control,
+            );
+      await control.checkpoint();
       int? expectedBalance = current.expectedBalance;
-      if (current.accountIdentity != 'anonymous') {
+      if (cached == null && current.accountIdentity != 'anonymous') {
         final claimed = await readRequests(
           client,
           current.settings,
@@ -1908,23 +1944,23 @@ class DownloadService {
         }
         await control.checkpoint();
       }
-      final audio = await readRequests(
-        client,
-        current.settings,
-        () => client.resolve(
-          current.track.id,
-          quality:
-              (current.settings['download'] as Map?)?['quality'] as String?,
-          force: _freshResolves.contains(id),
-          preferCached: !_freshResolves.contains(id),
-        ),
-        control: control,
-      );
+      final audio =
+          cached ??
+          await readRequests(
+            client,
+            current.settings,
+            () => client.resolve(
+              current.track.id,
+              quality: quality,
+              force: fresh,
+              preferCached: previous == null && !fresh,
+            ),
+            control: control,
+          );
       _freshResolves.remove(id);
       _identity(audio, current.accountIdentity, current.track.id);
       await control.checkpoint();
       final reward = _reward(audio);
-      final previous = _receipt(current.accountIdentity, id, current.track.id);
       if (reward &&
           previous == null &&
           ledger.isBlocked(current.accountIdentity)) {
