@@ -949,10 +949,17 @@ class _ListeningPageState extends State<ListeningPage>
         row.track,
         position: row.position,
         play: () => _act(
-          () => _runtime.player.playTrack(
-            row.track,
-            resumePosition: row.position,
-          ),
+          () => row.track.albumId.isEmpty
+              ? _runtime.player.playTrack(
+                  row.track,
+                  resumePosition: row.position,
+                )
+              : _runtime.player.playAlbum(
+                  row.track.albumId,
+                  row.track.id,
+                  track: row.track,
+                  resumePosition: row.position,
+                ),
         ),
       ),
       headers: [_sectionState(2, _loadHistory)],

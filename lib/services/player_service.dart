@@ -406,6 +406,7 @@ class PlayerService {
     String trackId, {
     int? page,
     Track? track,
+    double? resumePosition,
   }) => _run(() async {
     final album = xmlyIdentifier(albumId),
         id = 'xmly:${xmlyIdentifier(trackId)}';
@@ -457,7 +458,7 @@ class PlayerService {
       _queue = tracks;
       cursor = index;
       sourceAlbumId = album;
-      await _openCurrent(request);
+      await _openCurrent(request, resumePosition: resumePosition);
     });
   });
 
