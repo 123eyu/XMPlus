@@ -177,6 +177,16 @@ class UsageLedger {
         );
   }
 
+  /// A durable zero-baseline report cannot be resolved by comparing balances.
+  bool hasUnverifiableReport(String identity) {
+    if (identity == 'anonymous') return false;
+    final pending = _ledger(identity)['usage_pending'];
+    return pending is Map &&
+        pending['accountIdentity'] == identity &&
+        pending['balanceBefore'] == 0 &&
+        (pending['state'] == 'submitting' || pending['state'] == 'uncertain');
+  }
+
   void _guard(String identity) {
     if (isBlocked(identity)) throw _uncertain;
     if (clientFor(identity).identity != identity) {
@@ -483,11 +493,28 @@ class UsageLedger {
       await _lock(identity).synchronized(() => _settleLocked(identity));
       return;
     }
+    await _settleAccounts();
+  }
+
+  /// Exit can leave these durable journals intact, but may not replay them.
+  Future<void> settleForExit() => _settleAccounts(exiting: true);
+
+  Future<void> _settleAccounts({bool exiting = false}) async {
     final identities = (storage.state['accounts'] as Map).keys
         .cast<String>()
         .toList();
     for (final id in identities) {
-      await _lock(id).synchronized(() => _settleLocked(id));
+      await _lock(id).synchronized(() async {
+        try {
+          await _settleLocked(id);
+        } on XmlyException catch (error) {
+          if (!exiting ||
+              error.code != 'usage_uncertain' ||
+              !hasUnverifiableReport(id)) {
+            rethrow;
+          }
+        }
+      });
     }
   }
 

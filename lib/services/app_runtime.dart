@@ -40,8 +40,12 @@ class AppRuntime extends ChangeNotifier {
       quiesceForRestore: _quiesceForRestore,
     );
     ledger = UsageLedger(storage: storage, clientFor: accounts.clientFor);
-    settlementHandlers.add(ledger.stopWatch);
-    settlementHandlers.add(ledger.settle);
+    settlementHandlers.add(
+      () => closing ? ledger.captureForRestore() : ledger.stopWatch(),
+    );
+    settlementHandlers.add(
+      () => closing ? ledger.settleForExit() : ledger.settle(),
+    );
     pipeline = MediaPipeline(accounts: accounts, anonymous: anonymous);
     downloads = DownloadService(
       storage: storage,
@@ -121,7 +125,7 @@ class AppRuntime extends ChangeNotifier {
         }
       },
     );
-    pauseHandlers.add(player.quiesce);
+    pauseHandlers.add(() => player.quiesce(exiting: closing));
     pauseHandlers.add(downloads.pauseAll);
   }
 

@@ -739,9 +739,7 @@ class PlayerService {
       }
     } catch (_) {
       if (request == _request) {
-        _sourceWarning = local == null
-            ? '云进度暂不可用，将从片头开始'
-            : '云进度暂不可用，已使用本地进度';
+        _sourceWarning = local == null ? '云进度暂不可用，将从片头开始' : '云进度暂不可用，已使用本地进度';
       }
     }
     return local?.position ?? 0;
@@ -1744,13 +1742,18 @@ class PlayerService {
   }) async {
     if (invalidateRequest) _newRequest();
     _sleepStopped = true;
-    await _pause(sleep: true);
+    try {
+      await _pause(sleep: true);
+    } on XmlyException catch (error) {
+      if (action != SleepAction.exit ||
+          error.code != 'usage_uncertain' ||
+          !ledger.hasUnverifiableReport(_progressIdentity)) {
+        rethrow;
+      }
+    }
     status = '定时已结束';
     _notify();
     if (action == SleepAction.exit) {
-      await downloads.pauseAll();
-      await ledger.stopWatch();
-      await ledger.settle();
       // Called outside the command lock: normal application close quiesces us.
       final exit = exitApplication;
       if (exit == null) throw StateError('未配置应用退出处理');
@@ -2023,6 +2026,7 @@ class PlayerService {
 
   Future<void> _stopSource({
     bool preserveUnknown = false,
+    bool exiting = false,
     Track? localTarget,
   }) async {
     _endSeekPosition = null;
@@ -2040,18 +2044,23 @@ class PlayerService {
         await _saveProgress(terminal: true);
         await ledger.stopWatch();
       } on XmlyException catch (error) {
-        if (!const {
-              'usage_uncertain',
-              'insufficient_quota',
-            }.contains(error.code) ||
-            localTarget == null ||
-            await _downloaded(localTarget) == null) {
+        final preserveOnExit =
+            exiting &&
+            error.code == 'usage_uncertain' &&
+            ledger.hasUnverifiableReport(_progressIdentity);
+        if (!preserveOnExit &&
+            (!const {
+                  'usage_uncertain',
+                  'insufficient_quota',
+                }.contains(error.code) ||
+                localTarget == null ||
+                await _downloaded(localTarget) == null)) {
           rethrow;
         }
-        // A verified local target needs no new debit. Save old debt and detach
-        // its watch, preserving every receipt/pending operation without repost.
+        // Exit or a verified local source needs no new debit. Save the watch
+        // without changing any pending operation or receipt.
         await ledger.captureForRestore();
-        await _saveProgress(terminal: true, sync: false);
+        await _saveProgress(terminal: true, sync: preserveOnExit);
       }
     }
     await _driver.stop();
@@ -2072,11 +2081,14 @@ class PlayerService {
     });
   }
 
-  Future<void> quiesce({bool preserveUnknown = false}) async {
+  Future<void> quiesce({
+    bool preserveUnknown = false,
+    bool exiting = false,
+  }) async {
     if (_closed) return;
     _newRequest();
     await _commands.synchronized(() async {
-      await _stopSource(preserveUnknown: preserveUnknown);
+      await _stopSource(preserveUnknown: preserveUnknown, exiting: exiting);
       _notify();
     });
   }
