@@ -353,7 +353,10 @@ class UsageLedger {
       await _recover(identity);
       _guard(identity);
       final quota = await clientFor(identity).queryQuota();
-      if (quota.remainingSeconds - debt(identity) <= 0) throw _insufficient;
+      final newDevice = quota.newDevice && quota.remainingSeconds == 0;
+      if (!newDevice && quota.remainingSeconds - debt(identity) <= 0) {
+        throw _insufficient;
+      }
       _watch = _Listening(identity, normalized, speed, _monotonic());
     });
   });
@@ -503,7 +506,8 @@ class UsageLedger {
       final amount = seconds > maxSeconds ? maxSeconds : seconds;
       await clientFor(identity).withBalanceChange(() async {
         final quota = await clientFor(identity).queryQuota();
-        if (quota.remainingSeconds < amount) throw _insufficient;
+        final newDevice = quota.newDevice && quota.remainingSeconds == 0;
+        if (!newDevice && quota.remainingSeconds < amount) throw _insufficient;
         final operation = <String, dynamic>{
           'operationId': const Uuid().v4(),
           'accountIdentity': identity,
@@ -514,7 +518,12 @@ class UsageLedger {
           'createdAt': _clock().millisecondsSinceEpoch,
           'state': 'submitting',
         };
-        await _submit(identity, operation, online: true);
+        await _submit(
+          identity,
+          operation,
+          online: true,
+          verifyNewDevice: newDevice,
+        );
       });
       seconds = debt(identity).floor();
     }
@@ -535,6 +544,7 @@ class UsageLedger {
     String identity,
     Map<String, dynamic> operation, {
     required bool online,
+    bool verifyNewDevice = false,
   }) async {
     // A failed journal commit returns before even constructing a report request.
     await _write(identity, (ledger) {
@@ -576,7 +586,25 @@ class UsageLedger {
       throw _uncertain;
     }
     operation['balanceAfter'] = balanceAfter;
-    if (!freeDay && balanceBefore - balanceAfter != operation['seconds']) {
+    var newDeviceConfirmed = false;
+    if (verifyNewDevice && online && balanceBefore == 0 && balanceAfter == 0) {
+      // A new device may have no balance bucket. Still report actual listening,
+      // and confirm that state with fresh config instead of trusting the
+      // client's cached newDevice flag on a report response.
+      try {
+        final verified = await clientFor(identity).queryQuota();
+        newDeviceConfirmed =
+            verified.newDevice && verified.remainingSeconds == 0;
+      } catch (_) {
+        // The report already succeeded. A failed verification is never a
+        // definitive rejection and must not enable an automatic resubmission.
+        await _markUncertain(identity, operation, online: online);
+        throw _uncertain;
+      }
+    }
+    if (!freeDay &&
+        !newDeviceConfirmed &&
+        balanceBefore - balanceAfter != operation['seconds']) {
       await _markUncertain(identity, operation, online: online);
       throw _uncertain;
     }
