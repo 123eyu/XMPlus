@@ -129,23 +129,16 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
 
   Future<void> _playResult(Track track) async {
     final request = ++_playRequest;
-    final client = widget.runtime.client,
-        key = widget.runtime.client.cacheIdentity;
     try {
       if (track.albumId.isEmpty) {
         await widget.runtime.player.playTrack(track);
       } else {
-        final located = await _locateAlbumTrack(client, track.albumId, track);
-        if (!mounted ||
-            request != _playRequest ||
-            !identical(client, widget.runtime.client) ||
-            key != client.cacheIdentity)
-          return;
+        final ordinal = _trackOrdinal(track);
         await (widget.onPlayAlbum ?? widget.runtime.player.playAlbum)(
           track.albumId,
           track.id,
-          page: (_trackOrdinal(located)! - 1) ~/ xmlyAlbumPageSize + 1,
-          track: located,
+          page: ordinal == null ? null : (ordinal - 1) ~/ xmlyAlbumPageSize + 1,
+          track: track,
         );
       }
     } catch (error) {
