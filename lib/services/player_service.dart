@@ -1788,26 +1788,33 @@ class PlayerService {
     _notify();
   }
 
-  Future<void> setMasterVolume(double value) => _commands.synchronized(
-    () async {
-      if (_closed) throw StateError('播放器已关闭');
-      if (!value.isFinite || value < 0 || value > 100) {
-        throw const FormatException('主音量必须在 0–100 之间');
-      }
-      await storage.transaction((state) {
-        final settings = state['settings'] as Map;
-        final playback =
-            settings.putIfAbsent('playback', () => <String, dynamic>{}) as Map;
-        playback['masterVolume'] = value;
+  Future<void> setMasterVolume(double value) =>
+      _updateMasterVolume(value: value, muted: false);
+
+  Future<void> setMasterMuted(bool value) => _updateMasterVolume(muted: value);
+
+  Future<void> _updateMasterVolume({double? value, required bool muted}) =>
+      _commands.synchronized(() async {
+        if (_closed) throw StateError('播放器已关闭');
+        if (value != null && (!value.isFinite || value < 0 || value > 100)) {
+          throw const FormatException('主音量必须在 0–100 之间');
+        }
+        await storage.transaction((state) {
+          final settings = state['settings'] as Map;
+          final playback = settings.putIfAbsent(
+            'playback',
+            () => <String, dynamic>{},
+          ) as Map;
+          if (value != null) playback['masterVolume'] = value;
+          playback['masterMuted'] = muted;
+        });
+        final settings = effectiveSettings;
+        policy.updateSettings(settings);
+        final nextVolume = settings.outputVolume;
+        await _driver.setVolume(nextVolume);
+        volume = nextVolume;
+        _notify();
       });
-      final settings = effectiveSettings;
-      policy.updateSettings(settings);
-      final nextVolume = settings.outputVolume;
-      await _driver.setVolume(nextVolume);
-      volume = nextVolume;
-      _notify();
-    },
-  );
 
   Future<void> applySettings({bool updateSource = true}) => _run(
     () => _commands.synchronized(() async {
