@@ -800,7 +800,7 @@ class DownloadService {
             await control?.checkpoint();
             final audio =
                 cached ??
-                await readRequests(
+                await readRequests<ResolvedAudio>(
                   client,
                   settings,
                   () => client.resolve(selection.track.id, quality: quality),
@@ -1946,7 +1946,7 @@ class DownloadService {
       }
       final audio =
           cached ??
-          await readRequests(
+          await readRequests<ResolvedAudio>(
             client,
             current.settings,
             () => client.resolve(
