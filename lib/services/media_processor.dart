@@ -196,6 +196,17 @@ class MediaProcessor {
     await _checkTools(checkpoint);
     final input = await _probe(source, checkpoint);
     await _decode(source, checkpoint);
+    final expectedDuration = task.track.duration;
+    // Metadata can be rounded and encoder padding can change duration. Reject
+    // substantial missing content before publishing an otherwise valid file.
+    if (expectedDuration > 0 &&
+        expectedDuration - _duration(input) >
+            math.max(5.0, expectedDuration * 0.05)) {
+      throw const XmlyException(
+        'media_incomplete',
+        '音频时长明显短于标注时长，请重新获取音频；已有扣时收据保留',
+      );
+    }
     final sourceAudio = _audio(input);
     final media = xmlyMap(task.settings['media']);
     final tags = xmlyMap(task.settings['tags']);
