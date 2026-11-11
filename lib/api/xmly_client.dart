@@ -1953,6 +1953,13 @@ class XmlyClient {
         return audio;
       } catch (error) {
         cancel.cancel();
+        if (error is XmlyException &&
+            error.code == 'media_unauthorized' &&
+            identical(_urls[key], entry)) {
+          // A rejected track authorization cannot fall back to a cached
+          // sibling quality. Revoke even if the caller stopped the probe.
+          _invalidateUrls(entry.number);
+        }
         if (_closed || policy?.stopped == true) {
           // A cancelled read must not wait for the diagnostic disk queue before
           // releasing its caller. Preserve the failure record independently.
