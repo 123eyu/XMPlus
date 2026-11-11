@@ -518,12 +518,7 @@ class UsageLedger {
           'createdAt': _clock().millisecondsSinceEpoch,
           'state': 'submitting',
         };
-        await _submit(
-          identity,
-          operation,
-          online: true,
-          verifyNewDevice: newDevice,
-        );
+        await _submit(identity, operation, online: true);
       });
       seconds = debt(identity).floor();
     }
@@ -544,7 +539,6 @@ class UsageLedger {
     String identity,
     Map<String, dynamic> operation, {
     required bool online,
-    bool verifyNewDevice = false,
   }) async {
     // A failed journal commit returns before even constructing a report request.
     await _write(identity, (ledger) {
@@ -568,7 +562,11 @@ class UsageLedger {
                     .debitSeconds(operation['seconds'] as int))
                 .remainingSeconds;
     } catch (error) {
-      if (error is XmlyException && error.definitive) {
+      // A generic rejection is not operation-specific proof for a report on
+      // a device without a balance bucket. Keep its journal replay-blocking.
+      if (error is XmlyException &&
+          error.definitive &&
+          !(online && balanceBefore == 0)) {
         try {
           await _finish(
             identity,
@@ -586,25 +584,8 @@ class UsageLedger {
       throw _uncertain;
     }
     operation['balanceAfter'] = balanceAfter;
-    var newDeviceConfirmed = false;
-    if (verifyNewDevice && online && balanceBefore == 0 && balanceAfter == 0) {
-      // A new device may have no balance bucket. Still report actual listening,
-      // and confirm that state with fresh config instead of trusting the
-      // client's cached newDevice flag on a report response.
-      try {
-        final verified = await clientFor(identity).queryQuota();
-        newDeviceConfirmed =
-            verified.newDevice && verified.remainingSeconds == 0;
-      } catch (_) {
-        // The report already succeeded. A failed verification is never a
-        // definitive rejection and must not enable an automatic resubmission.
-        await _markUncertain(identity, operation, online: online);
-        throw _uncertain;
-      }
-    }
-    if (!freeDay &&
-        !newDeviceConfirmed &&
-        balanceBefore - balanceAfter != operation['seconds']) {
+    // A new-device flag describes quota, not whether this report was applied.
+    if (!freeDay && balanceBefore - balanceAfter != operation['seconds']) {
       await _markUncertain(identity, operation, online: online);
       throw _uncertain;
     }
@@ -705,6 +686,14 @@ class UsageLedger {
     // in the official app must remain saveable when that query is unavailable.
     // Validate the mounted identity without making another network request.
     queryClient(identity);
+    // A report may be accepted without deducting anything on a new device.
+    // Neither manual balance-based answer proves whether it was applied.
+    if (online && operation['balanceBefore'] == 0) {
+      throw const XmlyException(
+        'usage_uncertain',
+        '新设备没有可核对的余额变动，已保留听时记录，不会重复上报',
+      );
+    }
     await _finish(
       identity,
       operation,
