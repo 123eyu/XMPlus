@@ -258,65 +258,69 @@ class UsageLedger {
       throw const XmlyException('confirmation_required', '请先确认本首扣时及不可自动退款说明');
     }
     await _settleLocked(identity, pause: false);
-    final quota = await clientFor(identity).queryQuota();
-    if ((expectedSeconds != null && expectedSeconds != seconds) ||
-        (expectedBalance != null &&
-            expectedBalance != quota.remainingSeconds)) {
-      throw const XmlyException('confirmation_changed', '时长或余额已改变，请重新确认');
-    }
-    if (quota.remainingSeconds < seconds) throw _insufficient;
-    for (var attempt = 0; ; attempt++) {
-      final operation = DownloadReceipt(
-        operationId: const Uuid().v4(),
-        accountIdentity: identity,
-        trackId: audio.track.id,
-        taskId: taskId,
-        seconds: seconds,
-        balanceBefore: quota.remainingSeconds,
-        createdAt: _clock(),
-        state: DebitState.submitting,
-      ).toJson();
-      try {
-        await _submit(identity, operation, online: false);
-        return receipts(
-          identity,
-        ).singleWhere((item) => item.operationId == operation['operationId']);
-      } on XmlyException catch (error) {
-        final rejected = receipts(identity).any(
-          (receipt) =>
-              receipt.operationId == operation['operationId'] &&
-              receipt.state == DebitState.rejected,
-        );
-        if (!rejected ||
-            !error.definitive ||
-            attempt >= 4 ||
-            const {
-              'invalid_duration',
-              'invalid_ledger',
-              'login_expired',
-              'login_required',
-              'account_mismatch',
-              'invalid_endpoint',
-              'insufficient_quota',
-              'rate_limited',
-            }.contains(error.code))
-          rethrow;
-        final backoff = Duration(seconds: 1 << attempt);
-        final delay = (error.retryAfter ?? Duration.zero) > backoff
-            ? error.retryAfter!
-            : backoff;
-        if (wait != null) {
-          await wait(delay);
-        } else {
-          await Future<void>.delayed(delay);
-        }
-        _guard(identity);
-        final refreshed = await clientFor(identity).queryQuota();
-        if (refreshed.remainingSeconds != quota.remainingSeconds) {
-          throw const XmlyException('confirmation_changed', '重试前余额已变化，请重新确认');
+    // Settlement takes its own balance lock. Acquire this only afterwards;
+    // keep the fresh quote, durable journal, report and result atomic to claims.
+    return clientFor(identity).withBalanceChange(() async {
+      final quota = await clientFor(identity).queryQuota();
+      if ((expectedSeconds != null && expectedSeconds != seconds) ||
+          (expectedBalance != null &&
+              expectedBalance != quota.remainingSeconds)) {
+        throw const XmlyException('confirmation_changed', '时长或余额已改变，请重新确认');
+      }
+      if (quota.remainingSeconds < seconds) throw _insufficient;
+      for (var attempt = 0; ; attempt++) {
+        final operation = DownloadReceipt(
+          operationId: const Uuid().v4(),
+          accountIdentity: identity,
+          trackId: audio.track.id,
+          taskId: taskId,
+          seconds: seconds,
+          balanceBefore: quota.remainingSeconds,
+          createdAt: _clock(),
+          state: DebitState.submitting,
+        ).toJson();
+        try {
+          await _submit(identity, operation, online: false);
+          return receipts(
+            identity,
+          ).singleWhere((item) => item.operationId == operation['operationId']);
+        } on XmlyException catch (error) {
+          final rejected = receipts(identity).any(
+            (receipt) =>
+                receipt.operationId == operation['operationId'] &&
+                receipt.state == DebitState.rejected,
+          );
+          if (!rejected ||
+              !error.definitive ||
+              attempt >= 4 ||
+              const {
+                'invalid_duration',
+                'invalid_ledger',
+                'login_expired',
+                'login_required',
+                'account_mismatch',
+                'invalid_endpoint',
+                'insufficient_quota',
+                'rate_limited',
+              }.contains(error.code))
+            rethrow;
+          final backoff = Duration(seconds: 1 << attempt);
+          final delay = (error.retryAfter ?? Duration.zero) > backoff
+              ? error.retryAfter!
+              : backoff;
+          if (wait != null) {
+            await wait(delay);
+          } else {
+            await Future<void>.delayed(delay);
+          }
+          _guard(identity);
+          final refreshed = await clientFor(identity).queryQuota();
+          if (refreshed.remainingSeconds != quota.remainingSeconds) {
+            throw const XmlyException('confirmation_changed', '重试前余额已变化，请重新确认');
+          }
         }
       }
-    }
+    });
   });
 
   static const _insufficient = XmlyException(
@@ -497,19 +501,21 @@ class UsageLedger {
     var seconds = debt(identity).floor();
     while (seconds > 0) {
       final amount = seconds > maxSeconds ? maxSeconds : seconds;
-      final quota = await clientFor(identity).queryQuota();
-      if (quota.remainingSeconds < amount) throw _insufficient;
-      final operation = <String, dynamic>{
-        'operationId': const Uuid().v4(),
-        'accountIdentity': identity,
-        'trackId': watch?.identity == identity ? watch!.trackId : '',
-        'seconds': amount,
-        'balanceBefore': quota.remainingSeconds,
-        'balanceAfter': null,
-        'createdAt': _clock().millisecondsSinceEpoch,
-        'state': 'submitting',
-      };
-      await _submit(identity, operation, online: true);
+      await clientFor(identity).withBalanceChange(() async {
+        final quota = await clientFor(identity).queryQuota();
+        if (quota.remainingSeconds < amount) throw _insufficient;
+        final operation = <String, dynamic>{
+          'operationId': const Uuid().v4(),
+          'accountIdentity': identity,
+          'trackId': watch?.identity == identity ? watch!.trackId : '',
+          'seconds': amount,
+          'balanceBefore': quota.remainingSeconds,
+          'balanceAfter': null,
+          'createdAt': _clock().millisecondsSinceEpoch,
+          'state': 'submitting',
+        };
+        await _submit(identity, operation, online: true);
+      });
       seconds = debt(identity).floor();
     }
     if (watch?.identity == identity) watch!.settledAt = _monotonic();

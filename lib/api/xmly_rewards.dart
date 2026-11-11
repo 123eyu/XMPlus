@@ -83,7 +83,7 @@ class XmlyRewards {
   }
 
   Future<Map<String, dynamic>> claim(Map<String, dynamic> value) =>
-      _lock.synchronized(() => _claim(value));
+      _lock.synchronized(() => client.withBalanceChange(() => _claim(value)));
 
   Future<Map<String, dynamic>> _claim(Map<String, dynamic> value) async {
     final payload = _payload(value);
@@ -110,7 +110,14 @@ class XmlyRewards {
       if (identity != client.cacheIdentity || !client.accountAvailable) break;
       final previous = quota.remainingSeconds;
       try {
-        await _claim({});
+        final claimed = await client.withBalanceChange(() async {
+          // Consent may be revoked while a debit holds the balance lock.
+          if (!allowed() || identity != client.cacheIdentity ||
+              !client.accountAvailable) return false;
+          await _claim({});
+          return true;
+        });
+        if (!claimed) break;
         if (identity != client.cacheIdentity || !client.accountAvailable) break;
         quota = await client.queryQuota();
       } on Exception {
