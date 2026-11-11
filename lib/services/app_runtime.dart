@@ -12,6 +12,7 @@ import '../api/xmly_rewards.dart';
 import '../storage/app_storage.dart';
 import '../storage/credential_store.dart';
 import 'account_service.dart';
+import 'close_sequence.dart';
 import 'album_cache.dart';
 import 'android_background_service.dart';
 import 'auto_download_service.dart';
@@ -147,6 +148,9 @@ class AppRuntime extends ChangeNotifier {
   final Map<String, DownloadState> _cachedDownloadStates = {};
   bool _restoringDownloads = false;
   bool closing = false;
+  bool _closeRunning = false;
+  CloseSequence? _release;
+  bool get exitOnly => _release != null;
   String? lifecycleError;
   Timer? _rewardTimer;
   bool _refreshingRewards = false;
@@ -188,6 +192,7 @@ class AppRuntime extends ChangeNotifier {
       _systemMedia = await SystemMediaService.start(
         player: player,
         albumCache: albumCache,
+        commandsAllowed: () => !closing && !_closed,
       );
     }
     _playerChanges = player.changes.listen((_) => notifyListeners());
@@ -604,40 +609,71 @@ class AppRuntime extends ChangeNotifier {
 
   Future<bool> close() async {
     if (_closed) return true;
-    if (closing) return false;
+    if (_closeRunning) return false;
+    _closeRunning = true;
     closing = true;
+    lifecycleError = null;
     _rewardGeneration++;
     autoDownloads.suspend();
     _rewardTimer?.cancel();
     _rewardTimer = null;
+    notifyListeners();
     try {
-      await quiesce();
-      await settle();
-      await _systemMedia?.close();
-      await _androidBackground?.close();
-      await albumCache.close();
-      albumCache.removeListener(_albumCacheChanged);
-      // Drain final history sync while the account client can still finish it.
-      await player.close(quiesced: true);
-      await accounts.close();
-      await _playerChanges?.cancel();
-      await autoDownloads.close();
-      await _automaticChanges?.cancel();
-      await downloads.close();
-      await _downloadChanges?.cancel();
-      await pipeline.close();
-      anonymous.close();
-      await anonymous.flushUrlCache();
-      await RequestDiagnostics.instance.close();
-      await storage.close();
+      if (_release == null) {
+        await quiesce();
+        await settle();
+        // From this point, services may be irreversibly closed. Keep the UI in
+        // exit-only mode and retry the failed step without repeating teardown.
+        _release = CloseSequence([
+          () async {
+            await _systemMedia?.close();
+          },
+          () async {
+            await _androidBackground?.close();
+          },
+          () async {
+            await albumCache.close();
+            albumCache.removeListener(_albumCacheChanged);
+          },
+          // Drain final history sync while the account client can still finish it.
+          () => player.close(quiesced: true),
+          accounts.close,
+          () async {
+            await _playerChanges?.cancel();
+          },
+          autoDownloads.close,
+          () async {
+            await _automaticChanges?.cancel();
+          },
+          downloads.close,
+          () async {
+            await _downloadChanges?.cancel();
+          },
+          pipeline.close,
+          () async {
+            anonymous.close();
+            await anonymous.flushUrlCache();
+          },
+          RequestDiagnostics.instance.close,
+          storage.close,
+        ]);
+      }
+      await _release!.run();
       _closed = true;
       return true;
     } catch (_) {
-      lifecycleError = '保存或结算未完成，请核对后再退出';
-      closing = false;
-      autoDownloads.resume();
+      lifecycleError = exitOnly
+          ? '退出未完成，部分服务已关闭，请重试退出后重新打开应用'
+          : '保存或结算未完成，请核对后再退出';
+      if (!exitOnly) {
+        closing = false;
+        autoDownloads.resume();
+        _configureRewards();
+      }
       notifyListeners();
       return false;
+    } finally {
+      _closeRunning = false;
     }
   }
 }

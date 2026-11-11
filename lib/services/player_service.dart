@@ -12,6 +12,7 @@ import '../storage/app_storage.dart';
 import 'account_service.dart';
 import 'audio_cache.dart';
 import 'audio_driver.dart';
+import 'close_sequence.dart';
 import 'download_service.dart';
 import 'media_pipeline.dart';
 import 'official_progress.dart';
@@ -147,9 +148,12 @@ class PlayerService {
   double? _startSeekPosition;
   double _observedPosition = 0;
   double? _endSeekPosition;
+  int? _endAdvanceIntent;
   int _observedAt = 0;
-  String? error, warning, status;
+  String? error, status;
+  String? _sourceWarning;
   bool _closed = false, _loaded = false, _actual = false, _atEnd = false;
+  CloseSequence? _closeSteps;
   bool _awaitingDuration = false, _manualChapterPosition = false;
   bool _sleepStopped = false, _manualPaused = false;
   int _savedAt = 0;
@@ -168,6 +172,10 @@ class PlayerService {
       cursor >= 0 && cursor < _queue.length ? _queue[cursor] : null;
   String get sourceKind => _source?.kind ?? '';
   bool get loading => _loading;
+  // Policy warnings describe the current settings/duration. Do not retain one
+  // after its condition clears or while a new source is still being prepared.
+  String? get warning =>
+      (_source != null && !_loading ? policy.warning : null) ?? _sourceWarning;
   int get seekRevision => _seekRevision;
   int get playbackEpoch => _epoch;
   int get playbackRecoveryRevision => _playbackRecoveryRevision;
@@ -320,7 +328,7 @@ class PlayerService {
     _loaded = false;
     await load();
     error = null;
-    warning = null;
+    _sourceWarning = null;
     status = null;
     _notify();
   }
@@ -711,7 +719,7 @@ class PlayerService {
     return (position: saved.toDouble(), updatedAt: updated);
   }
 
-  Future<double> _resumePosition(Track track) async {
+  Future<double> _resumePosition(Track track, int request) async {
     final local = _localProgress(track);
     final client = _historyClient;
     if (!_syncHistory || client == null) return local?.position ?? 0;
@@ -724,13 +732,17 @@ class PlayerService {
       if (cloud != null &&
           (local == null ||
               (cloud['updated_at'] as num) * 1000 > local.updatedAt)) {
-        if (cloud['incomplete'] == true) {
-          warning = '云历史查询较慢，已使用本次查到的最新进度';
+        if (request == _request && cloud['incomplete'] == true) {
+          _sourceWarning = '云历史查询较慢，已使用本次查到的最新进度';
         }
         return (cloud['position'] as num).toDouble();
       }
     } catch (_) {
-      warning = local == null ? '云进度暂不可用，将从片头开始' : '云进度暂不可用，已使用本地进度';
+      if (request == _request) {
+        _sourceWarning = local == null
+            ? '云进度暂不可用，将从片头开始'
+            : '云进度暂不可用，已使用本地进度';
+      }
     }
     return local?.position ?? 0;
   }
@@ -789,7 +801,7 @@ class PlayerService {
     _observedAt = 0;
     status = '正在准备音频';
     error = null;
-    warning = null;
+    _sourceWarning = null;
     _notify();
     final settings = effectiveSettings;
     final source = await _admission(
@@ -814,7 +826,7 @@ class PlayerService {
     try {
       final resume =
           saved ??
-          await _admission(request, () => _resumePosition(track)) ??
+          await _admission(request, () => _resumePosition(track, request)) ??
           0.0;
       if (request != _request) {
         await _release();
@@ -849,7 +861,6 @@ class PlayerService {
         settings: settings,
         manualReplay: manualReplay,
       );
-      warning = policy.warning ?? warning;
       rate = settings.speed;
       volume = settings.outputVolume;
       await _driver.open(source.uri, epoch: epoch);
@@ -1034,7 +1045,7 @@ class PlayerService {
         if (prepare == null || confirm == null) {
           throw const XmlyException('confirmation_required', '请先确认边听边下');
         }
-        warning = '边听边下按整集预扣听时，已产生的在线听时不会抵扣';
+        _sourceWarning = '边听边下按整集预扣听时，已产生的在线听时不会抵扣';
         _notify();
         final batch = await prepare([track]);
         if (request != _request || !await confirm(batch)) {
@@ -1391,14 +1402,12 @@ class PlayerService {
     }
     // Opening/seeking can emit a paused position before the first real play.
     // Such a snapshot must not consume this chapter's completion event.
-    final finished =
-        _actual &&
-        policy.observe(
-          position,
-          duration: duration,
-          completed: snapshot.completed,
-        );
-    warning = policy.warning ?? warning;
+    final finished = policy.observe(
+      position,
+      duration: duration,
+      completed: snapshot.completed,
+      allowCompletion: _actual,
+    );
     if (finished && !_atEnd)
       await _finish();
     else
@@ -1442,6 +1451,9 @@ class PlayerService {
 
   Future<void> _finish() async {
     _atEnd = true;
+    // Completion owns advancement even when its page was prefetched before a seek.
+    final intent = _advanceIntent;
+    _endAdvanceIntent = intent;
     _endSeekPosition = null;
     final sleep = policy.onChapterEnd();
     if (sleep != null) {
@@ -1449,7 +1461,7 @@ class PlayerService {
       return;
     }
     await _pause();
-    if (_manualPaused) return;
+    if (_manualPaused || intent != _advanceIntent) return;
     if (effectiveSettings.loopMode == 'single') {
       await _openCurrent(_newRequest(), resumePosition: 0);
       return;
@@ -1464,7 +1476,7 @@ class PlayerService {
           _tailRequest == _request;
       if (pending || _checkedEpochs.add(_epoch)) {
         // _finish owns _commands; the tail takes that lock only to commit.
-        final epoch = _epoch, request = _request, intent = _advanceIntent;
+        final epoch = _epoch, request = _request;
         final expectedGeneration = generation, album = sourceAlbumId;
         unawaited(() async {
           try {
@@ -1658,8 +1670,9 @@ class PlayerService {
           status = added.isEmpty ? '已听到最新一集' : '已更新 ${added.length} 集';
           _notify();
           if (_atEnd &&
+              active() &&
               _epoch == endEpoch &&
-              advanceIntent == _advanceIntent &&
+              _endAdvanceIntent == _advanceIntent &&
               current?.id == last.id &&
               cursor + 1 < _queue.length &&
               !_sleepStopped &&
@@ -1784,8 +1797,11 @@ class PlayerService {
   }
 
   Future<void> retryHistory() async {
-    await _official.flush(retry: true);
-    _notify();
+    try {
+      await _official.flush(retry: true);
+    } finally {
+      _notify();
+    }
   }
 
   Future<void> setMasterVolume(double value) =>
@@ -2065,21 +2081,29 @@ class PlayerService {
     });
   }
 
-  Future<void> close({bool quiesced = false}) async {
-    if (_closed) return;
-    if (!quiesced) await quiesce();
-    _timer?.cancel();
-    await _official.close();
-    _closed = true;
-    await _driverEvents.cancel();
-    await _downloadEvents.cancel();
-    await _driver.close();
-    try {
-      await _proxyOpening;
-    } catch (_) {
-      // Preparation observes startup failures; no listener remains to close.
-    }
-    await _proxy?.close();
-    await _changes.close();
+  Future<void> close({bool quiesced = false}) {
+    final steps = _closeSteps ??= CloseSequence([
+      () async {
+        if (!quiesced) await quiesce();
+        _timer?.cancel();
+        await _official.close();
+        _closed = true;
+      },
+      _driverEvents.cancel,
+      _downloadEvents.cancel,
+      _driver.close,
+      () async {
+        try {
+          await _proxyOpening;
+        } catch (_) {
+          // Preparation observes startup failures; no listener remains to close.
+        }
+        await _proxy?.close();
+      },
+      () async {
+        await _changes.close();
+      },
+    ]);
+    return steps.run();
   }
 }
