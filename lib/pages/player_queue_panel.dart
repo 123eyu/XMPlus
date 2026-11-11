@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../common/widgets/adaptive_text.dart';
+import '../common/widgets/confirmation_dialog.dart';
 import '../common/widgets/local_panel.dart';
 import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
@@ -113,23 +114,11 @@ class _QueuePanelState extends State<_QueuePanel> {
   }
 
   Future<void> _clear() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('清空播放队列？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('确认'),
-          ),
-        ],
-      ),
+    final confirmed = await showConfirmationDialog(
+      context,
+      const Text('清空播放队列？'),
     );
-    if (confirmed == true && mounted) {
+    if (confirmed && mounted) {
       await _run(widget.runtime.player.clearQueue);
     }
   }

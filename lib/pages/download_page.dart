@@ -379,12 +379,15 @@ class _DownloadPageState extends State<DownloadPage> {
 
   void _tasksChanged() {
     if (!mounted) return;
+    final tasks = _service.tasks;
     setState(() {
-      _selectedDownloads.retainAll(
-        _service.tasks.where(_canSelectAudio).map((task) => task.id),
-      );
+      if (_selectedDownloads.isNotEmpty) {
+        _selectedDownloads.retainAll(
+          tasks.where(_canSelectAudio).map((task) => task.id),
+        );
+      }
     });
-    if (!_deletingAudio) unawaited(_refreshAvailability(_service.tasks));
+    if (!_deletingAudio) unawaited(_refreshAvailability(tasks));
   }
 
   void _cacheChanged() {
@@ -885,19 +888,18 @@ class _DownloadPageState extends State<DownloadPage> {
     final cached = albumId.isEmpty ? null : widget.runtime.albumCache[albumId];
     final album = cached?.album;
     final total = album?.total ?? 0;
-    final completed = {
+    late final completed = {
       for (final task in tasks)
-        if (task.state == DownloadState.completed &&
-            _available[task.id] == true)
-          task.track.id,
+        if (_available[task.id] == true) task.track.id,
     }.length;
-    final missing = tasks
-        .where(
-          (task) =>
-              task.state == DownloadState.completed &&
-              (task.finalPath == null || _available[task.id] == false),
-        )
-        .length;
+    final missing = downloaded
+        ? tasks
+              .where(
+                (task) =>
+                    task.finalPath == null || _available[task.id] == false,
+              )
+              .length
+        : 0;
     final states = <DownloadState, int>{};
     for (final task in tasks) {
       states.update(task.state, (count) => count + 1, ifAbsent: () => 1);
@@ -915,8 +917,8 @@ class _DownloadPageState extends State<DownloadPage> {
         : '专辑 $albumId';
     final expansionKey = '${downloaded ? 'downloaded' : 'tasks'}:$albumId';
     final expanded = _expandedAlbums.contains(expansionKey);
-    final selectable = tasks.where(_canSelectAudio).toList();
-    final selected = selectable
+    late final selectable = tasks.where(_canSelectAudio).toList();
+    late final selected = selectable
         .where((task) => _selectedDownloads.contains(task.id))
         .length;
     final selecting = downloaded && _selectingDownloads;
@@ -1142,15 +1144,12 @@ class _DownloadPageState extends State<DownloadPage> {
     }
   }
 
-  Widget _downloadedLibrary() {
+  Widget _downloadedLibrary(List<DownloadTask> completed) {
     final compact = MediaQuery.sizeOf(context).width < 320;
     final query = _downloadFilter;
     final tokens = query
         .split(RegExp(r'\s+'))
         .where((value) => value.isNotEmpty);
-    final completed = _service.tasks
-        .where((task) => task.state == DownloadState.completed)
-        .toList();
     final matches = query.isEmpty
         ? const <DownloadTask>[]
         : completed.where((task) {
@@ -1283,7 +1282,7 @@ class _DownloadPageState extends State<DownloadPage> {
           ),
         Expanded(
           child: query.isEmpty
-              ? _albumList(downloaded: true)
+              ? _albumList(completed, downloaded: true)
               : matches.isEmpty
               ? const Center(child: Text('未找到匹配的本地下载记录'))
               : Scrollbar(
@@ -1302,11 +1301,10 @@ class _DownloadPageState extends State<DownloadPage> {
     );
   }
 
-  Widget _albumList({required bool downloaded}) {
+  Widget _albumList(Iterable<DownloadTask> tasks, {required bool downloaded}) {
     final compact = MediaQuery.sizeOf(context).width < 320;
     final groups = <String, List<DownloadTask>>{};
-    for (final task in _service.tasks) {
-      if ((task.state == DownloadState.completed) != downloaded) continue;
+    for (final task in tasks) {
       groups.putIfAbsent(task.track.albumId, () => []).add(task);
     }
     if (downloaded) {
@@ -1331,9 +1329,13 @@ class _DownloadPageState extends State<DownloadPage> {
       }
     }
     final albums = groups.entries.toList();
-    final jobs = _service.albumJobs
-        .where((job) => job.state != 'completed' && job.state != 'cancelled')
-        .toList();
+    final jobs = downloaded
+        ? const <DownloadAlbumJob>[]
+        : _service.albumJobs
+              .where(
+                (job) => job.state != 'completed' && job.state != 'cancelled',
+              )
+              .toList();
     return Scrollbar(
       child: ListView.builder(
         key: PageStorageKey(
@@ -1453,32 +1455,43 @@ class _DownloadPageState extends State<DownloadPage> {
   @override
   Widget build(BuildContext context) => StreamBuilder<void>(
     stream: _autoDownloads.changes,
-    builder: (context, _) => DefaultTabController(
-      length: 2,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: Column(
-            children: [
-              const TabBar(
-                tabs: [
-                  Tab(text: '下载任务'),
-                  Tab(text: '已下载'),
-                ],
-              ),
-              Expanded(
-                child: TabBarView(
-                  children: [
-                    _albumList(downloaded: false),
-                    _downloadedLibrary(),
+    builder: (context, _) {
+      final tasks = _service.tasks;
+      final completed = tasks
+          .where((task) => task.state == DownloadState.completed)
+          .toList();
+      return DefaultTabController(
+        length: 2,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Column(
+              children: [
+                const TabBar(
+                  tabs: [
+                    Tab(text: '下载任务'),
+                    Tab(text: '已下载'),
                   ],
                 ),
-              ),
-            ],
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _albumList(
+                        tasks.where(
+                          (task) => task.state != DownloadState.completed,
+                        ),
+                        downloaded: false,
+                      ),
+                      _downloadedLibrary(completed),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    ),
+      );
+    },
   );
 
   Widget _taskCard(DownloadTask task, bool compact) {

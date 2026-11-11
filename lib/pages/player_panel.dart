@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../api/xmly_client.dart';
 import '../api/xmly_experience.dart';
 import '../common/widgets/adaptive_text.dart';
+import '../common/widgets/confirmation_dialog.dart';
 import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
 import 'catalogue_page.dart';
@@ -302,7 +303,10 @@ class _PlayerPanelState extends State<PlayerPanel> {
       _favoriteError = null;
     });
     try {
-      if (favorite && !await _confirm(context, '取消收藏此声音？')) return;
+      if (favorite &&
+          !await showConfirmationDialog(context, const Text('取消收藏此声音？'))) {
+        return;
+      }
       if (!_favoriteCurrent(client, key, track.id, request)) return;
       await _runtime.accounts.runWithAccount(client.identity, (admitted) async {
         if (!_favoriteCurrent(client, key, track.id, request) ||
@@ -420,25 +424,6 @@ class _PlayerPanelState extends State<PlayerPanel> {
       ),
     );
   }
-
-  Future<bool> _confirm(BuildContext context, String title) async =>
-      await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(title),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('确认'),
-            ),
-          ],
-        ),
-      ) ==
-      true;
 
   Future<void> _queue() => showPlayerQueuePanel(_navigator.context, _runtime);
 

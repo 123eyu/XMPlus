@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../api/xmly_experience.dart';
 import '../api/xmly_history.dart';
 import '../common/widgets/adaptive_text.dart';
+import '../common/widgets/confirmation_dialog.dart';
 import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
 import 'catalogue_page.dart';
@@ -489,25 +490,6 @@ class _ListeningPageState extends State<ListeningPage>
       _runtime.libraryChanged();
   }
 
-  Future<bool> _confirm(String title) async =>
-      await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(title),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('确认'),
-            ),
-          ],
-        ),
-      ) ==
-      true;
-
   Future<void> _removeBookmark(
     int index,
     Map record,
@@ -516,7 +498,7 @@ class _ListeningPageState extends State<ListeningPage>
     String identity,
   ) async {
     if (!_active(epoch, key, identity) ||
-        !await _confirm('删除此书签？') ||
+        !await showConfirmationDialog(context, const Text('删除此书签？')) ||
         !_active(epoch, key, identity))
       return;
     await _act(
@@ -924,7 +906,7 @@ class _ListeningPageState extends State<ListeningPage>
             if (value == 'album') {
               _openAlbum(row.album.id);
             } else if (value == 'unsubscribe' &&
-                await _confirm('取消订阅此专辑？') &&
+                await showConfirmationDialog(context, const Text('取消订阅此专辑？')) &&
                 _active(epoch, key, identity)) {
               await _act(
                 () => _changeLibrary(
@@ -1035,7 +1017,11 @@ class _ListeningPageState extends State<ListeningPage>
             ),
             removeLabel: '取消收藏',
             remove: () async {
-              if (await _confirm('取消收藏此声音？') && _active(epoch, key, identity)) {
+              if (await showConfirmationDialog(
+                    context,
+                    const Text('取消收藏此声音？'),
+                  ) &&
+                  _active(epoch, key, identity)) {
                 await _act(
                   () => _changeLibrary(
                     (api) => api.setFavorite(track, favorite: false),
@@ -1055,27 +1041,29 @@ class _ListeningPageState extends State<ListeningPage>
     final library =
         (_runtime.storage.state['library'] as Map)[identity] as Map?;
     final bookmarks = library?['bookmarks'] as List? ?? const [];
-    final rows = <MapEntry<int, Map>>[];
+    final rows = <({int index, Map record, Track track, String note})>[];
     for (var i = 0; i < bookmarks.length; i++) {
       final record = bookmarks[i];
       if (record is! Map || record['track'] is! Map) continue;
       try {
         final track = Track.fromJson(xmlyMap(record['track']));
         final note = record['note'] is String ? record['note'] as String : '';
-        if (_matches(track, extra: note)) rows.add(MapEntry(i, record));
+        if (_matches(track, extra: note)) {
+          rows.add((index: i, record: record, track: track, note: note));
+        }
       } on XmlyException {
         continue;
       } on FormatException {
         continue;
       }
     }
-    return _dated<MapEntry<int, Map>>(
+    return _dated(
       rows,
       (row) =>
-          row.value['createdAt'] is int ? row.value['createdAt'] as int : 0,
+          row.record['createdAt'] is int ? row.record['createdAt'] as int : 0,
       (row) {
-        final track = Track.fromJson(xmlyMap(row.value['track']));
-        final saved = row.value['position'];
+        final (:index, :record, :track, :note) = row;
+        final saved = record['position'];
         final position = saved is num && saved.isFinite && saved >= 0
             ? saved.toDouble()
             : 0.0;
@@ -1083,9 +1071,9 @@ class _ListeningPageState extends State<ListeningPage>
           track,
           position: position,
           positionLabel: '书签位置',
-          note: row.value['note'] is String ? row.value['note'] as String : '',
+          note: note,
           editNote: () =>
-              _editBookmarkNote(row.key, row.value, epoch, key, identity),
+              _editBookmarkNote(index, record, epoch, key, identity),
           play: () => _act(
             () => _runtime.player.playTrack(
               track,
@@ -1094,8 +1082,7 @@ class _ListeningPageState extends State<ListeningPage>
             ),
           ),
           removeLabel: '删除书签',
-          remove: () =>
-              _removeBookmark(row.key, row.value, epoch, key, identity),
+          remove: () => _removeBookmark(index, record, epoch, key, identity),
         );
       },
       emptyMessage: _query.isEmpty ? '暂无书签' : '没有匹配的书签',
@@ -1103,9 +1090,8 @@ class _ListeningPageState extends State<ListeningPage>
   }
 
   @override
-  Widget build(BuildContext context) => DefaultTabController(
-    length: 5,
-    child: Center(
+  Widget build(BuildContext context) {
+    return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 960),
         child: NestedScrollView(
@@ -1173,8 +1159,8 @@ class _ListeningPageState extends State<ListeningPage>
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   @override
   void dispose() {

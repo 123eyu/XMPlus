@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../common/widgets/adaptive_text.dart';
+import '../common/widgets/confirmation_dialog.dart';
 import '../models/xmly_models.dart';
 import '../services/account_service.dart';
 import '../storage/app_storage.dart';
@@ -37,25 +38,13 @@ class _BackupPageState extends State<BackupPage> {
   bool _busy = false;
   String? _message;
 
-  Future<bool> _confirm(String title, Widget content, String action) async =>
-      await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-          content: SingleChildScrollView(child: content),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(action),
-            ),
-          ],
-        ),
-      ) ??
-      false;
+  Future<bool> _confirm(String title, Widget content, String action) =>
+      showConfirmationDialog(
+        context,
+        Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        content: SingleChildScrollView(child: content),
+        confirmLabel: action,
+      );
 
   Future<void> _run(Future<void> Function() action) async {
     setState(() {

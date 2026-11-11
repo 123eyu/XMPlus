@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../api/xmly_login.dart';
 import '../common/widgets/adaptive_text.dart';
+import '../common/widgets/confirmation_dialog.dart';
 import '../api/xmly_rewards.dart';
 import '../models/xmly_models.dart';
 import '../services/account_service.dart';
@@ -59,25 +60,12 @@ Future<bool> _confirm(
   String title,
   String message, {
   String action = '确认',
-}) async =>
-    await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        content: SingleChildScrollView(child: Text(message)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(action),
-          ),
-        ],
-      ),
-    ) ==
-    true;
+}) => showConfirmationDialog(
+  context,
+  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+  content: SingleChildScrollView(child: Text(message)),
+  confirmLabel: action,
+);
 
 class AccountPage extends StatefulWidget {
   const AccountPage({

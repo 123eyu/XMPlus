@@ -53,7 +53,6 @@ class _UsagePageState extends State<UsagePage> {
     int seconds,
     Object? before,
     Object? after,
-    Object? createdAt,
   ) async {
     setState(() {
       _busy = true;
@@ -176,7 +175,6 @@ class _UsagePageState extends State<UsagePage> {
                                           receipt.seconds,
                                           receipt.balanceBefore,
                                           receipt.balanceAfter,
-                                          receipt.createdAt,
                                         ),
                                   child: const Text('核对'),
                                 ),
@@ -216,7 +214,6 @@ class _UsagePageState extends State<UsagePage> {
                                             as int,
                                         pending['balanceBefore'],
                                         pending['balanceAfter'],
-                                        pending['createdAt'],
                                       ),
                                 child: const Text('核对'),
                               ),

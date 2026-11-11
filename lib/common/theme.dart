@@ -205,10 +205,6 @@ ThemeData getThemeData({
     navigationRailTheme: NavigationRailThemeData(
       backgroundColor: colorScheme.surface,
     ),
-    bottomNavigationBarTheme: BottomNavigationBarThemeData(
-      backgroundColor: colorScheme.surface,
-      elevation: 0,
-    ),
     snackBarTheme: SnackBarThemeData(
       elevation: 0,
       actionTextColor: colorScheme.primary,

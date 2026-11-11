@@ -464,16 +464,18 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           artist: tracks.first.artist,
           coverUrl: tracks.first.coverUrl,
         );
-    _showCached(1);
+    _showCached(1, orderedTracks: _orderedForDisplay(tracks));
   }
 
-  void _showCached(int page) {
+  void _showCached(int page, {List<Track>? orderedTracks}) {
     _cachedView = true;
-    final tracks = _orderedForDisplay(_cachedTracks())
-        .where(
-          (track) => track.title.toLowerCase().contains(_filter.toLowerCase()),
-        )
-        .toList();
+    final ordered = orderedTracks ?? _orderedForDisplay(_cachedTracks());
+    final filter = _filter.toLowerCase();
+    final tracks = filter.isEmpty
+        ? ordered
+        : ordered
+              .where((track) => track.title.toLowerCase().contains(filter))
+              .toList();
     _total = tracks.length;
     _page = page.clamp(
       1,
@@ -686,12 +688,12 @@ class _AlbumPageViewState extends State<AlbumPageView> {
 
   Future<void> _loadPage(int page, {Track? target}) async {
     if (_offline) {
+      final tracks = _orderedForDisplay(_cachedTracks());
       if (target != null) {
-        final index = _orderedForDisplay(_cachedTracks())
-            .indexWhere((track) => track.id == target.id);
+        final index = tracks.indexWhere((track) => track.id == target.id);
         if (index >= 0) page = index ~/ _pageSize + 1;
       }
-      setState(() => _showCached(page));
+      setState(() => _showCached(page, orderedTracks: tracks));
       if (target != null) _revealTarget(target, _generation);
       return;
     }
@@ -711,11 +713,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         page = (targetOrdinal - 1) ~/ _pageSize + 1;
       }
       if (_filter.isNotEmpty && _complete != null) {
+        final filter = _filter.toLowerCase();
         final filtered = _orderedForDisplay(_complete!)
-            .where(
-              (track) =>
-                  track.title.toLowerCase().contains(_filter.toLowerCase()),
-            )
+            .where((track) => track.title.toLowerCase().contains(filter))
             .toList();
         if (mounted && generation == _generation) {
           setState(() {
@@ -1064,7 +1064,6 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         _offline = false;
         _complete = null;
         _filter = '';
-        _offline = false;
         _search.clear();
         _loadPage(1);
       case 'tags':
