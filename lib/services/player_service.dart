@@ -12,6 +12,7 @@ import '../storage/app_storage.dart';
 import 'account_service.dart';
 import 'audio_cache.dart';
 import 'audio_driver.dart';
+import 'close_sequence.dart';
 import 'download_service.dart';
 import 'media_pipeline.dart';
 import 'official_progress.dart';
@@ -150,6 +151,7 @@ class PlayerService {
   int _observedAt = 0;
   String? error, warning, status;
   bool _closed = false, _loaded = false, _actual = false, _atEnd = false;
+  CloseSequence? _closeSteps;
   bool _awaitingDuration = false, _manualChapterPosition = false;
   bool _sleepStopped = false, _manualPaused = false;
   int _savedAt = 0;
@@ -2065,21 +2067,29 @@ class PlayerService {
     });
   }
 
-  Future<void> close({bool quiesced = false}) async {
-    if (_closed) return;
-    if (!quiesced) await quiesce();
-    _timer?.cancel();
-    await _official.close();
-    _closed = true;
-    await _driverEvents.cancel();
-    await _downloadEvents.cancel();
-    await _driver.close();
-    try {
-      await _proxyOpening;
-    } catch (_) {
-      // Preparation observes startup failures; no listener remains to close.
-    }
-    await _proxy?.close();
-    await _changes.close();
+  Future<void> close({bool quiesced = false}) {
+    final steps = _closeSteps ??= CloseSequence([
+      () async {
+        if (!quiesced) await quiesce();
+        _timer?.cancel();
+        await _official.close();
+        _closed = true;
+      },
+      _driverEvents.cancel,
+      _downloadEvents.cancel,
+      _driver.close,
+      () async {
+        try {
+          await _proxyOpening;
+        } catch (_) {
+          // Preparation observes startup failures; no listener remains to close.
+        }
+        await _proxy?.close();
+      },
+      () async {
+        await _changes.close();
+      },
+    ]);
+    return steps.run();
   }
 }

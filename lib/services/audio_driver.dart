@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:audio_session/audio_session.dart';
 import 'package:media_kit/media_kit.dart';
 
+import 'close_sequence.dart';
+
 /// Device observations, not requested commands. Epoch rejects old-source events.
 class AudioSnapshot {
   const AudioSnapshot({
@@ -70,7 +72,27 @@ class MediaKitAudioDriver implements AudioDriver {
   bool _closed = false;
   AudioSession? _session;
   Future<void> _commands = Future<void>.value();
-  Future<void>? _closing;
+  late final _closeSteps = CloseSequence([
+    () async {
+      _closed = true;
+      _cancelResume();
+      await _commands;
+    },
+    () async {
+      while (_subscriptions.isNotEmpty) {
+        await _subscriptions.last.cancel();
+        _subscriptions.removeLast();
+      }
+    },
+    _releaseFocus,
+    () async {
+      await _player?.dispose();
+      _player = null;
+    },
+    () async {
+      await _events.close();
+    },
+  ]);
   int _intent = 0;
   int? _resumeIntent;
   @override
@@ -280,24 +302,5 @@ class MediaKitAudioDriver implements AudioDriver {
     await _player?.setVolume(volume);
   });
   @override
-  Future<void> close() => _closing ??= _dispose();
-
-  Future<void> _dispose() async {
-    _closed = true;
-    _cancelResume();
-    await _commands;
-    try {
-      for (final subscription in _subscriptions) {
-        await subscription.cancel();
-      }
-      await _releaseFocus();
-    } finally {
-      try {
-        await _player?.dispose();
-      } finally {
-        _player = null;
-        await _events.close();
-      }
-    }
-  }
+  Future<void> close() => _closeSteps.run();
 }
