@@ -149,7 +149,8 @@ class PlayerService {
   double _observedPosition = 0;
   double? _endSeekPosition;
   int _observedAt = 0;
-  String? error, warning, status;
+  String? error, status;
+  String? _sourceWarning;
   bool _closed = false, _loaded = false, _actual = false, _atEnd = false;
   CloseSequence? _closeSteps;
   bool _awaitingDuration = false, _manualChapterPosition = false;
@@ -170,6 +171,10 @@ class PlayerService {
       cursor >= 0 && cursor < _queue.length ? _queue[cursor] : null;
   String get sourceKind => _source?.kind ?? '';
   bool get loading => _loading;
+  // Policy warnings describe the current settings/duration. Do not retain one
+  // after its condition clears or while a new source is still being prepared.
+  String? get warning =>
+      (_source != null && !_loading ? policy.warning : null) ?? _sourceWarning;
   int get seekRevision => _seekRevision;
   int get playbackEpoch => _epoch;
   int get playbackRecoveryRevision => _playbackRecoveryRevision;
@@ -322,7 +327,7 @@ class PlayerService {
     _loaded = false;
     await load();
     error = null;
-    warning = null;
+    _sourceWarning = null;
     status = null;
     _notify();
   }
@@ -727,12 +732,14 @@ class PlayerService {
           (local == null ||
               (cloud['updated_at'] as num) * 1000 > local.updatedAt)) {
         if (cloud['incomplete'] == true) {
-          warning = '云历史查询较慢，已使用本次查到的最新进度';
+          _sourceWarning = '云历史查询较慢，已使用本次查到的最新进度';
         }
         return (cloud['position'] as num).toDouble();
       }
     } catch (_) {
-      warning = local == null ? '云进度暂不可用，将从片头开始' : '云进度暂不可用，已使用本地进度';
+      _sourceWarning = local == null
+          ? '云进度暂不可用，将从片头开始'
+          : '云进度暂不可用，已使用本地进度';
     }
     return local?.position ?? 0;
   }
@@ -791,7 +798,7 @@ class PlayerService {
     _observedAt = 0;
     status = '正在准备音频';
     error = null;
-    warning = null;
+    _sourceWarning = null;
     _notify();
     final settings = effectiveSettings;
     final source = await _admission(
@@ -851,7 +858,6 @@ class PlayerService {
         settings: settings,
         manualReplay: manualReplay,
       );
-      warning = policy.warning ?? warning;
       rate = settings.speed;
       volume = settings.outputVolume;
       await _driver.open(source.uri, epoch: epoch);
@@ -1036,7 +1042,7 @@ class PlayerService {
         if (prepare == null || confirm == null) {
           throw const XmlyException('confirmation_required', '请先确认边听边下');
         }
-        warning = '边听边下按整集预扣听时，已产生的在线听时不会抵扣';
+        _sourceWarning = '边听边下按整集预扣听时，已产生的在线听时不会抵扣';
         _notify();
         final batch = await prepare([track]);
         if (request != _request || !await confirm(batch)) {
@@ -1400,7 +1406,6 @@ class PlayerService {
           duration: duration,
           completed: snapshot.completed,
         );
-    warning = policy.warning ?? warning;
     if (finished && !_atEnd)
       await _finish();
     else
