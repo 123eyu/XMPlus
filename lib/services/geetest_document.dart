@@ -46,10 +46,11 @@ String geetestDocument(String captchaId, {String? bridgeNonce}) {
       ? '''if(window.flutter_inappwebview?.callHandler){load();}
   else{window.addEventListener('flutterInAppWebViewPlatformReady',load,{once:true});}'''
       : 'load();';
+  final loopbackConnect = bridgeNonce == null ? "'self' " : '';
   return '''<!doctype html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; connect-src 'self' https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; img-src data: blob: https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; style-src 'unsafe-inline' https://*.geetest.com; font-src data: https://*.geetest.com; frame-src https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; connect-src ${loopbackConnect}https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; img-src data: blob: https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; style-src 'unsafe-inline' https://*.geetest.com; font-src data: https://*.geetest.com; frame-src https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>XMPlus 安全验证</title>
 <style>body{font:16px sans-serif;text-align:center;padding:20px}button{font:inherit;padding:12px}</style>
 </head><body><p id="status">正在加载安全验证…</p><button id="verify" hidden>开始验证</button>

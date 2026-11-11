@@ -302,6 +302,12 @@ class _GeetestDialogState extends State<GeetestDialog> {
       setState(() => _browserError = '浏览器验证已过期，请重新打开浏览器。');
       return;
     }
+    // A Windows close/exit prompt can cover this dialog during verification.
+    // Do not pop that prompt or continue to SMS consent underneath it.
+    if (ModalRoute.of(context)?.isCurrent != true) {
+      setState(() => _browserError = '浏览器验证已中断，请重新打开浏览器。');
+      return;
+    }
     _invalidate();
     Navigator.of(context).pop(result);
   }
