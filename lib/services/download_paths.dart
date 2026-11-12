@@ -279,7 +279,9 @@ class DownloadPaths {
     }
   }
 
-  /// Only same-volume operations; no copy/delete fallback or pre-deletion.
+  /// Only same-volume operations; never pre-deletes or clobbers an existing
+  /// destination unless [overwrite] is requested. Android FUSE may copy through
+  /// an exclusively created file when no-replace rename is unsupported.
   /// [temporary] must already contain the fully validated media output.
   Future<void> commit(
     String temporary,
@@ -318,7 +320,7 @@ class DownloadPaths {
         Platform.isMacOS ||
         Platform.isAndroid ||
         Platform.isIOS) {
-      _PosixFiles.commit(source, target, overwrite: overwrite);
+      await _PosixFiles.commit(source, target, overwrite: overwrite);
     } else {
       throw const XmlyException('atomic_commit_unsupported', '当前平台不支持安全提交文件');
     }
@@ -434,7 +436,7 @@ class _PosixFiles {
         '__errno',
       );
 
-  static void _androidRenameNoReplace(Pointer<Utf8> from, Pointer<Utf8> to) {
+  static bool _androidRenameNoReplace(Pointer<Utf8> from, Pointer<Utf8> to) {
     final number = switch (Abi.current()) {
       Abi.androidArm => 382,
       Abi.androidArm64 => 276,
@@ -447,14 +449,14 @@ class _PosixFiles {
     // Resolve both bindings before the call so lookup cannot disturb errno.
     final syscall = _androidSyscall;
     final errno = _androidErrno;
-    // Android external-storage FUSE has no hardlink support. RENAME_NOREPLACE
-    // atomically refuses an existing target; never fall back to check + rename.
-    if (syscall(number, -100, from, -100, to, 1) == 0) return;
+    // Android external-storage FUSE has no hardlink support. Keep the atomic
+    // no-replace fast path; unsupported filesystems need exclusive-fd copying.
+    if (syscall(number, -100, from, -100, to, 1) == 0) return true;
     final error = errno().value;
+    if (error == 38 || error == 22 || error == 95) return false;
     final code = switch (error) {
       17 => 'destination_exists', // EEXIST
       18 => 'atomic_commit_cross_device', // EXDEV
-      38 || 22 || 95 => 'atomic_commit_unsupported', // ENOSYS/EINVAL/EOPNOTSUPP
       1 || 13 => 'download_not_writable', // EPERM/EACCES
       28 => 'disk_space', // ENOSPC
       _ => 'atomic_commit',
@@ -462,21 +464,28 @@ class _PosixFiles {
     throw XmlyException(code, '文件安全提交失败，源缓存已保留（errno=$error）');
   }
 
-  static void commit(String source, String target, {required bool overwrite}) {
-    using((arena) {
+  static Future<void> commit(
+    String source,
+    String target, {
+    required bool overwrite,
+  }) async {
+    final copyRequired = using((arena) {
       final from = source.toNativeUtf8(allocator: arena);
       final to = target.toNativeUtf8(allocator: arena);
       if (Platform.isAndroid && !overwrite) {
-        _androidRenameNoReplace(from, to);
+        return !_androidRenameNoReplace(from, to);
       } else {
         // Other POSIX platforms retain link's atomic no-clobber behavior.
-        // Both operations refuse cross-volume moves without a copy fallback.
+        // These operations still refuse cross-volume moves without copying.
         if ((overwrite ? _rename(from, to) : _link(from, to)) != 0) {
           throw FileSystemException('无法原子提交音频，原文件与缓存已保留', target);
         }
       }
+      return false;
     });
-    if (!overwrite && !Platform.isAndroid) {
+    if (copyRequired) {
+      await AndroidPlatform.copyNoReplace(source, target);
+    } else if (!overwrite && !Platform.isAndroid) {
       try {
         File(source).deleteSync();
       } on FileSystemException {

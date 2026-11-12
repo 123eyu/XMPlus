@@ -8,6 +8,7 @@ import '../models/xmly_models.dart';
 /// Android platform operations that cannot use desktop command-line utilities.
 class AndroidPlatform {
   static const _channel = MethodChannel('teikengstudio.xmplus/platform');
+  static const _filesChannel = MethodChannel('teikengstudio.xmplus/files');
 
   static Future<Map<String, String>> mediaToolPaths() async {
     Map<String, String>? values;
@@ -48,6 +49,18 @@ class AndroidPlatform {
     });
     if (bytes == null || bytes < 0) throw const FormatException('无法查询可用空间');
     return bytes;
+  }
+
+  /// Runs the Android FUSE no-replace fallback on a native background queue.
+  static Future<void> copyNoReplace(String source, String target) async {
+    try {
+      await _filesChannel.invokeMethod<void>('copyNoReplace', {
+        'source': source,
+        'target': target,
+      });
+    } on PlatformException catch (error) {
+      throw XmlyException(error.code, error.message ?? '文件安全提交失败，源缓存已保留');
+    }
   }
 
   static Future<void> openAudioFile(String path) =>

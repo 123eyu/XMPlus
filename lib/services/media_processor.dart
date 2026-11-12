@@ -580,7 +580,7 @@ class MediaProcessor {
           flush: true,
         );
         await checkpoint?.call();
-        // No checkpoint after the atomic commit: a completed output is a success.
+        // No checkpoint after publication: a completed output is a success.
         await _paths.commit(
           output,
           destination,
