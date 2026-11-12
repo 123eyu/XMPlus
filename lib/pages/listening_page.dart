@@ -950,15 +950,11 @@ class _ListeningPageState extends State<ListeningPage>
         position: row.position,
         play: () => _act(
           () => row.track.albumId.isEmpty
-              ? _runtime.player.playTrack(
-                  row.track,
-                  resumePosition: row.position,
-                )
+              ? _runtime.player.playTrack(row.track)
               : _runtime.player.playAlbum(
                   row.track.albumId,
                   row.track.id,
                   track: row.track,
-                  resumePosition: row.position,
                 ),
         ),
       ),

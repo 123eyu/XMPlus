@@ -66,6 +66,7 @@ class PlayerService {
        _clock = clock ?? DateTime.now,
        policy = PlaybackPolicy(clock: clock) {
     _driverEvents = _driver.snapshots.listen((snapshot) {
+      final seekRevision = _seekRevision;
       final recorded =
           !_closed &&
           _source != null &&
@@ -86,7 +87,11 @@ class PlayerService {
       }
       _background(
         () => _commands.synchronized(
-          () => _observe(snapshot, stateAlreadyRecorded: recorded),
+          () => _observe(
+            snapshot,
+            seekRevision: seekRevision,
+            stateAlreadyRecorded: recorded,
+          ),
         ),
       );
     });
@@ -164,6 +169,7 @@ class PlayerService {
   int _prefetchEpoch = -1, _prefetchGeneration = -1;
   bool _loading = false;
   int _seekRevision = 0;
+  int? _cloudResumeEpoch;
   int _playbackRecoveryRevision = 0;
 
   Stream<void> get changes => _changes.stream;
@@ -720,30 +726,87 @@ class PlayerService {
     return (position: saved.toDouble(), updatedAt: updated);
   }
 
-  Future<double> _resumePosition(Track track, int request) async {
-    final local = _localProgress(track);
+  Future<void> _restoreCloudProgress(
+    Track track,
+    PlaybackSource source,
+    int request,
+    int epoch,
+    ({double position, int updatedAt})? local, {
+    required bool preservePosition,
+  }) async {
     final client = _historyClient;
-    if (!_syncHistory || client == null) return local?.position ?? 0;
+    if (client == null || !client.accountAvailable) return;
+    final identity = client.cacheIdentity;
+    final listener = accounts.activeClient;
+    final revision = _seekRevision;
+    final expectedGeneration = generation;
+    bool sameSource() =>
+        !_closed && epoch == _epoch && identical(source, _source);
+    bool active() =>
+        sameSource() &&
+        request == _request &&
+        expectedGeneration == generation &&
+        current?.id == track.id &&
+        revision == _seekRevision &&
+        !accounts.admissionPaused &&
+        identical(listener, accounts.activeClient) &&
+        identical(client, _historyClient) &&
+        identity == client.cacheIdentity;
+    // Local samples and billing continue, but the initial fallback must not
+    // overwrite the remote position before this source's read has settled.
+    _cloudResumeEpoch = epoch;
+    Map<String, dynamic>? cloud;
+    var failed = false;
     try {
-      final cloud = await XmlyHistory(client, clock: _clock).progress(
-        albumId: track.albumId,
-        trackId: track.id,
-        timeout: const Duration(seconds: 2),
-      );
-      if (cloud != null &&
-          (local == null ||
-              (cloud['updated_at'] as num) * 1000 > local.updatedAt)) {
-        if (request == _request && cloud['incomplete'] == true) {
-          _sourceWarning = '云历史查询较慢，已使用本次查到的最新进度';
+      try {
+        cloud = await XmlyHistory(client, clock: _clock).progress(
+          albumId: track.albumId,
+          trackId: track.id,
+          timeout: const Duration(seconds: 2),
+          isActive: active,
+        );
+      } catch (_) {
+        failed = true;
+      }
+      await _commands.synchronized(() async {
+        try {
+          if (!active() || preservePosition || _atEnd) return;
+          final remote = cloud;
+          if (remote != null &&
+              (local == null ||
+                  (remote['updated_at'] as num) * 1000 > local.updatedAt)) {
+            final restored = policy.start(
+              duration: duration,
+              resumePosition: (remote['position'] as num).toDouble(),
+              settings: effectiveSettings,
+            );
+            await _driver.seek(restored);
+            if (!active()) return;
+            ++_seekRevision;
+            position = restored;
+            // Only a subsequent device observation may persist the restored
+            // position; the pre-seek fallback is not an official observation.
+            _actual = false;
+            _observedAt = 0;
+            if (remote['incomplete'] == true) {
+              _sourceWarning = '云历史查询较慢，已使用本次查到的最新进度';
+            }
+          } else if (failed) {
+            _sourceWarning = local == null
+                ? '云进度暂不可用，继续当前播放'
+                : '云进度暂不可用，已使用本地进度';
+          }
+          _notify();
+        } finally {
+          if (sameSource() && _cloudResumeEpoch == epoch) {
+            _cloudResumeEpoch = null;
+          }
         }
-        return (cloud['position'] as num).toDouble();
-      }
+      });
     } catch (_) {
-      if (request == _request) {
-        _sourceWarning = local == null ? '云进度暂不可用，将从片头开始' : '云进度暂不可用，已使用本地进度';
-      }
+      // A background restore never fails or pauses an otherwise playable source.
+      if (sameSource() && _cloudResumeEpoch == epoch) _cloudResumeEpoch = null;
     }
-    return local?.position ?? 0;
   }
 
   Future<void> _openCurrent(
@@ -822,15 +885,9 @@ class PlayerService {
       return;
     }
     _source = source;
+    final local = _localProgress(track);
     try {
-      final resume =
-          saved ??
-          await _admission(request, () => _resumePosition(track, request)) ??
-          0.0;
-      if (request != _request) {
-        await _release();
-        return;
-      }
+      final resume = saved ?? local?.position ?? 0.0;
       if (source.requiresReward &&
           source.kind == 'online' &&
           ledger.isBlocked(source.identity)) {
@@ -871,6 +928,16 @@ class PlayerService {
         return;
       }
       _official.start('player', track, source.identity);
+      unawaited(
+        _restoreCloudProgress(
+          track,
+          source,
+          request,
+          epoch,
+          local,
+          preservePosition: saved != null || manualReplay,
+        ),
+      );
       final sleep = policy.pollSleep();
       if (sleep != null) {
         await _sleep(sleep);
@@ -1263,6 +1330,7 @@ class PlayerService {
               : null;
         }
         ++_seekRevision;
+        _cloudResumeEpoch = null;
         // Seeking itself is never an actual listening observation or history POST.
         _notify();
       }),
@@ -1349,11 +1417,15 @@ class PlayerService {
 
   Future<void> _observe(
     AudioSnapshot snapshot, {
+    required int seekRevision,
     bool stateAlreadyRecorded = false,
   }) async {
     if (_closed || _source == null || snapshot.epoch != _epoch) return;
     if (snapshot.error != null)
       throw const XmlyException('audio_device', '音频播放失败');
+    // Billing captured the event at arrival; stale pre-seek positions must not
+    // become fresh local/cloud progress when the command queue catches up.
+    if (seekRevision != _seekRevision) return;
     if (!snapshot.position.isFinite ||
         snapshot.position < 0 ||
         !snapshot.duration.isFinite ||
@@ -1388,7 +1460,7 @@ class PlayerService {
       speed: rate,
       stateAlreadyRecorded: stateAlreadyRecorded,
     );
-    if (_actual)
+    if (_actual && _cloudResumeEpoch != _epoch)
       await _official.observe(
         'player',
         _observedPosition,
@@ -1796,7 +1868,7 @@ class PlayerService {
       });
     }
     _savedAt = _clock().millisecondsSinceEpoch;
-    if (sync)
+    if (sync && _cloudResumeEpoch != _epoch)
       await _official.observe('player', actualPosition, terminal: terminal);
   }
 
@@ -2022,6 +2094,7 @@ class PlayerService {
   Future<void> _release() async {
     final source = _source;
     _source = null;
+    _cloudResumeEpoch = null;
     await source?.release?.call();
   }
 

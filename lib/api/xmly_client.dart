@@ -115,7 +115,8 @@ class XmlyClient {
       RegExp(r'^/fmobile-album/album/track/ts-[0-9]+$').hasMatch(path);
   static bool _endpoint(String method, String origin, String path) {
     if (origin == cachedAlbumOrigin)
-      return _cachedAlbumEndpoint(method, origin, path);
+      return _cachedAlbumEndpoint(method, origin, path) ||
+          (method == 'GET' && path == '/nyx/v1/history/query/android');
     if (origin == paidOrigin)
       return method == 'GET' &&
           RegExp(r'^/mobile/track/pay/[1-9][0-9]{0,18}/ts-[0-9]+$')
@@ -152,7 +153,6 @@ class XmlyClient {
     return method == 'GET' &&
         (const [
               '/mobile/v1/album/track/v2',
-              '/nyx/v1/history/query/android',
               '/lite-mobile/like/v1/user-likes',
             ].contains(path) ||
             RegExp(r'^/mobile/track/[1-9][0-9]{0,18}$').hasMatch(path) ||

@@ -112,7 +112,7 @@ class XmlyHistory {
       if (isActive != null && !isActive()) return const [];
       final response = await client.request(
         'GET',
-        XmlyClient.mobile,
+        XmlyClient.cachedAlbumOrigin,
         '/nyx/v1/history/query/android',
         query: {
           'pageId': '$page',
@@ -174,6 +174,7 @@ class XmlyHistory {
     String albumId = '',
     String trackId = '',
     Duration? timeout,
+    bool Function()? isActive,
   }) async {
     final album = albumId.isEmpty ? '' : _id(albumId);
     final track = trackId.isEmpty ? '' : 'xmly:${_id(trackId)}';
@@ -184,7 +185,7 @@ class XmlyHistory {
     var active = true;
     Map<String, dynamic>? latest;
     final scan = _records(
-      isActive: () => active,
+      isActive: () => active && (isActive?.call() ?? true),
       onPage: (items) {
         latest = null;
         for (final item in items) {

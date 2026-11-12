@@ -359,8 +359,8 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
       final allowed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('同步收听历史？'),
-          content: const Text('开启后会读取并写入当前账号的喜马拉雅收听历史。本地文件播放也会同步实际进度。'),
+          title: const Text('上传收听进度？'),
+          content: const Text('开播时会自动读取云进度。开启后，还会上传当前账号在线播放与本地文件播放的实际进度。'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -368,7 +368,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('开启同步'),
+              child: const Text('开启上传'),
             ),
           ],
         ),
@@ -598,12 +598,13 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                     _section('历史同步', [
                       SwitchListTile(
                         key: const ValueKey('syncHistory'),
-                        title: const Text('同步云端收听历史'),
+                        title: const Text('上传云端收听进度'),
+                        subtitle: const Text('开播时自动读取云进度，此开关仅控制上传'),
                         value: _global['syncHistory'] == true,
                         onChanged: _busy ? null : _sync,
                       ),
                       ListTile(
-                        title: const Text('重试历史同步'),
+                        title: const Text('重试进度上传'),
                         subtitle: _historyResult == null
                             ? null
                             : Text(_historyResult!),
