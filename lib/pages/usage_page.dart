@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../common/widgets/adaptive_text.dart';
+import '../common/widgets/app_header.dart';
 import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
 import '../services/usage_ledger.dart';
@@ -129,7 +130,7 @@ class _UsagePageState extends State<UsagePage> {
   Widget build(BuildContext context) {
     final accounts = widget.runtime.storage.state['accounts'] as Map;
     return Scaffold(
-      appBar: AppBar(title: const AdaptiveText('听时记录')),
+      appBar: AppHeader(title: const AdaptiveText('听时记录')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),

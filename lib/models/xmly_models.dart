@@ -140,12 +140,14 @@ class Track {
   int? get officialPosition => xmlyPositive(raw['officialPosition']);
   factory Track.fromApi(Map<String, dynamic> value, {Album? album, int? position}) {
     final duration = value['duration'];
+    // A validated catalogue position defines playback order. Preserve provider
+    // ordinal fields in raw, where they cannot override that page position.
     return Track(id: _text(value['trackId'] ?? value['id']), title: _text(value['title']),
       artist: _text(value['nickname'] ?? xmlyMap(value['userInfo'])['nickname'] ?? album?.artist),
       album: _text(value['album_title'] ?? value['albumTitle'] ?? album?.title),
       albumId: _text(value['album_id'] ?? value['albumId'] ?? album?.id),
       duration: duration is num ? duration.toDouble() : 0,
-      orderNo: xmlyPositive(value['orderNo']) ?? xmlyPositive(value['orderNum']), episode: xmlyPositive(value['episode']),
+      orderNo: position ?? xmlyPositive(value['orderNo']) ?? xmlyPositive(value['orderNum']), episode: xmlyPositive(value['episode']),
       isPaid: _flag(value['is_paid'] ?? value['isPaid']), isAuthorized: _flag(value['isAuthorized']),
       coverUrl: _cover(value) ?? album?.coverUrl, intro: _text(value['intro']),
       raw: {...value, if (position != null) 'officialPosition': position});

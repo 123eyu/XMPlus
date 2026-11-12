@@ -68,6 +68,15 @@ class _PlaybackVolumeControlState extends State<PlaybackVolumeControl> {
       final theme = Theme.of(context);
       return MenuAnchor(
         consumeOutsideTap: true,
+        style: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(theme.colorScheme.surface),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+          padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+          elevation: const WidgetStatePropertyAll(6),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+        ),
         onClose: () {
           if (_saving) _dismissedWhileSaving = true;
           if (mounted && !_saving && _draft != null) {
@@ -83,12 +92,32 @@ class _PlaybackVolumeControlState extends State<PlaybackVolumeControl> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    spacing: 12,
+                  Row(
                     children: [
-                      Text('主音量 · 所有专辑', style: theme.textTheme.labelLarge),
-                      Text(_label(current), style: theme.textTheme.labelLarge),
+                      Expanded(
+                        child: Text(
+                          muted ? '主音量 · 已静音' : '主音量',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: _saving
+                            ? const CircularProgressIndicator(
+                                strokeWidth: 2,
+                                semanticsLabel: '正在保存主音量',
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _label(current),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
                     ],
                   ),
                   Slider(
@@ -108,9 +137,12 @@ class _PlaybackVolumeControlState extends State<PlaybackVolumeControl> {
                     },
                     onChangeEnd: (value) => _save(value: value),
                   ),
-                  if (muted && _error == null) const Text('已静音，点击喇叭或调整音量可恢复。'),
-                  const Text('切换专辑后保持；各专辑的音量设置仍单独生效。'),
-                  if (_saving) const Text('正在保存…'),
+                  Text(
+                    muted ? '调整音量即可恢复，切换专辑后保留。' : '所有专辑共用，专辑音量可单独调整。',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),

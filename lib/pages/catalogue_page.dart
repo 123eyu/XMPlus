@@ -2,13 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show listEquals;
-
 import 'package:flutter/material.dart';
 
 import '../api/xmly_catalogue.dart';
 import '../api/xmly_client.dart';
 import '../api/xmly_experience.dart';
 import '../common/widgets/adaptive_text.dart';
+import '../common/widgets/app_header.dart';
+import '../common/widgets/local_panel.dart';
 import '../models/xmly_models.dart';
 import '../services/app_runtime.dart';
 import '../services/download_service.dart';
@@ -339,6 +340,7 @@ class AlbumPageView extends StatefulWidget {
     this.initialTrack,
     this.onDownload,
     this.onPlayAlbum,
+    this.inPanel = false,
     super.key,
   });
   final AppRuntime runtime;
@@ -346,6 +348,7 @@ class AlbumPageView extends StatefulWidget {
   final Track? initialTrack;
   final TrackDownload? onDownload;
   final AlbumPlayback? onPlayAlbum;
+  final bool inPanel;
   @override
   State<AlbumPageView> createState() => _AlbumPageViewState();
 }
@@ -1060,13 +1063,14 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         _search.clear();
         _loadPage(1);
       case 'tags':
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => AlbumTagsPage(
-              runtime: widget.runtime,
-              albumId: widget.albumId,
-              albumTitle: _album?.title ?? '',
-            ),
+        showLocalPanel<void>(
+          context: context,
+          title: '专辑标签',
+          builder: (_) => AlbumTagsPage(
+            runtime: widget.runtime,
+            albumId: widget.albumId,
+            albumTitle: _album?.title ?? '',
+            embedded: true,
           ),
         );
       case 'settings':
@@ -1084,10 +1088,19 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     final album = _album;
     final identity = widget.runtime.accounts.primaryAccountId;
     final automatic = widget.runtime.autoDownloads;
-    final compact = MediaQuery.sizeOf(context).width < 320;
+    final compact =
+        MediaQuery.sizeOf(context).width < (usesWindowHeader ? 640 : 320);
     final canDownload = !_busy && !widget.runtime.accounts.admissionPaused;
     return Scaffold(
-      appBar: AppBar(
+      appBar: AppHeader(
+        windowControls: !widget.inPanel,
+        leading: widget.inPanel
+            ? IconButton(
+                tooltip: '收起专辑',
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.close_rounded),
+              )
+            : null,
         title: AdaptiveText(
           album?.title.isNotEmpty == true
               ? album!.title
@@ -1108,6 +1121,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           if (compact)
             PopupMenuButton<String>(
               tooltip: '更多操作',
+              offset: const Offset(0, 12),
               onSelected: _albumAction,
               itemBuilder: (_) => [
                 ..._orderMenu(),
@@ -1130,6 +1144,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           else ...[
             PopupMenuButton<String>(
               tooltip: '目录排序：${_ascending ? "最早在前" : "最新在前"}',
+              offset: const Offset(0, 12),
               icon: const Icon(Icons.sort),
               onSelected: _albumAction,
               itemBuilder: (_) => _orderMenu(),
@@ -1398,11 +1413,23 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                         if (_error != null)
                           Padding(
                             padding: const EdgeInsets.all(12),
-                            child: Text(
-                              _error!,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                              ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  _error!,
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                ),
+                                if (_album == null) ...[
+                                  const SizedBox(height: 8),
+                                  TextButton.icon(
+                                    onPressed: _busy ? null : () => _loadPage(_page),
+                                    icon: const Icon(Icons.refresh_rounded),
+                                    label: const Text('重新加载专辑'),
+                                  ),
+                                ],
+                              ],
                             ),
                           ),
                       ],
@@ -1462,7 +1489,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                       );
                     },
                   ),
-                  SliverToBoxAdapter(
+                  if (_album != null) SliverToBoxAdapter(
                     child: _Paging(
                       page: _page,
                       total: _total,

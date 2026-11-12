@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 
 import '../common/theme.dart';
 import '../common/widgets/adaptive_text.dart';
+import '../common/widgets/app_header.dart';
 import '../services/app_runtime.dart';
 import '../services/update_service.dart';
 import 'settings_page.dart';
@@ -23,12 +24,14 @@ class ShellPage extends StatefulWidget {
     required this.appearance,
     required this.runtime,
     this.onMiniPlayer,
+    this.onTray,
     super.key,
   });
 
   final AppAppearance appearance;
   final AppRuntime runtime;
   final VoidCallback? onMiniPlayer;
+  final VoidCallback? onTray;
 
   @override
   State<ShellPage> createState() => _ShellPageState();
@@ -80,12 +83,15 @@ class _ShellPageState extends State<ShellPage> {
     (label: '设置', icon: Icons.settings_outlined, selected: Icons.settings),
   ];
 
-  void _select(int index) => setState(() => _selectedIndex = index);
+  void _select(int index) {
+    if (_selectedIndex == index) return;
+    setState(() => _selectedIndex = index);
+  }
 
   void _openSearch() => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => Scaffold(
-        appBar: AppBar(title: const Text('搜索')),
+        appBar: AppHeader(title: const Text('搜索')),
         body: DiscoveryPage(
           runtime: widget.runtime,
           onDownload: _download,
@@ -109,29 +115,42 @@ class _ShellPageState extends State<ShellPage> {
         final availableWidth =
             constraints.maxWidth - MediaQuery.paddingOf(context).horizontal;
         final useRail = availableWidth >= 840;
-        final compact = availableWidth < 320;
+        final expandedRail = availableWidth >= 1440;
+        final compact = availableWidth < (usesWindowHeader ? 600 : 320);
+        final theme = Theme.of(context);
+        final colors = theme.colorScheme;
+        final railLabelStyle = expandedRail
+            ? theme.textTheme.titleMedium
+            : theme.textTheme.labelMedium;
         return Scaffold(
-          appBar: AppBar(
+          appBar: AppHeader(
+            showBrand: !compact,
             title: AdaptiveText(_destinations[_selectedIndex].label),
             actions: [
               if (widget.onMiniPlayer != null)
                 PopupMenuButton<String>(
                   tooltip: '窗口操作',
+                  offset: const Offset(0, 12),
                   onSelected: (value) {
                     if (value == 'mini') {
                       widget.onMiniPlayer!();
+                    } else if (value == 'tray') {
+                      widget.onTray?.call();
                     } else {
                       widget.runtime.requestExit?.call();
                     }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'mini', child: Text('收起到小窗')),
-                    PopupMenuItem(value: 'exit', child: Text('彻底退出')),
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'mini', child: Text('收起到小窗')),
+                    if (widget.onTray != null)
+                      const PopupMenuItem(value: 'tray', child: Text('收起到托盘')),
+                    const PopupMenuItem(value: 'exit', child: Text('彻底退出')),
                   ],
                 ),
               if (compact)
                 PopupMenuButton<String>(
                   tooltip: '更多操作',
+                  offset: const Offset(0, 12),
                   onSelected: (value) =>
                       value == 'search' ? _openSearch() : _openUsage(),
                   itemBuilder: (_) => const [
@@ -157,52 +176,59 @@ class _ShellPageState extends State<ShellPage> {
             bottom: useRail,
             child: Row(
               children: [
-                if (useRail) ...[
-                  LayoutBuilder(
-                    builder: (context, railConstraints) {
-                      return SingleChildScrollView(
-                        child: SizedBox(
-                          height: railConstraints.maxHeight
-                              .clamp(
-                                _destinations.length *
-                                        (72 +
-                                            MediaQuery.textScalerOf(context)
-                                                .scale(16)) +
-                                    32,
-                                double.infinity,
-                              )
-                              .toDouble(),
-                          child: NavigationRail(
-                            groupAlignment: railConstraints.maxHeight < 560
-                                ? -1
-                                : 0,
-                            labelType: NavigationRailLabelType.all,
-                            backgroundColor: Colors.transparent,
-                            onDestinationSelected: _select,
-                            selectedIndex: _selectedIndex,
-                            destinations: _destinations.map((destination) {
-                              return NavigationRailDestination(
-                                label: SizedBox(
-                                  width: 64,
-                                  child: Text(
-                                    destination.label,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                                icon: Icon(destination.icon),
-                                selectedIcon: Icon(destination.selected),
-                              );
-                            }).toList(),
-                          ),
+                if (useRail)
+                  ColoredBox(
+                    key: const ValueKey('shellNavigation'),
+                    color: colors.surfaceContainerLow,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 20, 8, 16),
+                      child: NavigationRail(
+                        extended: expandedRail,
+                        minWidth: 72,
+                        minExtendedWidth: 168,
+                        groupAlignment: -1,
+                        scrollable: true,
+                        labelType: expandedRail
+                            ? NavigationRailLabelType.none
+                            : NavigationRailLabelType.all,
+                        backgroundColor: Colors.transparent,
+                        selectedLabelTextStyle: railLabelStyle?.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w600,
                         ),
-                      );
-                    },
+                        unselectedLabelTextStyle: railLabelStyle?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                        indicatorColor: colors.primaryContainer,
+                        selectedIconTheme: IconThemeData(
+                          color: colors.onPrimaryContainer,
+                          size: 24,
+                        ),
+                        unselectedIconTheme: IconThemeData(
+                          color: colors.onSurfaceVariant,
+                          size: 24,
+                        ),
+                        onDestinationSelected: _select,
+                        selectedIndex: _selectedIndex,
+                        destinations: _destinations.map((destination) {
+                          return NavigationRailDestination(
+                            label: Text(
+                              destination.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: expandedRail
+                                  ? TextAlign.start
+                                  : TextAlign.center,
+                            ),
+                            icon: Icon(destination.icon),
+                            selectedIcon: Icon(destination.selected),
+                          );
+                        }).toList(),
+                      ),
+                    ),
                   ),
-                  const VerticalDivider(width: 1),
-                ],
                 Expanded(
+                  key: const ValueKey('shellContent'),
                   child: Column(
                     children: [
                       ListenableBuilder(
@@ -224,7 +250,7 @@ class _ShellPageState extends State<ShellPage> {
                               ),
                       ),
                       Expanded(
-                        child: IndexedStack(
+                        child: _ShellPageStack(
                           index: _selectedIndex,
                           children: [
                             HomePage(
@@ -310,4 +336,76 @@ class _ShellPageState extends State<ShellPage> {
       },
     );
   }
+}
+
+/// Cross-fades destinations without replacing their state or scroll positions.
+class _ShellPageStack extends StatefulWidget {
+  const _ShellPageStack({required this.index, required this.children});
+
+  final int index;
+  final List<Widget> children;
+
+  @override
+  State<_ShellPageStack> createState() => _ShellPageStackState();
+}
+
+class _ShellPageStackState extends State<_ShellPageStack> {
+  final _leaving = <int>{};
+  bool _disableAnimations = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final disabled = MediaQuery.disableAnimationsOf(context);
+    if (disabled != _disableAnimations) {
+      _disableAnimations = disabled;
+      _leaving.clear();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _ShellPageStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.index != widget.index) {
+      if (!_disableAnimations) _leaving.add(oldWidget.index);
+      _leaving.remove(widget.index);
+    }
+  }
+
+  void _finishTransition(int index) {
+    if (!mounted || index == widget.index || !_leaving.contains(index)) return;
+    setState(() => _leaving.remove(index));
+  }
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      for (var index = 0; index < widget.children.length; index++)
+        Offstage(
+          offstage: index != widget.index && !_leaving.contains(index),
+          child: TickerMode(
+            enabled: index == widget.index || _leaving.contains(index),
+            child: ExcludeFocus(
+              excluding: index != widget.index,
+              child: ExcludeSemantics(
+                excluding: index != widget.index,
+                child: IgnorePointer(
+                  ignoring: index != widget.index,
+                  child: AnimatedOpacity(
+                    opacity: index == widget.index ? 1 : 0,
+                    duration: _disableAnimations
+                        ? Duration.zero
+                        : const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    onEnd: () => _finishTransition(index),
+                    child: RepaintBoundary(child: widget.children[index]),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+    ],
+  );
 }

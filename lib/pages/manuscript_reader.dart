@@ -9,8 +9,13 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 /// Official publisher/AI manuscript HTML, including image-only manuscripts.
 class ManuscriptReader extends StatefulWidget {
-  const ManuscriptReader({required this.manuscript, super.key});
+  const ManuscriptReader({
+    required this.manuscript,
+    this.showTitle = true,
+    super.key,
+  });
   final String manuscript;
+  final bool showTitle;
 
   @override
   State<ManuscriptReader> createState() => _ManuscriptReaderState();
@@ -153,10 +158,11 @@ class _ManuscriptReaderState extends State<ManuscriptReader> {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Text('文稿', style: Theme.of(context).textTheme.titleMedium),
-      ),
+      if (widget.showTitle)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text('文稿', style: Theme.of(context).textTheme.titleMedium),
+        ),
       Expanded(
         child: !_html
             ? Scrollbar(
@@ -168,7 +174,7 @@ class _ManuscriptReaderState extends State<ManuscriptReader> {
                   child: SelectableText(
                     widget.manuscript,
                     style: Theme.of(context).textTheme.bodyLarge
-                        ?.copyWith(height: 1.8),
+                        ?.copyWith(fontSize: 17, height: 1.9),
                   ),
                 ),
               )

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../common/widgets/app_header.dart';
 import '../app.dart';
 import '../common/theme.dart';
 import '../storage/app_storage.dart';
@@ -134,6 +135,9 @@ class _StartupPageState extends State<StartupPage> {
         child: child!,
       ),
       home: Scaffold(
+        appBar: usesWindowHeader
+            ? const AppHeader(title: Text('XMPlus'), showBrand: true)
+            : null,
         body: SafeArea(
           child: Center(
             child: ConstrainedBox(

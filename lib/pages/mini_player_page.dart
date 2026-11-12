@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../common/widgets/app_header.dart';
 import '../services/app_runtime.dart';
 import 'player_panel.dart';
 
@@ -22,8 +23,10 @@ class MiniPlayerPage extends StatelessWidget {
       if (!didPop) onRestore();
     },
     child: Scaffold(
-      appBar: AppBar(
+      appBar: AppHeader(
         automaticallyImplyLeading: false,
+        allowMaximize: false,
+        closeTooltip: '收起到托盘，继续播放',
         toolbarHeight: 40,
         title: const Text('小窗播放', style: TextStyle(fontSize: 14)),
         actions: [
@@ -40,23 +43,10 @@ class MiniPlayerPage extends StatelessWidget {
         ],
       ),
       body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            PlayerPanel(
-              runtime: runtime,
-              miniWindow: true,
-              onExpand: onRestore,
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Text(
-                '关闭小窗会最小化到任务栏',
-                style: Theme.of(context).textTheme.bodySmall,
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
+        child: PlayerPanel(
+          runtime: runtime,
+          miniWindow: true,
+          onExpand: onRestore,
         ),
       ),
     ),

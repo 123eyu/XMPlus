@@ -9,7 +9,7 @@ import 'package:flutter/services.dart' show PredictiveBackEvent;
 import '../storage/app_storage.dart';
 
 class AppAppearance extends ChangeNotifier {
-  static const defaultSeedColor = 0xFFE57373;
+  static const defaultSeedColor = 0xFF245C56;
 
   AppAppearance(this.storage) {
     _load();
@@ -215,7 +215,12 @@ ThemeData getThemeData({
         color: colorScheme.onSecondaryContainer,
       ),
     ),
-    popupMenuTheme: PopupMenuThemeData(surfaceTintColor: Colors.transparent),
+    popupMenuTheme: PopupMenuThemeData(
+      position: PopupMenuPosition.under,
+      surfaceTintColor: Colors.transparent,
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    ),
     cardTheme: CardThemeData(
       elevation: 0,
       margin: EdgeInsets.zero,

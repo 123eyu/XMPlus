@@ -6,11 +6,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-
 import 'package:path/path.dart' as p;
 
 import '../common/theme.dart';
 import '../common/widgets/adaptive_text.dart';
+import '../common/widgets/app_header.dart';
 import '../services/app_runtime.dart';
 import '../services/update_service.dart';
 import 'account_page.dart';
@@ -18,6 +18,7 @@ import 'backup_page.dart';
 import 'download_settings_page.dart';
 import 'media_settings_page.dart';
 import 'playback_settings_page.dart';
+import 'theme_color_editor.dart';
 import 'window_close_preferences.dart';
 
 enum _SettingsSection {
@@ -115,7 +116,7 @@ class _SettingsPageState extends State<SettingsPage> {
       Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (context) => Scaffold(
-            appBar: AppBar(title: AdaptiveText(title)),
+            appBar: AppHeader(title: AdaptiveText(title)),
             body: SafeArea(child: _detail(section)),
           ),
         ),
@@ -171,14 +172,24 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-class _AppearanceSettings extends StatelessWidget {
+class _AppearanceSettings extends StatefulWidget {
   const _AppearanceSettings({required this.appearance, required this.runtime});
 
   final AppAppearance appearance;
   final AppRuntime runtime;
 
+  @override
+  State<_AppearanceSettings> createState() => _AppearanceSettingsState();
+}
+
+class _AppearanceSettingsState extends State<_AppearanceSettings> {
+  bool _editingColor = false;
+  AppAppearance get appearance => widget.appearance;
+  AppRuntime get runtime => widget.runtime;
+
   static const _colors = [
-    (label: '浅红', color: Color(AppAppearance.defaultSeedColor)),
+    (label: '松绿', color: Color(AppAppearance.defaultSeedColor)),
+    (label: '浅红', color: Color(0xFFE57373)),
     (label: '青绿', color: Color(0xFF006A67)),
     (label: '蓝色', color: Color(0xFF295EA6)),
     (label: '紫色', color: Color(0xFF7054A2)),
@@ -216,6 +227,7 @@ class _AppearanceSettings extends StatelessWidget {
                       (label: '深色', mode: ThemeMode.dark),
                     ])
                       ChoiceChip(
+                        showCheckmark: false,
                         label: Text(
                           option.label,
                           maxLines: 1,
@@ -240,25 +252,67 @@ class _AppearanceSettings extends StatelessWidget {
           const SizedBox(height: 16),
           _SettingsCard(
             title: '主题色',
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final option in _colors)
-                  ChoiceChip(
-                    label: Text(
-                      option.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    avatar: CircleAvatar(
-                      backgroundColor: option.color,
-                      radius: 8,
-                    ),
-                    selected: appearance.seedColor == option.color,
-                    onSelected: (_) => appearance.seedColor = option.color,
+            child: AnimatedSize(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final option in _colors)
+                        ChoiceChip(
+                          showCheckmark: false,
+                          label: Text(
+                            option.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          avatar: CircleAvatar(
+                            backgroundColor: option.color,
+                            radius: 8,
+                          ),
+                          selected: appearance.seedColor == option.color,
+                          onSelected: (_) {
+                            setState(() => _editingColor = false);
+                            appearance.seedColor = option.color;
+                          },
+                        ),
+                      ChoiceChip(
+                        key: const ValueKey('customThemeColor'),
+                        showCheckmark: false,
+                        avatar: const Icon(Icons.colorize_outlined, size: 18),
+                        label: const Text('自定义'),
+                        selected:
+                            _editingColor ||
+                            !_colors.any(
+                              (option) => option.color == appearance.seedColor,
+                            ),
+                        onSelected: (_) =>
+                            setState(() => _editingColor = !_editingColor),
+                      ),
+                    ],
                   ),
-              ],
+                  if (_editingColor)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 20),
+                      child: ThemeColorEditor(
+                        initialColor: appearance.seedColor,
+                        oledBlack: appearance.oledBlack,
+                        onCancel: () => setState(() => _editingColor = false),
+                        onApply: (color) {
+                          appearance.seedColor = color;
+                          setState(() => _editingColor = false);
+                        },
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 16),

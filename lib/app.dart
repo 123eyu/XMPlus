@@ -21,6 +21,7 @@ import 'pages/mini_player_page.dart';
 import 'pages/window_close_preferences.dart';
 import 'services/app_runtime.dart';
 import 'services/desktop_playback_window.dart';
+import 'services/desktop_tray.dart';
 import 'services/request_diagnostics.dart';
 
 class MyApp extends StatefulWidget {
@@ -39,6 +40,19 @@ class _MyAppState extends State<MyApp> with WindowListener {
   final _playerRoutes = _PlayerRouteObserver();
   final _windowActions = Lock();
   final _playbackWindow = DesktopPlaybackWindow();
+  late final _tray = DesktopTray(
+    onRestore: () => _switchWindow(restore: true),
+    onMini: () => _switchWindow(),
+    onPlayPause: () => _trayPlayback(() {
+      final player = widget.runtime.player;
+      return player.playing || player.loading
+          ? player.pause()
+          : player.resume();
+    }),
+    onNext: () => _trayPlayback(widget.runtime.player.next),
+    onExit: () => onCloseRequested(explicitExit: true),
+  );
+  bool _trayPlaybackBusy = false;
   Route<void>? _miniRoute;
   Route<dynamic>? _closeDialog;
   Future<void>? _closeWork;
@@ -61,11 +75,49 @@ class _MyAppState extends State<MyApp> with WindowListener {
       windowManager.addListener(this);
       unawaited(windowManager.setPreventClose(true));
     }
+    if (Platform.isWindows) {
+      _tray.ensureReady();
+      widget.runtime.addListener(_updateTray);
+      _updateTray();
+    }
+  }
+
+  void _updateTray() {
+    final player = widget.runtime.player;
+    _tray.update(
+      title: player.current?.title ?? '',
+      playing: player.playing,
+      loading: player.loading,
+      enabled:
+          player.current != null &&
+          !widget.runtime.closing &&
+          !_trayPlaybackBusy,
+    );
+  }
+
+  Future<void> _trayPlayback(Future<void> Function() action) async {
+    if (_trayPlaybackBusy || widget.runtime.closing || !mounted) return;
+    _trayPlaybackBusy = true;
+    _updateTray();
+    try {
+      await action();
+    } catch (_) {
+      await _revealWindow();
+      _showWindowError('播放操作未完成，请重试');
+    } finally {
+      _trayPlaybackBusy = false;
+      widget.runtime.changed();
+    }
   }
 
   @override
   void onWindowClose() async {
     await onCloseRequested();
+  }
+
+  @override
+  void onWindowMinimize() {
+    if (Platform.isWindows && _miniRoute != null) unawaited(_sendToTray());
   }
 
   Future<void> onCloseRequested({bool explicitExit = false}) {
@@ -93,6 +145,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
   }
 
   Future<T?> _askClose<T>(Widget dialog) async {
+    await _restoreMainWindow();
     final context = _navigator.currentContext;
     if (context == null) return null;
     final route = DialogRoute<T>(context: context, builder: (_) => dialog);
@@ -110,7 +163,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
     try {
       if (Platform.isWindows && !_exitPending) {
         if (_miniRoute != null) {
-          await windowManager.minimize();
+          await _hideToTray();
           if (!_exitPending) return;
         } else {
           var action = WindowCloseAction.read(widget.runtime);
@@ -134,6 +187,10 @@ class _MyAppState extends State<MyApp> with WindowListener {
           }
           if (!_exitPending && action == WindowCloseAction.mini) {
             await _enterMini();
+            if (!_exitPending) return;
+          }
+          if (!_exitPending && action == WindowCloseAction.tray) {
+            await _hideToTray();
             if (!_exitPending) return;
           }
         }
@@ -166,6 +223,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
           await SystemNavigator.pop();
         } else {
           await windowManager.setPreventClose(false);
+          _tray.dispose();
           await windowManager.close();
         }
       } else {
@@ -196,6 +254,39 @@ class _MyAppState extends State<MyApp> with WindowListener {
       await windowManager.show();
       await windowManager.focus();
     }
+  }
+
+  Future<void> _hideToTray() async {
+    if (!_tray.ensureReady()) throw StateError('系统托盘暂不可用');
+    _updateTray();
+    try {
+      await windowManager.hide();
+    } catch (_) {
+      await _revealWindow();
+      rethrow;
+    }
+  }
+
+  Future<void> _sendToTray() => _windowActions.synchronized(() async {
+    if (!mounted || widget.runtime.closing) return;
+    try {
+      await _hideToTray();
+    } catch (_) {
+      await _revealWindow();
+      _showWindowError('暂时无法收起到托盘，请重试');
+    }
+  });
+
+  Future<void> _restoreMainWindow() async {
+    if (Platform.isWindows) {
+      await _playbackWindow.restore();
+      final route = _miniRoute;
+      if (route != null) {
+        _navigator.currentState?.removeRoute(route);
+        if (mounted) setState(() => _miniRoute = null);
+      }
+    }
+    await _revealWindow();
   }
 
   void _showWindowError(String message) {
@@ -230,14 +321,10 @@ class _MyAppState extends State<MyApp> with WindowListener {
         if (!mounted || widget.runtime.closing) return;
         try {
           if (restore) {
-            await _playbackWindow.restore();
-            final route = _miniRoute;
-            if (route != null) {
-              _navigator.currentState?.removeRoute(route);
-              if (mounted) setState(() => _miniRoute = null);
-            }
+            await _restoreMainWindow();
           } else {
             await _enterMini();
+            await _revealWindow();
           }
         } catch (_) {
           await _revealWindow();
@@ -267,6 +354,10 @@ class _MyAppState extends State<MyApp> with WindowListener {
     }
     widget.runtime.confirmDownload = null;
     widget.runtime.requestExit = null;
+    if (Platform.isWindows) {
+      widget.runtime.removeListener(_updateTray);
+      _tray.dispose();
+    }
     _appearance.dispose();
     _playerRoutes.dispose();
     super.dispose();
@@ -367,9 +458,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
                           ),
                         ),
                       Expanded(child: child!),
-                      if (_miniRoute == null &&
-                          _playerRoutes.current?.settings.name !=
-                              PlayerPanel.routeName)
+                      if (_miniRoute == null && !_playerRoutes.playerExpanded)
                         SafeArea(
                           top: false,
                           child: ExcludeFocus(
@@ -404,6 +493,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
             onMiniPlayer: Platform.isWindows
                 ? () => unawaited(_switchWindow())
                 : null,
+            onTray: Platform.isWindows ? () => unawaited(_sendToTray()) : null,
           ),
         ),
       ),
@@ -412,8 +502,17 @@ class _MyAppState extends State<MyApp> with WindowListener {
 }
 
 class _PlayerRouteObserver extends NavigatorObserver with ChangeNotifier {
+  final _routes = <Route<dynamic>>[];
   Route<dynamic>? current;
   bool _disposed = false;
+
+  bool get playerExpanded {
+    for (final route in _routes.reversed) {
+      if (route is PageRoute)
+        return route.settings.name == PlayerPanel.routeName;
+    }
+    return false;
+  }
 
   void _changed(Route<dynamic>? route) {
     current = route;
@@ -423,21 +522,36 @@ class _PlayerRouteObserver extends NavigatorObserver with ChangeNotifier {
   }
 
   @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      _changed(route);
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _routes.add(route);
+    _changed(route);
+  }
 
   @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      _changed(previousRoute);
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _routes.remove(route);
+    _changed(previousRoute);
+  }
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    if (identical(current, oldRoute)) _changed(newRoute);
+    final index = oldRoute == null ? -1 : _routes.indexOf(oldRoute);
+    if (index >= 0) {
+      if (newRoute == null) {
+        _routes.removeAt(index);
+      } else {
+        _routes[index] = newRoute;
+      }
+    } else if (newRoute != null) {
+      _routes.add(newRoute);
+    }
+    _changed(identical(current, oldRoute) ? newRoute : current);
   }
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (identical(current, route)) _changed(previousRoute);
+    _routes.remove(route);
+    _changed(identical(current, route) ? previousRoute : current);
   }
 
   @override
@@ -456,6 +570,7 @@ class _RequestFailureDialog extends StatefulWidget {
 class _RequestFailureDialogState extends State<_RequestFailureDialog> {
   RequestFailure? _selected;
   String? _copiedPath;
+  String? _copyError;
 
   @override
   Widget build(BuildContext context) {
@@ -497,6 +612,7 @@ class _RequestFailureDialogState extends State<_RequestFailureDialog> {
                         .toList(),
                     onChanged: (value) => setState(() {
                       _selected = value;
+                      _copyError = null;
                     }),
                   ),
                   Expanded(
@@ -514,6 +630,18 @@ class _RequestFailureDialogState extends State<_RequestFailureDialog> {
                   SelectableText('文件：${selected.path}'),
                 ] else
                   const Expanded(child: Text('暂无失败请求。')),
+                if (_copyError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      _copyError!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -528,19 +656,21 @@ class _RequestFailureDialogState extends State<_RequestFailureDialog> {
                         if (mounted)
                           setState(() {
                             _copiedPath = selected.path;
+                            _copyError = null;
                           });
                       } catch (error) {
                         if (mounted)
                           setState(() {
-                            _copiedPath = '复制失败：$error';
+                            _copiedPath = null;
+                            _copyError = '复制失败：$error';
                           });
                       }
                     },
               child: Text(
                 _copiedPath == selected?.path
                     ? '已复制完整内容'
-                    : _copiedPath?.startsWith('复制失败：') == true
-                    ? _copiedPath!
+                    : _copyError != null
+                    ? '重试复制'
                     : '复制完整内容',
               ),
             ),
