@@ -77,6 +77,7 @@ void _recordCatalogueError(
     recoverable || expected ? AppLogLevel.warning : AppLogLevel.error,
     'catalogue_page',
     operation,
+    data: error is XmlyException ? error.diagnostics : null,
     error: error,
     stackTrace: stack,
     promptUser: !recoverable && !expected,
