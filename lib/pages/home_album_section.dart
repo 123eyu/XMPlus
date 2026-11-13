@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../api/xmly_experience.dart';
 import '../models/xmly_models.dart';
 import 'catalogue_page.dart';
+import "../services/app_log.dart";
 
 /// Uses the available width for albums while keeping each cover readable.
 class HomeAlbumSection extends StatelessWidget {
@@ -19,6 +20,10 @@ class HomeAlbumSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      "lib/pages/home_album_section.dart::HomeAlbumSection.build",
+    );
+
     final theme = Theme.of(context);
     final scaler = MediaQuery.textScalerOf(context);
     final showCover = MediaQuery.sizeOf(context).width >= 320;
@@ -26,7 +31,7 @@ class HomeAlbumSection extends StatelessWidget {
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.only(top: 28, bottom: 16),
+            padding: const EdgeInsets.only(top: 16, bottom: 8),
             child: Text(
               section.isRanking ? '排行榜 · ${section.title}' : section.title,
               style: theme.textTheme.titleLarge?.copyWith(
@@ -38,16 +43,20 @@ class HomeAlbumSection extends StatelessWidget {
         ),
         SliverLayoutBuilder(
           builder: (context, constraints) {
+            AppLog.instance.trace(
+              "lib/pages/home_album_section.dart::HomeAlbumSection.build.closure#1",
+            );
+
             final width = constraints.crossAxisExtent;
-            final gap = width >= 840 ? 24.0 : 16.0;
+            final gap = width >= 840 ? 12.0 : 10.0;
             final scale = math.max(1.0, scaler.scale(16) / 16);
             final minimumWidth = section.isRanking
-                ? 320.0
+                ? 280.0
                 : width >= 720
-                ? 220.0
+                ? 180.0
                 : width >= 480
-                ? 160.0
-                : 132.0;
+                ? 148.0
+                : 124.0;
             final availableColumns = math.max(
               1,
               ((width + gap) / (minimumWidth * scale + gap)).floor(),
@@ -57,28 +66,33 @@ class HomeAlbumSection extends StatelessWidget {
                 : availableColumns;
             final cardWidth = (width - gap * (columns - 1)) / columns;
             final coverSize = section.isRanking
-                ? (width * .06).clamp(64.0, 80.0)
-                : cardWidth - 16;
-            final titleHeight = scaler.scale(16) * 1.4 * 2;
+                ? (width * .05).clamp(56.0, 64.0)
+                : cardWidth - 8;
+            // Paragraph heights round up; reserve the same whole logical pixels.
+            final titleHeight = (scaler.scale(16) * 1.4 * 2).ceilToDouble();
             final extent = section.isRanking
                 ? math.max(
-                    coverSize + 24,
-                    titleHeight + scaler.scale(12) * 1.4 + 34,
+                    coverSize + 16,
+                    titleHeight + (scaler.scale(12) * 1.4).ceilToDouble() + 20,
                   )
-                : (showCover ? cardWidth - 16 + 12 : 0) +
+                : (showCover ? coverSize + 6 : 0) +
                       titleHeight +
-                      scaler.scale(14) * 1.4 +
-                      scaler.scale(12) * 1.4 +
-                      30;
+                      (scaler.scale(14) * 1.4).ceilToDouble() +
+                      (scaler.scale(12) * 1.4).ceilToDouble() +
+                      16;
             return SliverGrid.builder(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: columns,
                 crossAxisSpacing: gap,
-                mainAxisSpacing: section.isRanking ? 12 : 20,
+                mainAxisSpacing: 8,
                 mainAxisExtent: extent,
               ),
               itemCount: section.albums.length,
               itemBuilder: (context, index) {
+                AppLog.instance.trace(
+                  "lib/pages/home_album_section.dart::HomeAlbumSection.build.closure#1.closure#1",
+                );
+
                 final album = section.albums[index];
                 final stats = section.stats[album.id];
                 return _HomeAlbumCard(
@@ -89,7 +103,14 @@ class HomeAlbumSection extends StatelessWidget {
                   coverSize: coverSize,
                   titleHeight: titleHeight,
                   showCover: showCover,
-                  onTap: onOpenAlbum == null ? null : () => onOpenAlbum!(album),
+                  onTap: onOpenAlbum == null
+                      ? null
+                      : () {
+                          AppLog.instance.trace(
+                            "lib/pages/home_album_section.dart::HomeAlbumSection.build.closure#1.closure#1.closure#1",
+                          );
+                          onOpenAlbum!(album);
+                        },
                 );
               },
             );
@@ -121,6 +142,10 @@ class _HomeAlbumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      "lib/pages/home_album_section.dart::_HomeAlbumCard.build",
+    );
+
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final ranking = rank != null;
@@ -128,7 +153,11 @@ class _HomeAlbumCard extends StatelessWidget {
       album.title,
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
-      style: theme.textTheme.titleMedium?.copyWith(fontSize: 16, height: 1.4),
+      style: theme.textTheme.titleMedium?.copyWith(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+      ),
     );
     final artist = Text(
       album.artist,
@@ -156,8 +185,11 @@ class _HomeAlbumCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
+          hoverColor: colors.primary.withValues(alpha: .045),
+          focusColor: colors.primary.withValues(alpha: .09),
+          highlightColor: colors.primary.withValues(alpha: .07),
           child: Padding(
-            padding: EdgeInsets.all(ranking ? 12 : 8),
+            padding: EdgeInsets.all(ranking ? 8 : 4),
             child: ranking
                 ? Row(
                     children: [
@@ -178,7 +210,7 @@ class _HomeAlbumCard extends StatelessWidget {
                       ),
                       if (showCover) ...[
                         CoverImage(uri: album.coverUrl, size: coverSize),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 8),
                       ],
                       Expanded(
                         child: Column(
@@ -186,7 +218,7 @@ class _HomeAlbumCard extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             title,
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 4),
                             Row(
                               children: [
                                 Expanded(child: artist),
@@ -205,51 +237,37 @@ class _HomeAlbumCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (showCover) ...[
-                        Stack(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: CoverImage(
-                                uri: album.coverUrl,
-                                size: coverSize,
-                              ),
-                            ),
-                            if (stats?.score != null)
-                              Positioned(
-                                right: 8,
-                                bottom: 8,
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: colors.surface.withValues(
-                                      alpha: .94,
-                                    ),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    child: _score(context),
-                                  ),
-                                ),
-                              ),
-                          ],
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: CoverImage(
+                            uri: album.coverUrl,
+                            size: coverSize,
+                          ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 6),
                       ],
                       SizedBox(height: titleHeight, child: title),
                       const SizedBox(height: 4),
                       artist,
-                      const SizedBox(height: 8),
-                      Text(
-                        details.join(' · '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          height: 1.4,
-                          color: colors.onSurfaceVariant,
-                        ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              details.join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                height: 1.4,
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          if (stats?.score != null) ...[
+                            const SizedBox(width: 8),
+                            _score(context),
+                          ],
+                        ],
                       ),
                     ],
                   ),
@@ -259,18 +277,42 @@ class _HomeAlbumCard extends StatelessWidget {
     );
   }
 
-  Widget _score(BuildContext context) => Text(
-    '${stats!.score!.toStringAsFixed(1)} 分',
-    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-      height: 1.4,
-      color: Theme.of(context).colorScheme.primary,
-      fontWeight: FontWeight.w600,
-    ),
-  );
+  Widget _score(BuildContext context) {
+    AppLog.instance.trace(
+      "lib/pages/home_album_section.dart::_HomeAlbumCard._score",
+    );
+    return Semantics(
+      label: '评分 ${stats!.score!.toStringAsFixed(1)} 分',
+      child: ExcludeSemantics(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.star_rounded,
+              size: 14,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 3),
+            Text(
+              stats!.score!.toStringAsFixed(1),
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                height: 1.4,
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-String _count(int count) => count >= 100000000
-    ? '${(count / 100000000).toStringAsFixed(1)}亿'
-    : count >= 10000
-    ? '${(count / 10000).toStringAsFixed(1)}万'
-    : '$count';
+String _count(int count) {
+  AppLog.instance.trace("lib/pages/home_album_section.dart::_count");
+  return count >= 100000000
+      ? '${(count / 100000000).toStringAsFixed(1)}亿'
+      : count >= 10000
+      ? '${(count / 10000).toStringAsFixed(1)}万'
+      : '$count';
+}
