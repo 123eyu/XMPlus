@@ -490,6 +490,63 @@ void main() {
     expect(signals, 1);
   });
 
+  test('startup directory override keeps bootstrap logs out of the default profile', () async {
+    final defaultLogs = Directory(p.join(root.path, 'default', 'logs'));
+    final profileLogs = Directory(
+      p.join(root.path, '资料目录 with spaces', 'logs'),
+    );
+    final ignoredLogs = Directory(p.join(root.path, 'another-profile', 'logs'));
+    final log = AppLog(
+      directory: defaultLogs,
+      sessionId: 'profile-bootstrap',
+      startedAt: epoch,
+      processId: 123,
+    );
+    openLogs.add(log);
+    log.trace('main');
+    await log.initialize(directory: profileLogs);
+    log.write(AppLogLevel.info, 'startup', 'profile-started');
+    final originalPath = log.currentFilePath;
+    await log.initialize(directory: ignoredLogs);
+    await log.flush();
+
+    expect(log.directory, profileLogs.path);
+    expect(p.dirname(log.currentFilePath!), profileLogs.path);
+    expect(log.currentFilePath, originalPath);
+    expect(await defaultLogs.exists(), isFalse);
+    expect(await ignoredLogs.exists(), isFalse);
+    expect(
+      (await records(await log.snapshot(log.currentFileName!)))
+          .map((line) => line['message']),
+      ['main', 'profile-started'],
+    );
+  });
+
+  test('unavailable startup log directory retains diagnostics without changing profiles', () async {
+    final defaultLogs = Directory(p.join(root.path, 'default', 'logs'));
+    final obstruction = await File(p.join(root.path, 'profile')).create();
+    final profileLogs = Directory(p.join(obstruction.path, 'logs'));
+    final log = AppLog(
+      directory: defaultLogs,
+      sessionId: 'profile-unavailable',
+      startedAt: epoch,
+      processId: 123,
+    );
+    openLogs.add(log);
+    await log.initialize(directory: profileLogs);
+    log.write(AppLogLevel.error, 'startup', 'profile-failed');
+    final snapshot = await log.snapshot(log.currentFileName!);
+
+    expect(log.directory, profileLogs.path);
+    expect(log.persistenceError, isNotNull);
+    expect(snapshot.sourcePath, isNull);
+    expect(await defaultLogs.exists(), isFalse);
+    expect(
+      (await records(snapshot)).map((line) => line['message']),
+      contains('profile-failed'),
+    );
+  });
+
   test('bootstrap retains only the main entry; applying INFO stops traces immediately', () async {
     final log = AppLog(
       directory: root,

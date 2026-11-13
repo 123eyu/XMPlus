@@ -2,21 +2,35 @@
 // d9e9626f1a3f89cd9ca85e18f61aaba02634e12a (GNU GPL v3).
 // Source: https://github.com/bggRGjQaUbCoE/PiliPlus
 // Desktop setup only; audio and account services are not initialized here.
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'pages/startup_page.dart';
 import 'services/app_log.dart';
 import 'services/error_reporting.dart';
+import 'services/startup_directory.dart';
 
 Future<void> main(List<String> arguments) async {
   AppLog.instance.trace("lib/main.dart::main");
 
   WidgetsFlutterBinding.ensureInitialized();
-  await AppLog.instance.initialize();
+  String? dataDirectory;
+  try {
+    dataDirectory = startupDataDirectory(arguments);
+  } on FormatException {
+    // StartupPage presents argument errors in the directory recovery UI.
+  }
+  await AppLog.instance.initialize(
+    directory: dataDirectory == null
+        ? null
+        : Directory(p.join(dataDirectory, 'logs')),
+  );
   AppLog.instance.write(
     AppLogLevel.info,
     'lifecycle',

@@ -1,6 +1,5 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
@@ -13,6 +12,7 @@ import '../storage/flutter_credential_store.dart';
 import '../services/app_runtime.dart';
 import '../services/account_service.dart';
 import '../services/app_log.dart';
+import '../services/startup_directory.dart';
 
 class StartupPage extends StatefulWidget {
   const StartupPage({required this.arguments, super.key});
@@ -73,17 +73,13 @@ class _StartupPageState extends State<StartupPage> {
       try {
         if (selected != null) _directory = selected;
         if (_directory == null) {
-          final args = widget.arguments;
-          final index = args.indexOf('--data-dir');
-          if (index >= 0) {
-            if (index + 1 >= args.length || !p.isAbsolute(args[index + 1])) {
-              invalidDirectoryArgument = true;
-              throw const FormatException('资料目录必须是绝对路径');
-            }
-            _directory = args[index + 1];
-          } else {
-            _directory = (await getApplicationSupportDirectory()).path;
+          try {
+            _directory = startupDataDirectory(widget.arguments);
+          } on FormatException {
+            invalidDirectoryArgument = true;
+            rethrow;
           }
+          _directory ??= (await getApplicationSupportDirectory()).path;
         }
         candidate = await AppStorage.open(_directory!);
         AppRuntime.applyLogSettings(candidate.state['settings'] as Map);
