@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../models/xmly_models.dart';
 import 'app_log.dart';
 
 // Deliberately excluded from method tracing: telemetry must not trace itself.
@@ -335,11 +336,13 @@ void _setTags(Scope scope, AppLogRecord record) {
 
 Map<String, Object?> _diagnostics(AppLogRecord record) {
   final data = record.values['data'];
+  final error = record.error;
   final fields = data is Map
       ? Map<String, Object?>.from(data)
       : const <String, Object?>{};
   return _bounded({
     // Insertion order determines priority under the shared 64 KiB budget.
+    if (error is XmlyException) ...?error.diagnostics,
     'sessionId': record.values['sessionId'],
     if (record.requestId != null) 'requestId': record.requestId,
     if (record.errorScopeId != null) 'errorScopeId': record.errorScopeId,
@@ -409,6 +412,23 @@ SentryEvent? _beforeSend(SentryEvent event, Hint hint) {
     if (details is FlutterErrorDetails && details.silent) return null;
     final diagnostics = global?.diagnostics ?? hint.get('xmplus.diagnostics');
     if (diagnostics != null) event.contexts['xmplus'] = diagnostics;
+    final error = event.throwable;
+    if (error is XmlyException) {
+      final attached = error.diagnostics;
+      if (attached != null) {
+        final existing = event.contexts['xmplus'];
+        event.contexts['xmplus'] = _bounded({
+          ...attached,
+          if (existing is Map) ...Map<String, Object?>.from(existing),
+        }, _diagnosticBytes * 3 ~/ 4);
+      }
+      final fingerprint = error.fingerprint;
+      if (fingerprint != null && fingerprint.isNotEmpty) {
+        // Do not include the default stack-based key: async wrapper frames
+        // must not split the same pagination protection into different groups.
+        event.fingerprint = fingerprint;
+      }
+    }
     event.tags = {
       ...?event.tags,
       'platform': Platform.operatingSystem,
