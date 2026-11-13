@@ -150,12 +150,16 @@ class XmlyClient {
         RegExp(r'^/fmobile-album/album/track/ts-[0-9]+$').hasMatch(path);
   }
 
-  static bool _playpageEndpoint(String method, String origin, String path) =>
-      method == 'GET' &&
-      origin == mobile &&
-      RegExp(
-        r'^/fmobile-track/fmobile/track/playpage/[1-9][0-9]{0,18}/ts-[0-9]+$',
-      ).hasMatch(path);
+  static bool _playpageEndpoint(String method, String origin, String path) {
+    AppLog.instance.trace(
+      'lib/api/xmly_client.dart::XmlyClient._playpageEndpoint',
+    );
+    return method == 'GET' &&
+        origin == mobile &&
+        RegExp(
+          r'^/fmobile-track/fmobile/track/playpage/[1-9][0-9]{0,18}/ts-[0-9]+$',
+        ).hasMatch(path);
+  }
 
   static bool _endpoint(String method, String origin, String path) {
     AppLog.instance.trace("lib/api/xmly_client.dart::XmlyClient._endpoint");
