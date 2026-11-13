@@ -82,6 +82,7 @@ class XmlyLogin {
   final _deviceId = const Uuid().v4();
   final Map<String, Duration> _lastSms = {}, _usedLots = {};
   _Pending? _pending;
+  CancelToken? _activeRequest;
   int _generation = 0;
   bool _closed = false;
   Completer<void> _cleared = Completer<void>();
@@ -159,6 +160,10 @@ class XmlyLogin {
 
     _generation++;
     _pending = null;
+    // Release the login queue immediately, including a stalled response body.
+    final request = _activeRequest;
+    _activeRequest = null;
+    request?.cancel();
     _cleared.complete();
     _cleared = Completer<void>();
   }
@@ -194,9 +199,10 @@ class XmlyLogin {
     String method,
     String path,
     String deviceId,
-    T Function(Map<String, dynamic>) decode, [
+    T Function(Map<String, dynamic>) decode, {
     Map<String, String>? values,
-  ]) {
+    void Function()? beforeAttempt,
+  }) {
     AppLog.instance.trace("lib/api/xmly_login.dart::XmlyLogin._request");
     if (AppLog.instance.level == AppLogLevel.debug) {
       AppLog.instance.write(
@@ -224,6 +230,7 @@ class XmlyLogin {
           throw XmlyLoginError('challenge_invalid', '短信验证已取消');
         }
         final cancel = CancelToken();
+        _activeRequest = cancel;
         var timedOut = false;
         final timer = Timer(const Duration(seconds: 25), () {
           AppLog.instance.trace(
@@ -266,6 +273,7 @@ class XmlyLogin {
         String? retryHeader;
         try {
           diagnostic.started();
+          beforeAttempt?.call();
           final response = await _dio.request<ResponseBody>(
             diagnostic.url,
             data: values,
@@ -374,6 +382,10 @@ class XmlyLogin {
                           error.upstreamCode! <= 599)),
             );
           }
+          if (_closed) throw XmlyLoginError('closed', '登录窗口已关闭');
+          if (generation != _generation) {
+            throw XmlyLoginError('challenge_invalid', '短信验证已取消');
+          }
           // A rejected 429 is safe to replay. An unknown POST outcome is not:
           // it may already have sent an SMS or consumed the captcha/code/key.
           retryable =
@@ -389,6 +401,7 @@ class XmlyLogin {
           }
         } finally {
           timer.cancel();
+          if (identical(_activeRequest, cancel)) _activeRequest = null;
         }
         try {
           await waitToRetry(retryDelay(attempt, retryHeader), closed: cleared);
@@ -430,17 +443,25 @@ class XmlyLogin {
     String device,
     Map<String, String> values,
     String operation,
-    T Function(Map<String, dynamic>) decode,
-  ) {
+    T Function(Map<String, dynamic>) decode, {
+    void Function()? beforeAttempt,
+  }) {
     AppLog.instance.trace("lib/api/xmly_login.dart::XmlyLogin._post");
-    return _request('POST', path, device, (result) {
-      AppLog.instance.trace(
-        "lib/api/xmly_login.dart::XmlyLogin._post.closure#1",
-      );
+    return _request(
+      'POST',
+      path,
+      device,
+      (result) {
+        AppLog.instance.trace(
+          "lib/api/xmly_login.dart::XmlyLogin._post.closure#1",
+        );
 
-      _check(result, operation);
-      return decode(result);
-    }, {...values, 'signature': signature(values)});
+        _check(result, operation);
+        return decode(result);
+      },
+      values: {...values, 'signature': signature(values)},
+      beforeAttempt: beforeAttempt,
+    );
   }
 
   void _active(_Pending pending) {
@@ -549,9 +570,6 @@ class XmlyLogin {
         );
       }
       _prune(now);
-      _usedLots[lot] = now;
-      _lastSms[phone] = now;
-      _pending = null;
       final device = deviceId.isEmpty ? _deviceId : deviceId;
       final encrypted = _encryptMobile(mobile);
       final nonce = await _nonce(device);
@@ -574,6 +592,18 @@ class XmlyLogin {
             "lib/api/xmly_login.dart::XmlyLogin.sendSms.closure#3.closure#1",
           );
         },
+        beforeAttempt: () {
+          AppLog.instance.trace(
+            "lib/api/xmly_login.dart::XmlyLogin.sendSms.closure#3.closure#2",
+          );
+
+          // Nonce preparation cannot send an SMS or consume the captcha.
+          // Start cooldown at each actual POST, including a 429 retry.
+          final sentAt = _monotonic();
+          _usedLots[lot] = sentAt;
+          _lastSms[phone] = sentAt;
+          _pending = null;
+        },
       );
       if (generation != _generation) {
         throw XmlyLoginError('challenge_invalid', '短信验证已取消');
@@ -582,7 +612,7 @@ class XmlyLogin {
       final id = base64UrlEncode(
         List<int>.generate(32, (_) {
           AppLog.instance.trace(
-            "lib/api/xmly_login.dart::XmlyLogin.sendSms.closure#3.closure#2",
+            "lib/api/xmly_login.dart::XmlyLogin.sendSms.closure#3.closure#3",
           );
           return random.nextInt(256);
         }),
@@ -620,10 +650,10 @@ class XmlyLogin {
         throw XmlyLoginError('challenge_invalid', '短信验证不存在或已完成');
       }
       _active(pending);
-      pending.attempts++;
       try {
         var nonce = await _nonce(pending.deviceId);
         _active(pending);
+        pending.attempts++;
         final key = await _post<String>(
           'mobile/sms/v2/verify',
           pending.deviceId,

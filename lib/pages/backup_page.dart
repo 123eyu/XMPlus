@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -26,9 +27,18 @@ class BackupPage extends StatefulWidget {
 
 class _BackupPageState extends State<BackupPage> {
   late final ConfigArchive _archive = widget.runtime.backupArchive;
+  Completer<void>? _cancelled;
+  StreamIterator<Uint8List>? _importStream;
   bool _includeAccount = false;
   bool _busy = false;
   bool _waitingForReload = false;
+  bool get _importActive {
+    AppLog.instance.trace(
+      "lib/pages/backup_page.dart::_BackupPageState._importActive.get",
+    );
+    return mounted && _cancelled?.isCompleted == false;
+  }
+
   String? _message;
   String? get _statusMessage {
     AppLog.instance.trace(
@@ -37,6 +47,31 @@ class _BackupPageState extends State<BackupPage> {
     return _waitingForReload && !widget.runtime.restoreNeedsReload
         ? '备份已恢复，未完成任务保持暂停'
         : _message;
+  }
+
+  @override
+  void dispose() {
+    AppLog.instance.trace(
+      "lib/pages/backup_page.dart::_BackupPageState.dispose",
+    );
+    _cancelOperation();
+    super.dispose();
+  }
+
+  void _cancelOperation() {
+    AppLog.instance.trace(
+      "lib/pages/backup_page.dart::_BackupPageState._cancelOperation",
+    );
+    final cancelled = _cancelled;
+    if (cancelled != null && !cancelled.isCompleted) cancelled.complete();
+    // Provider cleanup errors cannot be shown after leaving the page.
+    unawaited(
+      _importStream?.cancel().catchError((_) {
+        AppLog.instance.trace(
+          "lib/pages/backup_page.dart::_BackupPageState._cancelOperation.closure#1",
+        );
+      }),
+    );
   }
 
   Future<bool> _confirm(String title, Widget content, String action) {
@@ -59,6 +94,7 @@ class _BackupPageState extends State<BackupPage> {
       );
 
       if (_busy || !mounted) return;
+      final cancelled = _cancelled = Completer<void>();
       setState(() {
         AppLog.instance.trace(
           "lib/pages/backup_page.dart::_BackupPageState._run.closure#1.closure#1",
@@ -71,6 +107,7 @@ class _BackupPageState extends State<BackupPage> {
       try {
         await action();
       } catch (error, stack) {
+        if (!mounted || cancelled.isCompleted) return;
         final expected =
             error is ConfigArchiveException ||
             error is FormatException ||
@@ -112,7 +149,6 @@ class _BackupPageState extends State<BackupPage> {
             promptUser: true,
           );
         }
-        if (!mounted) return;
         setState(() {
           AppLog.instance.trace(
             "lib/pages/backup_page.dart::_BackupPageState._run.closure#1.closure#2",
@@ -126,6 +162,8 @@ class _BackupPageState extends State<BackupPage> {
           };
         });
       } finally {
+        if (!cancelled.isCompleted) cancelled.complete();
+        _cancelled = null;
         if (mounted)
           setState(() {
             AppLog.instance.trace(
@@ -188,21 +226,34 @@ class _BackupPageState extends State<BackupPage> {
         type: FileType.custom,
         allowedExtensions: ['zip'],
       );
-      if (file == null || !mounted) return;
+      if (file == null || !_importActive) return;
       final length = await file.length();
+      if (!_importActive) return;
       if (length != null && length > ConfigArchive.maxBytes) {
         throw const ConfigArchiveException('备份超过 64 MiB');
       }
       // A bounded stream also handles providers which do not report file length.
       final bytes = BytesBuilder(copy: false);
-      await for (final chunk in file.readAsByteStream()) {
-        if (bytes.length + chunk.length > ConfigArchive.maxBytes) {
-          throw const ConfigArchiveException('备份超过 64 MiB');
+      final stream = _importStream = StreamIterator(file.readAsByteStream());
+      try {
+        while (await stream.moveNext()) {
+          if (!_importActive) return;
+          final chunk = stream.current;
+          if (bytes.length + chunk.length > ConfigArchive.maxBytes) {
+            throw const ConfigArchiveException('备份超过 64 MiB');
+          }
+          bytes.add(chunk);
         }
-        bytes.add(chunk);
+      } finally {
+        _importStream = null;
+        await stream.cancel();
       }
-      final draft = await _archive.inspect(bytes.takeBytes());
-      if (!mounted) return;
+      if (!_importActive) return;
+      final draft = await _archive.inspect(
+        bytes.takeBytes(),
+        cancelled: _cancelled?.future,
+      );
+      if (!_importActive) return;
       final replacements = <String, String>{};
       for (final oldRoot in draft.missingDirectories) {
         if (!await _confirm(
@@ -211,11 +262,11 @@ class _BackupPageState extends State<BackupPage> {
           '选择目录',
         ))
           return;
-        if (!mounted) return;
+        if (!_importActive) return;
         final selected = await FilePicker.getDirectoryPath(
           dialogTitle: '选择新的下载目录',
         );
-        if (selected == null || !mounted) return;
+        if (selected == null || !_importActive) return;
         replacements[oldRoot] = selected;
       }
       final accepted = await _confirm(
@@ -236,7 +287,7 @@ class _BackupPageState extends State<BackupPage> {
         ),
         '确认恢复',
       );
-      if (!accepted || !mounted) return;
+      if (!accepted || !_importActive) return;
       try {
         await widget.runtime.restoreBackup(draft, relocatedRoots: replacements);
       } catch (_) {
@@ -266,14 +317,22 @@ class _BackupPageState extends State<BackupPage> {
   @override
   Widget build(BuildContext context) {
     AppLog.instance.trace("lib/pages/backup_page.dart::_BackupPageState.build");
-    return ListenableBuilder(
-      listenable: widget.runtime,
-      builder: (context, _) {
+    return PopScope(
+      onPopInvokedWithResult: (didPop, _) {
         AppLog.instance.trace(
           "lib/pages/backup_page.dart::_BackupPageState.build.closure#1",
         );
-        return _content(context);
+        if (didPop) _cancelOperation();
       },
+      child: ListenableBuilder(
+        listenable: widget.runtime,
+        builder: (context, _) {
+          AppLog.instance.trace(
+            "lib/pages/backup_page.dart::_BackupPageState.build.closure#2",
+          );
+          return _content(context);
+        },
+      ),
     );
   }
 
