@@ -160,13 +160,17 @@ class AppLog {
     }
   }
 
-  Future<void> initialize() => _initializing ??= _initialize();
+  Future<void> initialize({Directory? directory}) =>
+      _initializing ??= _initialize(directory);
 
-  Future<void> _initialize() async {
+  Future<void> _initialize(Directory? directory) async {
     try {
-      _root ??= Directory(
-        p.join((await getApplicationSupportDirectory()).path, 'logs'),
-      );
+      _root =
+          directory ??
+          _root ??
+          Directory(
+            p.join((await getApplicationSupportDirectory()).path, 'logs'),
+          );
       await _readProcessSession();
     } catch (error) {
       _fail(error);
