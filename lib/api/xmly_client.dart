@@ -150,6 +150,13 @@ class XmlyClient {
         RegExp(r'^/fmobile-album/album/track/ts-[0-9]+$').hasMatch(path);
   }
 
+  static bool _playpageEndpoint(String method, String origin, String path) =>
+      method == 'GET' &&
+      origin == mobile &&
+      RegExp(
+        r'^/fmobile-track/fmobile/track/playpage/[1-9][0-9]{0,18}/ts-[0-9]+$',
+      ).hasMatch(path);
+
   static bool _endpoint(String method, String origin, String path) {
     AppLog.instance.trace("lib/api/xmly_client.dart::XmlyClient._endpoint");
 
@@ -198,6 +205,7 @@ class XmlyClient {
               '/mobile/v1/album/info',
               '/lite-mobile/like/v1/user-likes',
             ].contains(path) ||
+            _playpageEndpoint(method, origin, path) ||
             RegExp(r'^/mobile/track/[1-9][0-9]{0,18}$').hasMatch(path) ||
             RegExp(r'^/fmobile-album/album/track/ts-[0-9]+$').hasMatch(path) ||
             RegExp(r'^/fmobile-album/album/rec/detail/ts-[0-9]+$')
@@ -396,8 +404,10 @@ class XmlyClient {
           definitive: true,
         );
       if (signed &&
-          (origin != mobile ||
-              path != '/fmobile-track/fmobile/track/v2/baseInfo'))
+          !((method == 'POST' &&
+                  origin == mobile &&
+                  path == '/fmobile-track/fmobile/track/v2/baseInfo') ||
+              _playpageEndpoint(method, origin, path)))
         throw const XmlyException(
           'invalid_endpoint',
           '签名请求地址不受支持',
@@ -569,7 +579,13 @@ class XmlyClient {
       'Accept': origin == collector ? '*/*' : 'application/json',
       if (origin == collector) 'User-Agent': 'ting_3.4.10.3(Android,30)',
       if (authenticated) 'Cookie': credentials!.cookie,
-      if (signed) 'x-tk': XmlyCrypto.freshTicket(credentials!),
+      if (signed)
+        'x-tk': XmlyCrypto.freshTicket(
+          credentials!,
+          attributes: _playpageEndpoint(method, origin, path)
+              ? 'b=lite&s=play&u=${credentials!.uid}'
+              : null,
+        ),
     };
     final options =
         Options(

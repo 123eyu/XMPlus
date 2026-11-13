@@ -130,7 +130,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
   int _favoriteRequest = 0, _libraryRevision = -1;
   XmlyClient? _likeClient;
   String? _likeKey, _likeTrackId, _likeError, _likeCountError;
-  int? _likeCount;
+  int? _likeCount, _favoriteCount;
   bool _liked = false, _likeBusy = false, _likeCountLoading = false;
   int _likeRequest = 0, _likeCountRequest = 0;
   XmlyClient? _manuscriptClient;
@@ -593,6 +593,10 @@ class _PlayerPanelState extends State<PlayerPanel> {
     _libraryRevision = _runtime.libraryRevision;
     if (changed || (revised && !_favoriteMutating)) {
       unawaited(_refreshFavorite());
+      final track = _runtime.player.current;
+      if (!changed && track != null) {
+        unawaited(_refreshLikeCount(track, force: true));
+      }
     }
   }
 
@@ -681,6 +685,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
         "lib/pages/player_panel.dart::_PlayerPanelState._refreshLikes.closure#1",
       );
       _likeCount = sameContext ? _likeCount ?? track?.likes : track?.likes;
+      if (!sameContext) _favoriteCount = null;
       if (!sameContext) _liked = false;
       _likeBusy = false;
       _likeCountLoading = false;
@@ -704,19 +709,22 @@ class _PlayerPanelState extends State<PlayerPanel> {
       _likeCountLoading = true;
       _likeCountError = null;
     });
-    Future<Track> fetch() async {
+    Future<({int? likes, int? favorites})> fetch() async {
       AppLog.instance.trace(
         "lib/pages/player_panel.dart::_PlayerPanelState._refreshLikeCount.fetch",
       );
-      // Search/catalogue entries can replace full metadata in the shared cache.
+      if (client.accountAvailable) {
+        return XmlyExperience(client).trackCounts(track.id);
+      }
+      // Anonymous metadata only exposes the thumbs-up count reliably.
       final forced = force || _likeCount == null;
-      final value = await client.track(track.id, force: forced);
+      var value = await client.track(track.id, force: forced);
       if (!forced &&
           value.likes == null &&
           _likeCountCurrent(client, key, track.id, request)) {
-        return client.track(track.id, force: true);
+        value = await client.track(track.id, force: true);
       }
-      return value;
+      return (likes: value.likes, favorites: null);
     }
 
     try {
@@ -738,6 +746,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
             "lib/pages/player_panel.dart::_PlayerPanelState._refreshLikeCount.closure#3",
           );
           _likeCount = value.likes ?? _likeCount;
+          _favoriteCount = value.favorites ?? _favoriteCount;
         });
       }
     } catch (error, stack) {
@@ -754,7 +763,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
           );
           _likeCountError = error is XmlyException
               ? error.message
-              : '喜欢数读取失败，请重试';
+              : '数量读取失败，请重试';
         });
       }
     } finally {
@@ -778,7 +787,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
         "lib/pages/player_panel.dart::_PlayerPanelState._likeAction.closure#1",
       );
       final client = _runtime.client, key = _runtime.client.cacheIdentity;
-      if (_likeBusy || _liked || !_likeContextCurrent(client, key, track.id)) {
+      if (_likeBusy || !_likeContextCurrent(client, key, track.id)) {
         return;
       }
       if (!client.accountAvailable) {
@@ -790,7 +799,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
         });
         return;
       }
-      final request = ++_likeRequest;
+      final request = ++_likeRequest, desired = !_liked;
       _likeCountRequest++;
       var attempted = false;
       setState(() {
@@ -813,17 +822,17 @@ class _PlayerPanelState extends State<PlayerPanel> {
             throw const XmlyException('account_changed', '账号已变更，请重试');
           }
           attempted = true;
-          await XmlyExperience(client).likeTrack(track);
+          await XmlyExperience(client).setLiked(track, liked: desired);
         });
         if (_likeCurrent(client, key, track.id, request)) {
           setState(() {
             AppLog.instance.trace(
               'lib/pages/player_panel.dart::_PlayerPanelState._likeAction.closure#1.closure#4',
             );
-            _liked = true;
+            _liked = desired;
           });
           ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('点赞成功')));
+              .showSnackBar(SnackBar(content: Text(desired ? '已点赞' : '已取消点赞')));
         }
       } catch (error, stack) {
         _recordPlayerPanelError('Like change failed', error, stack);
@@ -867,13 +876,13 @@ class _PlayerPanelState extends State<PlayerPanel> {
         PlaybackActionButton(
           tooltip:
               '${current && _liked
-                  ? '已点赞'
+                  ? '取消点赞'
                   : _likeBusy
-                  ? '正在点赞'
+                  ? '正在处理'
                   : _runtime.client.accountAvailable
                   ? '点赞'
                   : '点赞（需登录）'} · 喜欢数：${count ?? '未知'}',
-          onPressed: track == null || !current || _likeBusy || _liked
+          onPressed: track == null || !current || _likeBusy
               ? null
               : () {
                   AppLog.instance.trace(
@@ -886,7 +895,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
                 ? Icons.thumb_up_rounded
                 : Icons.thumb_up_outlined,
             size: 20,
-            semanticLabel: current && _liked ? '已点赞' : '点赞',
+            semanticLabel: current && _liked ? '取消点赞' : '点赞',
           ),
           label: count?.toString() ?? '—',
         ),
@@ -911,7 +920,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
                     unawaited(_refreshLikeCount(track, force: true));
                   },
             icon: const Icon(Icons.refresh_rounded, size: 16),
-            label: '重试喜欢数',
+            label: '重试数量',
           ),
       ],
     );
@@ -1081,6 +1090,9 @@ class _PlayerPanelState extends State<PlayerPanel> {
         }
       } finally {
         if (_favoriteCurrent(client, key, track.id, request)) {
+          if (attempted) await _refreshLikeCount(track, force: true);
+        }
+        if (_favoriteCurrent(client, key, track.id, request)) {
           setState(() {
             AppLog.instance.trace(
               "lib/pages/player_panel.dart::_PlayerPanelState._favoriteAction.closure#1.closure#7",
@@ -1113,9 +1125,15 @@ class _PlayerPanelState extends State<PlayerPanel> {
     AppLog.instance.trace(
       "lib/pages/player_panel.dart::_PlayerPanelState._favoriteControl",
     );
+    final current =
+        track != null &&
+        identical(_likeClient, _runtime.client) &&
+        _likeKey == _runtime.client.cacheIdentity &&
+        _likeTrackId == track.id;
+    final count = current ? _favoriteCount : null;
     if (_favoriteError == null) {
       return PlaybackActionButton(
-        tooltip: _favoriteLabel,
+        tooltip: '$_favoriteLabel · 收藏数：${count ?? '未知'}',
         onPressed: track == null || _favoriteBusy
             ? null
             : () {
@@ -1130,7 +1148,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
               : Icons.favorite_border_rounded,
           size: 20,
         ),
-        label: _favorite == true ? '已收藏' : '收藏',
+        label: count?.toString() ?? '—',
       );
     }
     final colors = Theme.of(context).colorScheme;
@@ -1180,7 +1198,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
             backgroundColor: colors.outline,
             child: const Icon(Icons.favorite_border_rounded, size: 20),
           ),
-          label: '收藏',
+          label: count?.toString() ?? '—',
         );
       },
     );

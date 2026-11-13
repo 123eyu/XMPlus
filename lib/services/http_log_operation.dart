@@ -133,6 +133,10 @@ class HttpLogOperation {
     if (_reported || AppLog.instance.errorWasRecorded(error)) return true;
     _reported = true;
     final kind = _failures.last['kind'];
+    final expiredMediaUrl =
+        error is XmlyException &&
+        error.code == 'media_unauthorized' &&
+        _failures.last['httpStatus'] == 403;
     AppLog.instance.write(
       AppLogLevel.error,
       kind == 'api' ? 'api' : 'network',
@@ -151,6 +155,7 @@ class HttpLogOperation {
       error: error,
       stackTrace: stack,
       networkError: kind == 'transport' || kind == 'timeout',
+      localOnly: expiredMediaUrl,
       promptUser:
           promptUser &&
           _promptUser &&
@@ -163,6 +168,9 @@ class HttpLogOperation {
                 'media_unauthorized',
               }.contains(error.code)),
     );
+    // The local record owns this occurrence so cache/proxy consumers do not
+    // report the same expired URL again after authorization recovery is exhausted.
+    if (expiredMediaUrl) AppLog.instance.inheritRecordedError(error);
     return true;
   }
 }

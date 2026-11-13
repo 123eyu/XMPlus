@@ -740,9 +740,9 @@ class XmlyExperience {
     if (_integer(response['ret']) != 0) throw _invalid;
   }
 
-  Future<void> likeTrack(Track track) async {
+  Future<void> setLiked(Track track, {required bool liked}) async {
     AppLog.instance.trace(
-      'lib/api/xmly_experience.dart::XmlyExperience.likeTrack',
+      'lib/api/xmly_experience.dart::XmlyExperience.setLiked',
     );
 
     _requireAccount();
@@ -753,11 +753,38 @@ class XmlyExperience {
       data: {
         'trackId': xmlyIdentifier(track.id),
         'playTime': '1',
-        'favorite': 'true',
+        'favorite': '$liked',
       },
       form: true,
     );
     _mutationSuccess(response);
+  }
+
+  Future<({int? likes, int? favorites})> trackCounts(String trackId) async {
+    AppLog.instance.trace(
+      'lib/api/xmly_experience.dart::XmlyExperience.trackCounts',
+    );
+
+    _requireAccount();
+    final number = xmlyIdentifier(trackId);
+    final response = await client.request(
+      'GET',
+      XmlyClient.mobile,
+      '/fmobile-track/fmobile/track/playpage/$number/ts-$_stamp',
+      query: {'device': 'android', 'trackId': number},
+      signed: true,
+    );
+    if (_integer(response['ret']) != 0) throw _invalid;
+    final info = xmlyMap(response['trackInfo']);
+    if (xmlyIdentifier('${info['trackId'] ?? ''}') != number) {
+      throw const XmlyException('id_mismatch', '返回的声音 ID 不匹配');
+    }
+    final likes = info['likes'];
+    final favorites = info['likeCount'];
+    return (
+      likes: likes is int && likes >= 0 ? likes : null,
+      favorites: favorites is int && favorites >= 0 ? favorites : null,
+    );
   }
 
   Future<void> setFavorite(Track track, {required bool favorite}) async {
