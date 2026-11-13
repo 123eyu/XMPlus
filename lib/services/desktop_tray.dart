@@ -24,7 +24,7 @@ class DesktopTray {
   tray.MenuItem? _playItem, _nextItem;
   int? _listener;
   final _items = <(tray.MenuItem, int)>[];
-  (String, bool, bool, bool)? _state;
+  (String, bool, bool, bool, bool)? _state;
 
   bool ensureReady() {
     AppLog.instance.trace(
@@ -108,12 +108,13 @@ class DesktopTray {
     required String title,
     required bool playing,
     required bool loading,
-    required bool enabled,
+    required bool playPauseEnabled,
+    required bool nextEnabled,
   }) {
     AppLog.instance.trace("lib/services/desktop_tray.dart::DesktopTray.update");
 
     if (_icon == null) return;
-    final state = (title, playing, loading, enabled);
+    final state = (title, playing, loading, playPauseEnabled, nextEnabled);
     if (_state == state) return;
     _state = state;
     _icon!.setTooltip(title.isEmpty ? 'XMPlus' : 'XMPlus · $title');
@@ -123,8 +124,8 @@ class DesktopTray {
           : playing
           ? '暂停'
           : '播放'
-      ..isEnabled = enabled;
-    _nextItem!.isEnabled = enabled;
+      ..isEnabled = playPauseEnabled;
+    _nextItem!.isEnabled = nextEnabled;
   }
 
   void dispose() {

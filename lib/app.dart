@@ -59,16 +59,11 @@ class _MyAppState extends State<MyApp> with WindowListener {
     },
     onPlayPause: () {
       AppLog.instance.trace("lib/app.dart::_MyAppState._tray.closure#3");
-      return _trayPlayback(() {
-        AppLog.instance.trace(
-          "lib/app.dart::_MyAppState._tray.closure#3.closure#1",
-        );
-
-        final player = widget.runtime.player;
-        return player.playing || player.loading
-            ? player.pause()
-            : player.resume();
-      });
+      final player = widget.runtime.player;
+      return _trayPlayback(
+        player.playing || player.loading ? player.pause : player.resume,
+        cancelLoading: player.loading,
+      );
     },
     onNext: () {
       AppLog.instance.trace("lib/app.dart::_MyAppState._tray.closure#4");
@@ -79,7 +74,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
       return onCloseRequested(explicitExit: true);
     },
   );
-  bool _trayPlaybackBusy = false;
+  bool _trayPlaybackBusy = false, _trayCancelBusy = false;
   Route<void>? _miniRoute;
   Route<dynamic>? _closeDialog;
   Future<void>? _closeWork;
@@ -115,35 +110,46 @@ class _MyAppState extends State<MyApp> with WindowListener {
   void _updateTray() {
     AppLog.instance.trace("lib/app.dart::_MyAppState._updateTray");
     final player = widget.runtime.player;
+    final enabled =
+        player.current != null &&
+        !widget.runtime.closing &&
+        !widget.runtime.restoringBackup &&
+        !widget.runtime.restoreNeedsReload &&
+        !_trayCancelBusy;
     _tray.update(
       title: player.current?.title ?? '',
       playing: player.playing,
       loading: player.loading,
-      enabled:
-          player.current != null &&
-          !widget.runtime.closing &&
-          !widget.runtime.restoringBackup &&
-          !widget.runtime.restoreNeedsReload &&
-          !_trayPlaybackBusy,
+      playPauseEnabled: enabled && (!_trayPlaybackBusy || player.loading),
+      nextEnabled: enabled && !_trayPlaybackBusy,
     );
   }
 
-  Future<void> _trayPlayback(Future<void> Function() action) {
+  Future<void> _trayPlayback(
+    Future<void> Function() action, {
+    bool cancelLoading = false,
+  }) {
     AppLog.instance.trace("lib/app.dart::_MyAppState._trayPlayback");
     return AppLog.instance.runWithErrorScope(() async {
       AppLog.instance.trace(
         "lib/app.dart::_MyAppState._trayPlayback.closure#1",
       );
 
-      if (_trayPlaybackBusy ||
+      if ((_trayPlaybackBusy && !cancelLoading) ||
+          _trayCancelBusy ||
           widget.runtime.closing ||
           widget.runtime.restoringBackup ||
           widget.runtime.restoreNeedsReload ||
           !mounted)
         return;
-      _trayPlaybackBusy = true;
-      _updateTray();
+      // A load and its cancellation keep separate locks until each completes.
+      if (cancelLoading) {
+        _trayCancelBusy = true;
+      } else {
+        _trayPlaybackBusy = true;
+      }
       try {
+        _updateTray();
         await action();
       } catch (error, stack) {
         if (!AppLog.instance.errorWasRecorded(error)) {
@@ -159,7 +165,11 @@ class _MyAppState extends State<MyApp> with WindowListener {
         await _revealWindow();
         _showWindowError('播放操作未完成，请重试');
       } finally {
-        _trayPlaybackBusy = false;
+        if (cancelLoading) {
+          _trayCancelBusy = false;
+        } else {
+          _trayPlaybackBusy = false;
+        }
         widget.runtime.changed();
       }
     });
