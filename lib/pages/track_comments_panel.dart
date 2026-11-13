@@ -268,207 +268,253 @@ class _TrackCommentsPanelState extends State<TrackCommentsPanel> {
       "lib/pages/track_comments_panel.dart::_TrackCommentsPanelState.build",
     );
 
+    return LayoutBuilder(builder: _buildPanel);
+  }
+
+  Widget _buildPanel(BuildContext context, BoxConstraints constraints) {
+    AppLog.instance.trace(
+      'lib/pages/track_comments_panel.dart::_TrackCommentsPanelState._buildPanel',
+    );
+
     final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text.rich(
-                TextSpan(
-                  text: _feed.page > 0 ? '共' : '评论',
-                  children: [
-                    if (_feed.page > 0)
-                      TextSpan(
-                        text: ' ${_feed.total} 条评论',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                  ],
-                ),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-            IconButton(
-              tooltip: '刷新评论',
-              onPressed: _feed.busy ? null : _refresh,
-              icon: const Icon(Icons.refresh_rounded, size: 20),
-            ),
-            if (widget.onClose != null)
-              IconButton(
-                tooltip: '收起评论',
-                onPressed: widget.onClose,
-                icon: const Icon(Icons.close_rounded, size: 20),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: Scrollbar(
-            controller: _scroll,
-            child: RefreshIndicator(
-              onRefresh: _refresh,
-              child: ListView.builder(
-                key: const ValueKey('trackCommentsScroll'),
-                controller: _scroll,
-                primary: false,
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.only(bottom: 16),
-                itemCount: _feed.comments.length + 1,
-                itemBuilder: (context, index) {
-                  AppLog.instance.trace(
-                    "lib/pages/track_comments_panel.dart::_TrackCommentsPanelState.build.closure#1",
-                  );
-
-                  if (index == _feed.comments.length) {
-                    return _FeedFooter(feed: _feed, emptyLabel: '还没有评论');
-                  }
-                  final comment = _feed.comments[index];
-                  final expanded = _expandedComment == comment.id;
-                  return Padding(
-                    key: ValueKey((widget.track.id, comment.id)),
-                    padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (index > 0)
-                          Divider(
-                            height: 1,
-                            thickness: .5,
-                            color: theme.colorScheme.outlineVariant,
-                          ),
-                        _CommentContent(
-                          comment: comment,
-                          runtime: widget.runtime,
-                          trackId: widget.track.id,
-                          onChanged: () {
-                            AppLog.instance.trace(
-                              "lib/pages/track_comments_panel.dart::_TrackCommentsPanelState.build.closure#1.closure#1",
-                            );
-                            return _feed.load(reset: true);
-                          },
-                          action: comment.replyCount == 0
-                              ? null
-                              : TextButton.icon(
-                                  key: ValueKey('commentReplies:${comment.id}'),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor:
-                                        theme.colorScheme.onSurfaceVariant,
-                                    textStyle: theme.textTheme.bodySmall,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                    ),
-                                    minimumSize: const Size(48, 48),
-                                  ),
-                                  onPressed: () {
-                                    AppLog.instance.trace(
-                                      "lib/pages/track_comments_panel.dart::_TrackCommentsPanelState.build.closure#1.closure#2",
-                                    );
-                                    setState(() {
-                                      AppLog.instance.trace(
-                                        "lib/pages/track_comments_panel.dart::_TrackCommentsPanelState.build.closure#1.closure#2.closure#1",
-                                      );
-
-                                      _expandedComment = expanded
-                                          ? null
-                                          : comment.id;
-                                    });
-                                  },
-                                  icon: Icon(
-                                    expanded
-                                        ? Icons.expand_less
-                                        : Icons.expand_more,
-                                    size: 18,
-                                  ),
-                                  label: Text(
-                                    expanded
-                                        ? '收起回复'
-                                        : '${comment.replyCount} 条回复',
-                                  ),
-                                ),
-                        ),
-                        AnimatedSize(
-                          duration: MediaQuery.disableAnimationsOf(context)
-                              ? Duration.zero
-                              : const Duration(milliseconds: 200),
-                          curve: Curves.easeInOutCubic,
-                          alignment: Alignment.topCenter,
-                          child: expanded
-                              ? _InlineReplies(
-                                  key: ValueKey((widget.track.id, comment.id)),
-                                  runtime: widget.runtime,
-                                  trackId: widget.track.id,
-                                  commentId: comment.id,
-                                )
-                              : const SizedBox(width: double.infinity),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+    final inset = constraints.maxWidth < 600 ? 16.0 : 24.0;
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 880),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(inset, 12, inset, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(
-                    child: TextField(
-                      controller: _compose,
-                      enabled: !_sending,
-                      minLines: 1,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.newline,
-                      decoration: InputDecoration(
-                        hintText: widget.runtime.client.accountAvailable
-                            ? '写评论…'
-                            : '登录后可发表评论',
-                        isDense: true,
-                        border: const OutlineInputBorder(),
+                    child: Text(
+                      _feed.page > 0 ? '${_feed.total} 条评论' : '评论',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 4),
                   IconButton(
-                    tooltip: '发送评论',
-                    onPressed: _sending ? null : _send,
-                    constraints: const BoxConstraints(
-                      minWidth: 48,
-                      minHeight: 48,
-                    ),
-                    icon: _sending
-                        ? const SizedBox.square(
-                            dimension: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send_outlined),
+                    tooltip: '刷新评论',
+                    onPressed: _feed.busy ? null : _refresh,
+                    icon: const Icon(Icons.refresh_rounded, size: 20),
                   ),
+                  if (widget.onClose != null)
+                    IconButton(
+                      tooltip: '收起评论',
+                      onPressed: widget.onClose,
+                      icon: const Icon(Icons.close_rounded, size: 20),
+                    ),
                 ],
               ),
-              if (_composeError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    _composeError!,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.error,
+              const SizedBox(height: 8),
+              Expanded(
+                child: Scrollbar(
+                  controller: _scroll,
+                  child: RefreshIndicator(
+                    onRefresh: _refresh,
+                    child: ListView.builder(
+                      key: const ValueKey('trackCommentsScroll'),
+                      controller: _scroll,
+                      primary: false,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.only(bottom: 16),
+                      itemCount: _feed.comments.length + 1,
+                      itemBuilder: (context, index) {
+                        AppLog.instance.trace(
+                          "lib/pages/track_comments_panel.dart::_TrackCommentsPanelState._buildPanel.closure#1",
+                        );
+
+                        if (index == _feed.comments.length) {
+                          return _FeedFooter(feed: _feed, emptyLabel: '还没有评论');
+                        }
+                        final comment = _feed.comments[index];
+                        final expanded = _expandedComment == comment.id;
+                        return Padding(
+                          key: ValueKey((widget.track.id, comment.id)),
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (index > 0) ...[
+                                Divider(
+                                  height: 1,
+                                  thickness: .5,
+                                  indent: 52,
+                                  color: theme.colorScheme.outlineVariant
+                                      .withValues(alpha: .5),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                              _CommentContent(
+                                comment: comment,
+                                runtime: widget.runtime,
+                                trackId: widget.track.id,
+                                onChanged: () {
+                                  AppLog.instance.trace(
+                                    "lib/pages/track_comments_panel.dart::_TrackCommentsPanelState._buildPanel.closure#1.closure#1",
+                                  );
+                                  return _feed.load(reset: true);
+                                },
+                                action: comment.replyCount == 0
+                                    ? null
+                                    : TextButton.icon(
+                                        key: ValueKey(
+                                          'commentReplies:${comment.id}',
+                                        ),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: theme
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                          textStyle: theme.textTheme.bodySmall,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                          ),
+                                          minimumSize: const Size(48, 48),
+                                        ),
+                                        onPressed: () {
+                                          AppLog.instance.trace(
+                                            "lib/pages/track_comments_panel.dart::_TrackCommentsPanelState._buildPanel.closure#1.closure#2",
+                                          );
+                                          setState(() {
+                                            AppLog.instance.trace(
+                                              "lib/pages/track_comments_panel.dart::_TrackCommentsPanelState._buildPanel.closure#1.closure#2.closure#1",
+                                            );
+
+                                            _expandedComment = expanded
+                                                ? null
+                                                : comment.id;
+                                          });
+                                        },
+                                        icon: Icon(
+                                          expanded
+                                              ? Icons.expand_less
+                                              : Icons.expand_more,
+                                          size: 18,
+                                        ),
+                                        label: Text(
+                                          expanded
+                                              ? '收起回复'
+                                              : '${comment.replyCount} 条回复',
+                                        ),
+                                      ),
+                              ),
+                              AnimatedSize(
+                                duration:
+                                    MediaQuery.disableAnimationsOf(context)
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 200),
+                                curve: Curves.easeInOutCubic,
+                                alignment: Alignment.topCenter,
+                                child: expanded
+                                    ? _InlineReplies(
+                                        key: ValueKey((
+                                          widget.track.id,
+                                          comment.id,
+                                        )),
+                                        runtime: widget.runtime,
+                                        trackId: widget.track.id,
+                                        commentId: comment.id,
+                                      )
+                                    : const SizedBox(width: double.infinity),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),
+              ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  border: Border(
+                    top: BorderSide(
+                      color: theme.colorScheme.outlineVariant.withValues(
+                        alpha: .5,
+                      ),
+                      width: .5,
+                    ),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _compose,
+                              enabled: !_sending,
+                              minLines: 1,
+                              maxLines: 4,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                height: 1.5,
+                              ),
+                              textInputAction: TextInputAction.newline,
+                              decoration: InputDecoration(
+                                hintText: widget.runtime.client.accountAvailable
+                                    ? '写评论…'
+                                    : '登录后可发表评论',
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 14,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          IconButton.filledTonal(
+                            tooltip: '发送评论',
+                            onPressed: _sending ? null : _send,
+                            constraints: const BoxConstraints(
+                              minWidth: 48,
+                              minHeight: 48,
+                            ),
+                            style: IconButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            icon: _sending
+                                ? const SizedBox.square(
+                                    dimension: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.send_outlined),
+                          ),
+                        ],
+                      ),
+                      if (_composeError != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            _composeError!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.error,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -481,12 +527,14 @@ class _CommentContent extends StatefulWidget {
     required this.trackId,
     required this.onChanged,
     this.action,
+    this.compact = false,
   });
   final TrackComment comment;
   final AppRuntime runtime;
   final String trackId;
   final Future<void> Function() onChanged;
   final Widget? action;
+  final bool compact;
 
   @override
   State<_CommentContent> createState() {
@@ -622,16 +670,17 @@ class _CommentContentState extends State<_CommentContent> {
     final own =
         comment.uid.isNotEmpty &&
         comment.uid == widget.runtime.client.credentials?.uid;
+    final avatarSize = widget.compact ? 32.0 : 40.0;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.only(top: 2),
           child: ClipOval(
             child: SizedBox.square(
-              dimension: 32,
+              dimension: avatarSize,
               child: comment.avatarUrl == null
-                  ? const Icon(Icons.account_circle_outlined, size: 32)
+                  ? Icon(Icons.account_circle_outlined, size: avatarSize)
                   : Image(
                       image: LoggedNetworkImage(comment.avatarUrl.toString()),
                       fit: BoxFit.cover,
@@ -639,46 +688,49 @@ class _CommentContentState extends State<_CommentContent> {
                         AppLog.instance.trace(
                           "lib/pages/track_comments_panel.dart::_CommentContentState.build.closure#1",
                         );
-                        return const Icon(
+                        return Icon(
                           Icons.account_circle_outlined,
-                          size: 32,
+                          size: avatarSize,
                         );
                       },
                     ),
             ),
           ),
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: widget.compact ? 10 : 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Flexible(
-                          child: Text(
-                            comment.author.isEmpty ? '听友' : comment.author,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              color: theme.colorScheme.primary,
-                            ),
+                        Text(
+                          comment.author.isEmpty ? '听友' : comment.author,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
+                        if (comment.createdAt.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
                             comment.createdAt,
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall?.copyWith(
+                            style: theme.textTheme.labelSmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.normal,
+                              height: 1.4,
                             ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
@@ -718,17 +770,27 @@ class _CommentContentState extends State<_CommentContent> {
                   ),
                 ],
               ),
-              if (comment.parentAuthor.isNotEmpty)
+              const SizedBox(height: 8),
+              if (comment.parentAuthor.isNotEmpty) ...[
                 Text(
                   '回复 ${comment.parentAuthor}',
-                  style: theme.textTheme.bodySmall,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
+                const SizedBox(height: 4),
+              ],
               CommentText(
                 comment.content,
-                style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: widget.compact ? 14 : 15,
+                  height: 1.65,
+                ),
               ),
               if (widget.action != null || own)
-                Row(
+                Wrap(
+                  spacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     if (widget.action != null) widget.action!,
                     if (own)
@@ -828,7 +890,7 @@ class _InlineRepliesState extends State<_InlineReplies>
 
     super.build(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(48, 8, 8, 4),
+      padding: const EdgeInsets.fromLTRB(24, 8, 0, 4),
       child: ListenableBuilder(
         listenable: _feed,
         builder: (context, _) {
@@ -844,15 +906,18 @@ class _InlineRepliesState extends State<_InlineReplies>
                   Divider(
                     height: 1,
                     thickness: .5,
-                    color: Theme.of(context).colorScheme.outlineVariant,
+                    indent: 42,
+                    color: Theme.of(context).colorScheme.outlineVariant
+                        .withValues(alpha: .5),
                   ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   child: _CommentContent(
                     key: ValueKey(comment.id),
                     comment: comment,
                     runtime: widget.runtime,
                     trackId: widget.trackId,
+                    compact: true,
                     onChanged: () {
                       AppLog.instance.trace(
                         "lib/pages/track_comments_panel.dart::_InlineRepliesState.build.closure#1.closure#1",
@@ -989,7 +1054,7 @@ class _CommentFeed extends ChangeNotifier {
   List<TrackComment> comments = [];
   int page = 0, total = 0, _request = 0;
   bool busy = false, hasMore = false, retryReset = true, _disposed = false;
-  bool _resetPending = false;
+  Completer<void>? _pendingRefresh;
   String? error;
 
   Future<void> load({bool reset = false}) {
@@ -1004,7 +1069,9 @@ class _CommentFeed extends ChangeNotifier {
 
       if (_disposed || (!reset && page >= 250)) return;
       if (busy) {
-        _resetPending = _resetPending || reset;
+        if (reset) {
+          await (_pendingRefresh ??= Completer<void>()).future;
+        }
         return;
       }
       final request = ++_request;
@@ -1046,10 +1113,16 @@ class _CommentFeed extends ChangeNotifier {
       } finally {
         if (!_disposed && request == _request) {
           busy = false;
-          notifyListeners();
-          if (_resetPending) {
-            _resetPending = false;
-            unawaited(load(reset: true));
+          final pending = _pendingRefresh;
+          _pendingRefresh = null;
+          if (pending == null) {
+            notifyListeners();
+          } else {
+            try {
+              await load(reset: true);
+            } finally {
+              pending.complete();
+            }
           }
         }
       }
@@ -1064,6 +1137,8 @@ class _CommentFeed extends ChangeNotifier {
 
     _disposed = true;
     _request++;
+    _pendingRefresh?.complete();
+    _pendingRefresh = null;
     super.dispose();
   }
 }
