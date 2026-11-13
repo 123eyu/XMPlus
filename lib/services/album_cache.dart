@@ -239,7 +239,19 @@ class AlbumCache extends ChangeNotifier {
 
         late final AlbumPage page;
         try {
-          page = await client.album(id, ascending: true);
+          // Cancel this optional read before close waits for pending cache work.
+          // The account client also serves playback and downloads; keep it open.
+          page = await client.withReadPolicy(
+            () {
+              AppLog.instance.trace(
+                "lib/services/album_cache.dart::AlbumCache.refresh.closure#1.closure#1",
+              );
+              return client.album(id, ascending: true);
+            },
+            rateLimitRetries: 4,
+            cancelled: _closed.future,
+          );
+          _checkOpen();
           if (page.album.id != id)
             throw const FormatException('Album mismatch');
         } catch (error, stack) {

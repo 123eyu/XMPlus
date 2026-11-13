@@ -272,6 +272,7 @@ class XmlyLogin {
         var retryable = false;
         String? retryHeader;
         try {
+          beforeAttempt?.call();
           diagnostic.started();
           beforeAttempt?.call();
           final response = await _dio.request<ResponseBody>(
@@ -337,6 +338,14 @@ class XmlyLogin {
           if (result is! Map<String, dynamic>) throw const FormatException();
           return decode(result);
         } catch (error, stack) {
+          if (_closed || generation != _generation) {
+            diagnostic.cancelled(error);
+            final failure = _closed
+                ? XmlyLoginError('closed', '登录窗口已关闭')
+                : XmlyLoginError('challenge_invalid', '短信验证已取消');
+            AppLog.instance.linkError(failure, error);
+            throw failure;
+          }
           if (error is DioException) {
             diagnostic.url = error.requestOptions.uri.toString();
             diagnostic.requestHeaders = Map.of(error.requestOptions.headers);
@@ -362,30 +371,22 @@ class XmlyLogin {
               : error is FormatException
               ? XmlyLoginError('invalid_response', '登录服务返回无效数据')
               : XmlyLoginError('network_error', '登录连接失败或超时，请勿自动重发短信');
-          if (!timedOut && (_closed || generation != _generation)) {
-            diagnostic.cancelled(error);
-          } else {
-            await diagnostic.fail(
-              error,
-              stack,
-              promptUser:
-                  !(error is XmlyLoginError &&
-                      error.definitive &&
-                      const {
-                        'nonce_rejected',
-                        'sms_send_rejected',
-                        'sms_verify_rejected',
-                        'quick_login_rejected',
-                      }.contains(error.code) &&
-                      !(error.upstreamCode != null &&
-                          error.upstreamCode! >= 500 &&
-                          error.upstreamCode! <= 599)),
-            );
-          }
-          if (_closed) throw XmlyLoginError('closed', '登录窗口已关闭');
-          if (generation != _generation) {
-            throw XmlyLoginError('challenge_invalid', '短信验证已取消');
-          }
+          await diagnostic.fail(
+            error,
+            stack,
+            promptUser:
+                !(error is XmlyLoginError &&
+                    error.definitive &&
+                    const {
+                      'nonce_rejected',
+                      'sms_send_rejected',
+                      'sms_verify_rejected',
+                      'quick_login_rejected',
+                    }.contains(error.code) &&
+                    !(error.upstreamCode != null &&
+                        error.upstreamCode! >= 500 &&
+                        error.upstreamCode! <= 599)),
+          );
           // A rejected 429 is safe to replay. An unknown POST outcome is not:
           // it may already have sent an SMS or consumed the captcha/code/key.
           retryable =
@@ -596,9 +597,8 @@ class XmlyLogin {
           AppLog.instance.trace(
             "lib/api/xmly_login.dart::XmlyLogin.sendSms.closure#3.closure#2",
           );
-
-          // Nonce preparation cannot send an SMS or consume the captcha.
-          // Start cooldown at each actual POST, including a 429 retry.
+          // Preparation cannot send an SMS or consume the captcha.
+          // Each actual POST, including a 429 retry, starts a fresh cooldown.
           final sentAt = _monotonic();
           _usedLots[lot] = sentAt;
           _lastSms[phone] = sentAt;
