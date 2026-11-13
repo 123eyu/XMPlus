@@ -1633,12 +1633,20 @@ class _ListeningPageState extends State<ListeningPage>
               AppLog.instance.trace(
                 "lib/pages/listening_page.dart::_ListeningPageState._historyTab.closure#2.closure#1.closure#1",
               );
+              final historyProgress = (
+                position: row.position,
+                updatedAt: row.updatedAt,
+              );
               return row.track.albumId.isEmpty
-                  ? _runtime.player.playTrack(row.track)
+                  ? _runtime.player.playTrack(
+                      row.track,
+                      historyProgress: historyProgress,
+                    )
                   : _runtime.player.playAlbum(
                       row.track.albumId,
                       row.track.id,
                       track: row.track,
+                      historyProgress: historyProgress,
                     );
             });
           },

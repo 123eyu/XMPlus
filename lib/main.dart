@@ -62,8 +62,12 @@ Future<void> main(List<String> arguments) async {
             defaultTargetPlatform == TargetPlatform.linux)) {
       await windowManager.ensureInitialized();
       if (defaultTargetPlatform == TargetPlatform.windows) {
-        await windowManager.waitUntilReadyToShow();
-        await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+        await windowManager.waitUntilReadyToShow(
+          const WindowOptions(
+            center: true,
+            titleBarStyle: TitleBarStyle.hidden,
+          ),
+        );
       }
       await windowManager.setMinimumSize(const Size(320, 320));
     }

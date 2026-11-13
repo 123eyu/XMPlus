@@ -26,11 +26,16 @@ class AppLog {
   static final instance = AppLog._();
   static const retainedBytesLimit = 1024 * 1024;
   static const batchBytes = 64 * 1024;
+  static const fileBytesLimit = 8 * 1024 * 1024;
+  static const fileTailBytes = 4 * 1024 * 1024;
+  static const recordBytesLimit = 256 * 1024;
   static const cookieReplacement = '[REDACTED COOKIE]';
   static final _ownedName = RegExp(
     r'^XMPlus-(\d+)-(\d+)-([A-Za-z0-9_-]+)\.log$',
   );
   static final _safeId = RegExp(r'^[A-Za-z0-9_-]+$');
+  static final _exportName = RegExp(r'^XMPlus-export-[A-Za-z0-9_-]+\.log$');
+  static final _activeTemporaryFiles = <String>{};
 
   Directory? _root;
   String? _sessionId;
@@ -48,7 +53,9 @@ class AppLog {
   Timer? _timer;
   final _pending = ListQueue<_LogLine>();
   int _pendingBytes = 0, _sequence = 0, _committedLength = 0;
+  int _sequenceRebase = 0;
   int _missingRecords = 0, _missingBytes = 0;
+  int? _missingFirstSequence, _missingLastSequence;
   int _lostRecords = 0, _lostBytes = 0;
   String? _persistenceError;
   AppLogLevel _level = AppLogLevel.warning;
@@ -246,6 +253,7 @@ class AppLog {
 
   Future<void> _prepareFile() async {
     await _checkRoot();
+    await _cleanTemporaryFiles();
     final file = _file;
     if (file == null) throw const FileSystemException('日志会话尚未初始化');
     final type = await FileSystemEntity.type(file.path, followLinks: false);
@@ -302,6 +310,12 @@ class AppLog {
             );
           }
           _sequence += offset;
+          _sequenceRebase += offset;
+          if (_missingFirstSequence != null)
+            _missingFirstSequence = _missingFirstSequence! + offset;
+          if (_missingLastSequence != null)
+            _missingLastSequence = _missingLastSequence! + offset;
+          _boundTail();
         }
       } finally {
         await handle.close();
@@ -311,6 +325,63 @@ class AppLog {
     }
     _prepared = true;
   }
+
+  Future<void> _cleanTemporaryFiles() async {
+    final root = _root!;
+    await for (final entity in root.list(followLinks: false)) {
+      final name = p.basename(entity.path);
+      final retention =
+          name.endsWith('.retention') &&
+          _ownedName.hasMatch(
+            name.substring(0, name.length - '.retention'.length),
+          );
+      if ((!_exportName.hasMatch(name) && !retention) ||
+          _activeTemporaryFiles.contains(p.absolute(entity.path)))
+        continue;
+      if (await FileSystemEntity.type(entity.path, followLinks: false) ==
+          FileSystemEntityType.file) {
+        try {
+          await File(entity.path).delete();
+        } on FileSystemException {
+          // An old export can still be closing after an Android engine detaches.
+          // Cleanup must not prevent the new logger from starting.
+        }
+      }
+    }
+  }
+
+  Uint8List _encodeRecord(Map<String, Object?> values) {
+    final bytes = Uint8List.fromList(utf8.encode('${jsonEncode(values)}\n'));
+    if (bytes.length <= recordBytesLimit) return bytes;
+    // Keep a valid JSON record and the error identity when one response or
+    // message is itself larger than the buffer. Cleaning has already run.
+    final summary = <String, Object?>{
+      'timestamp': values['timestamp'],
+      'sessionId': values['sessionId'],
+      'sequence': values['sequence'],
+      'level': values['level'],
+      'category': _excerpt('${values['category']}', 256),
+      'message': _excerpt('${values['message']}', 2048),
+      if (values['requestId'] != null)
+        'requestId': _excerpt('${values['requestId']}', 256),
+      'data': {
+        'logRecordTruncated': true,
+        'originalBytes': bytes.length,
+        'preview': utf8.decode(
+          bytes.sublist(0, 16 * 1024),
+          allowMalformed: true,
+        ),
+      },
+      if (values['error'] != null)
+        'error': _excerpt('${values['error']}', 8192),
+      if (values['stackTrace'] != null)
+        'stackTrace': _excerpt('${values['stackTrace']}', 8192),
+    };
+    return Uint8List.fromList(utf8.encode('${jsonEncode(summary)}\n'));
+  }
+
+  static String _excerpt(String value, int limit) =>
+      value.length <= limit ? value : '${value.substring(0, limit)}…';
 
   void trace(String method) {
     if (_inside || _closed) return;
@@ -359,10 +430,10 @@ class AppLog {
         if (stackTrace != null) 'stackTrace': '$stackTrace',
       };
       final cleaned = redact(values) as Map<String, Object?>;
-      final bytes = Uint8List.fromList(utf8.encode('${jsonEncode(cleaned)}\n'));
+      final bytes = _encodeRecord(cleaned);
       _pending.add(_LogLine(values['sequence'] as int, bytes));
       _pendingBytes += bytes.length;
-      if (_persistenceError != null) _boundTail();
+      _boundTail();
       final scope = _currentErrorScope;
       if (!localOnly &&
           error != null &&
@@ -417,7 +488,10 @@ class AppLog {
 
   Future<void> flush() {
     final cutoff = _sequence - 1;
-    return _serialize(() => _flushThrough(cutoff));
+    final rebase = _sequenceRebase;
+    return _serialize(() async {
+      await _flushThrough(cutoff, rebase);
+    });
   }
 
   Future<T> _serialize<T>(Future<T> Function() action) {
@@ -426,16 +500,22 @@ class AppLog {
     return result;
   }
 
-  Future<void> _flushThrough(int cutoff) async {
-    if (!_initialized) return;
+  Future<int> _flushThrough(int cutoff, int rebase) async {
+    if (!_initialized) return cutoff;
+    final requestedCutoff = cutoff;
+    cutoff += _sequenceRebase - rebase;
     RandomAccessFile? handle;
+    File? replacement;
+    var replacementCreated = false, replacementActive = false;
+    var missingRecords = 0, missingBytes = 0;
+    int? missingFirstSequence, missingLastSequence;
     List<_LogLine> batch = const [];
     var batchCommitted = false;
     try {
       if (!_prepared) {
-        final before = _sequence;
+        final before = _sequenceRebase;
         await _prepareFile();
-        cutoff += _sequence - before;
+        cutoff += _sequenceRebase - before;
       }
       await _checkRoot();
       final file = _file;
@@ -461,31 +541,116 @@ class AppLog {
         _pending.removeFirst();
         _pendingBytes -= line.bytes.length;
       }
-      final missingRecords = _missingRecords;
-      final missingBytes = _missingBytes;
-      var length = _committedLength;
-      if (missingRecords > 0) {
-        final warning = _lossLine(
-          missingRecords,
-          missingBytes,
-          batch.isEmpty ? _sequence++ : batch.first.sequence - 1,
-        );
-        await handle.writeFrom(warning);
-        length += warning.length;
+      // A queued snapshot can have an older cutoff than the surviving tail.
+      // Defer losses after that cutoff. When they can be confirmed, use a
+      // genuinely missing sequence and insert the notice in sequence order;
+      // an IO retry can leave surviving records on both sides of a lost range.
+      if (_missingRecords > 0 && _missingLastSequence! <= cutoff) {
+        missingRecords = _missingRecords;
+        missingBytes = _missingBytes;
+        missingFirstSequence = _missingFirstSequence;
+        missingLastSequence = _missingLastSequence;
+        _missingRecords = _missingBytes = 0;
+        _missingFirstSequence = _missingLastSequence = null;
       }
+      var length = _committedLength;
+      final warning = missingRecords > 0
+          ? _lossLine(missingRecords, missingBytes, missingLastSequence!)
+          : null;
+      final incoming =
+          batch.fold<int>(0, (sum, line) => sum + line.bytes.length) +
+          (warning?.length ?? 0);
+      if (length + incoming > fileBytesLimit) {
+        replacement = File('${file.path}.retention');
+        if (await FileSystemEntity.type(replacement.path, followLinks: false) !=
+            FileSystemEntityType.notFound)
+          await _cleanTemporaryFiles();
+        if (await FileSystemEntity.type(replacement.path, followLinks: false) !=
+            FileSystemEntityType.notFound) {
+          throw const FileSystemException('日志整理临时文件已存在');
+        }
+        replacementActive = _activeTemporaryFiles.add(
+          p.absolute(replacement.path),
+        );
+        if (!replacementActive) throw const FileSystemException('日志整理正在进行');
+        await replacement.create(exclusive: true);
+        replacementCreated = true;
+        final output = await replacement.open(mode: FileMode.writeOnlyAppend);
+        try {
+          final start = await _tailStart(handle, length, fileTailBytes);
+          if (start == length && length > 0) {
+            // A legacy oversized final record may leave no complete line in
+            // the retained range. Preserve its sequence in a small notice.
+            final last = await _lastNewline(handle, length - 1);
+            await handle.setPosition(last);
+            final prefix = utf8.decode(
+              await handle.read((length - last).clamp(0, batchBytes)),
+              allowMalformed: true,
+            );
+            final match = RegExp(r'"sequence":(\d+)').firstMatch(prefix);
+            if (match == null)
+              throw const FormatException('Last log record has no sequence');
+            final notice = _retentionLine(int.parse(match.group(1)!), length);
+            await output.writeFrom(notice);
+            length = notice.length;
+          } else {
+            await _copyLogRange(handle, output, start, length);
+            length -= start;
+          }
+        } catch (_) {
+          await output.close();
+          rethrow;
+        }
+        try {
+          await handle.close();
+        } catch (_) {
+          await output.close();
+          rethrow;
+        }
+        handle = output;
+      }
+      var warningWritten = false;
       for (final line in batch) {
+        if (warning != null &&
+            !warningWritten &&
+            line.sequence > missingLastSequence!) {
+          await handle.writeFrom(warning);
+          length += warning.length;
+          warningWritten = true;
+        }
         await handle.writeFrom(line.bytes);
         length += line.bytes.length;
       }
+      if (warning != null && !warningWritten) {
+        await handle.writeFrom(warning);
+        length += warning.length;
+      }
       await handle.flush();
+      if (replacement != null) {
+        await handle.close();
+        handle = null;
+        if (await FileSystemEntity.type(file.path, followLinks: false) !=
+            FileSystemEntityType.file) {
+          throw const FileSystemException('日志整理目标已改变');
+        }
+        await replacement.rename(file.path);
+        _activeTemporaryFiles.remove(p.absolute(replacement.path));
+        replacement = null;
+      }
       _committedLength = length;
       batchCommitted = true;
-      _missingRecords -= missingRecords;
-      _missingBytes -= missingBytes;
       _persistenceError = null;
       _notify();
     } catch (error) {
       if (!batchCommitted) {
+        if (missingRecords > 0) {
+          _addMissing(
+            missingRecords,
+            missingBytes,
+            missingFirstSequence!,
+            missingLastSequence!,
+          );
+        }
         for (final line in batch.reversed) {
           _pending.addFirst(line);
           _pendingBytes += line.bytes.length;
@@ -498,8 +663,37 @@ class AppLog {
       } catch (error) {
         _fail(error);
       }
+      final temporary = replacement;
+      if (temporary != null) {
+        try {
+          if (replacementCreated &&
+              await FileSystemEntity.type(temporary.path, followLinks: false) ==
+                  FileSystemEntityType.file)
+            await temporary.delete();
+        } catch (error) {
+          _fail(error);
+        } finally {
+          if (replacementActive)
+            _activeTemporaryFiles.remove(p.absolute(temporary.path));
+        }
+      }
     }
+    return requestedCutoff + _sequenceRebase - rebase;
   }
+
+  Uint8List _retentionLine(int sequence, int bytes) => Uint8List.fromList(
+    utf8.encode(
+      '${jsonEncode({
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
+        'sessionId': _sessionId,
+        'sequence': sequence,
+        'level': 'WARNING',
+        'category': 'logging',
+        'message': '超大历史日志记录已按保留上限清理',
+        'data': {'omittedBytes': bytes, 'fileBytesLimit': fileBytesLimit},
+      })}\n',
+    ),
+  );
 
   Uint8List _lossLine(int records, int bytes, int sequence) =>
       Uint8List.fromList(
@@ -510,7 +704,7 @@ class AppLog {
             'sequence': sequence,
             'level': 'WARNING',
             'category': 'logging',
-            'message': '日志写入恢复；部分记录已丢失',
+            'message': '日志缓冲空间不足；部分较早记录未保留',
             'data': {'missingRecords': records, 'missingBytes': bytes},
           })}\n',
         ),
@@ -520,11 +714,23 @@ class AppLog {
     while (_pendingBytes > retainedBytesLimit && _pending.isNotEmpty) {
       final line = _pending.removeFirst();
       _pendingBytes -= line.bytes.length;
-      _missingRecords++;
-      _missingBytes += line.bytes.length;
+      _addMissing(1, line.bytes.length, line.sequence, line.sequence);
       _lostRecords++;
       _lostBytes += line.bytes.length;
     }
+  }
+
+  void _addMissing(int records, int bytes, int first, int last) {
+    _missingRecords += records;
+    _missingBytes += bytes;
+    final previousFirst = _missingFirstSequence;
+    final previousLast = _missingLastSequence;
+    _missingFirstSequence = previousFirst == null || first < previousFirst
+        ? first
+        : previousFirst;
+    _missingLastSequence = previousLast == null || last > previousLast
+        ? last
+        : previousLast;
   }
 
   void _fail(Object error) {
@@ -623,9 +829,12 @@ class AppLog {
       );
     }
     final cutoff = _sequence - 1;
+    final rebase = _sequenceRebase;
     return _serialize(() async {
       final current = fileName == currentFileName;
-      if (current) await _flushThrough(cutoff);
+      final effectiveCutoff = current
+          ? await _flushThrough(cutoff, rebase)
+          : cutoff;
       final root = _root;
       final file = root == null ? null : File(p.join(root.path, fileName));
       String? source;
@@ -662,21 +871,129 @@ class AppLog {
         _fail(error);
         length = 0;
       }
-      final tail = current
+      String? originalSource = file?.absolute.path;
+      var tail = current
           ? _pending
-                .where((line) => line.sequence <= cutoff)
+                .where((line) => line.sequence <= effectiveCutoff)
                 .map((line) => line.bytes)
                 .toList(growable: false)
           : const <Uint8List>[];
+      var snapshotError = current ? _persistenceError : null;
+      final allLossesBeforeCutoff =
+          current &&
+          _missingLastSequence != null &&
+          _missingLastSequence! <= effectiveCutoff;
+      final missingRecords = allLossesBeforeCutoff ? _missingRecords : 0;
+      final missingBytes = allLossesBeforeCutoff ? _missingBytes : 0;
+      var retainedTail =
+          current &&
+          _missingFirstSequence != null &&
+          _missingFirstSequence! <= effectiveCutoff;
+      if (source != null) {
+        final original = File(source);
+        // Keep the canonical original even when freezing fails, so exporting
+        // through a Windows directory alias cannot overwrite the live log.
+        originalSource = await original.resolveSymbolicLinks();
+        try {
+          final frozen = await _freezeSnapshot(original, length);
+          source = frozen.path;
+          length = frozen.length;
+          retainedTail = retainedTail || frozen.retainedTail;
+        } catch (error) {
+          // A full/read-only log directory must not prevent exporting the
+          // retained evidence elsewhere. Copy a bounded tail into memory;
+          // never expose the mutable original as a fallback snapshot source.
+          snapshotError = [
+            if (snapshotError != null) snapshotError,
+            '日志快照写入失败：${redact('$error')}',
+          ].join('\n');
+          final budget =
+              retainedBytesLimit -
+              tail.fold<int>(0, (sum, bytes) => sum + bytes.length);
+          try {
+            final committed = await _readLogTail(original, length, budget);
+            tail = [...committed, ...tail];
+          } catch (readError) {
+            snapshotError =
+                '$snapshotError\n日志保留片段读取失败：${redact('$readError')}';
+          }
+          source = null;
+          length = 0;
+          retainedTail = true;
+        }
+      }
       return LogSnapshot._(
         source,
         length,
         tail,
-        persistenceError: current ? _persistenceError : null,
-        missingRecords: current ? _missingRecords : 0,
-        missingBytes: current ? _missingBytes : 0,
+        originalSourcePath: originalSource,
+        retainedTail: retainedTail,
+        persistenceError: snapshotError,
+        missingRecords: missingRecords,
+        missingBytes: missingBytes,
       );
     });
+  }
+
+  Future<({String path, String originalPath, int length, bool retainedTail})>
+  _freezeSnapshot(File source, int length) async {
+    await _checkRoot();
+    final frozen = File(
+      p.join(_root!.path, 'XMPlus-export-${const Uuid().v4()}.log'),
+    );
+    RandomAccessFile? input, output;
+    var created = false, complete = false;
+    _activeTemporaryFiles.add(p.absolute(frozen.path));
+    try {
+      final originalPath = await source.resolveSymbolicLinks();
+      input = await source.open();
+      if (await input.length() < length) {
+        throw const FileSystemException('日志快照源长度不足');
+      }
+      final start = await _tailStart(input, length, fileBytesLimit);
+      await input.setPosition(start);
+      final prefix = utf8.decode(
+        await input.read((length - start).clamp(0, batchBytes)),
+        allowMalformed: true,
+      );
+      final firstSequence = RegExp(r'"sequence":(\d+)').firstMatch(prefix);
+      final retainedTail =
+          start > 0 ||
+          firstSequence != null && int.parse(firstSequence.group(1)!) > 0;
+      await frozen.create(exclusive: true);
+      created = true;
+      output = await frozen.open(mode: FileMode.writeOnlyAppend);
+      await _copyLogRange(input, output, start, length);
+      await output.flush();
+      await output.close();
+      output = null;
+      await input.close();
+      input = null;
+      complete = true;
+      return (
+        path: frozen.path,
+        originalPath: originalPath,
+        length: length - start,
+        retainedTail: retainedTail,
+      );
+    } finally {
+      try {
+        await input?.close();
+      } catch (_) {}
+      try {
+        await output?.close();
+      } catch (_) {}
+      if (!complete) {
+        try {
+          if (created &&
+              await FileSystemEntity.type(frozen.path, followLinks: false) ==
+                  FileSystemEntityType.file)
+            await frozen.delete();
+        } finally {
+          _activeTemporaryFiles.remove(p.absolute(frozen.path));
+        }
+      }
+    }
   }
 
   Future<void> close() async {
@@ -927,20 +1244,27 @@ class _LogLine {
   final Uint8List bytes;
 }
 
-/// An immutable byte cutoff, not a whole-file copy. The source is read only to
-/// [length], even when more records are appended after this snapshot is made.
+/// A bounded, immutable export copy. Dispose it when export or clipboard work
+/// finishes, including cancellation, so retention can continue independently.
 class LogSnapshot {
   LogSnapshot._(
     this.sourcePath,
     this.length,
     List<Uint8List> tail, {
+    required this.originalSourcePath,
+    required bool retainedTail,
     required this.persistenceError,
     required this.missingRecords,
     required this.missingBytes,
   }) : _tail = List.unmodifiable(tail) {
-    _header = persistenceError == null
-        ? Uint8List(0)
-        : _notice('日志写入失败，当前导出仅含保留片段', {'persistenceError': persistenceError});
+    _header = Uint8List.fromList([
+      if (retainedTail)
+        ..._notice('日志仅包含最近保留的记录，较早记录已清理', {
+          'fileBytesLimit': AppLog.fileBytesLimit,
+        }),
+      if (persistenceError != null)
+        ..._notice('日志写入失败，当前导出仅含保留片段', {'persistenceError': persistenceError}),
+    ]);
     _missing = missingRecords == 0
         ? Uint8List(0)
         : _notice('日志记录丢失', {
@@ -951,11 +1275,13 @@ class LogSnapshot {
   static const androidClipboardLimit = 512 * 1024;
   static const windowsClipboardLimit = 8 * 1024 * 1024;
   final String? sourcePath;
+  final String? originalSourcePath;
   final int length;
   final String? persistenceError;
   final int missingRecords, missingBytes;
   final List<Uint8List> _tail;
   late final Uint8List _header, _missing;
+  Future<void>? _disposing;
   int get tailLength => _tail.fold<int>(0, (sum, bytes) => sum + bytes.length);
   int get totalBytes => _header.length + length + tailLength + _missing.length;
   bool canCopyToClipboard({required bool android}) =>
@@ -975,6 +1301,7 @@ class LogSnapshot {
   }
 
   Stream<List<int>> openRead() async* {
+    if (_disposing != null) throw StateError('日志快照已释放');
     yield* openPrefix();
     final source = sourcePath;
     if (source != null && length > 0) {
@@ -992,6 +1319,20 @@ class LogSnapshot {
     yield* openSuffix();
   }
 
+  Future<void> dispose() => _disposing ??= _dispose();
+
+  Future<void> _dispose() async {
+    final source = sourcePath;
+    if (source == null) return;
+    try {
+      if (await FileSystemEntity.type(source, followLinks: false) ==
+          FileSystemEntityType.file)
+        await File(source).delete();
+    } finally {
+      AppLog._activeTemporaryFiles.remove(p.absolute(source));
+    }
+  }
+
   Future<String> readForClipboard({required bool android}) async {
     if (!canCopyToClipboard(android: android)) {
       throw StateError('日志过大，无法完整复制，请导出到文件');
@@ -1007,6 +1348,63 @@ class LogSnapshot {
       '${jsonEncode({'level': 'WARNING', 'category': 'logging', 'message': message, 'data': data})}\n',
     ),
   );
+}
+
+Future<List<Uint8List>> _readLogTail(File file, int end, int limit) async {
+  if (limit <= 0 || end <= 0) return const [];
+  final input = await file.open();
+  try {
+    if (await input.length() < end) {
+      throw const FileSystemException('日志快照源长度不足');
+    }
+    final start = await _tailStart(input, end, limit);
+    await input.setPosition(start);
+    final result = <Uint8List>[];
+    var remaining = end - start;
+    while (remaining > 0) {
+      final bytes = await input.read(remaining.clamp(0, AppLog.batchBytes));
+      if (bytes.isEmpty) throw const FileSystemException('日志保留源长度不足');
+      result.add(bytes);
+      remaining -= bytes.length;
+    }
+    return result;
+  } finally {
+    await input.close();
+  }
+}
+
+/// Start at a complete UTF-8/JSONL record, without reading an unbounded line.
+Future<int> _tailStart(RandomAccessFile handle, int end, int limit) async {
+  if (end <= limit) return 0;
+  final start = end - limit;
+  await handle.setPosition(start - 1);
+  if ((await handle.read(1)).single == 10) return start;
+  await handle.setPosition(start);
+  var cursor = start;
+  while (cursor < end) {
+    final bytes = await handle.read((end - cursor).clamp(0, AppLog.batchBytes));
+    if (bytes.isEmpty) throw const FileSystemException('日志保留源长度不足');
+    final newline = bytes.indexOf(10);
+    if (newline >= 0) return cursor + newline + 1;
+    cursor += bytes.length;
+  }
+  return end;
+}
+
+Future<void> _copyLogRange(
+  RandomAccessFile input,
+  RandomAccessFile output,
+  int start,
+  int end,
+) async {
+  await input.setPosition(start);
+  var remaining = end - start;
+  while (remaining > 0) {
+    final bytes = await input.read(remaining.clamp(0, AppLog.batchBytes));
+    if (bytes.isEmpty) throw const FileSystemException('日志快照源长度不足');
+    await output.writeFrom(bytes);
+    remaining -= bytes.length;
+  }
 }
 
 /// Find an exclusive complete-line endpoint with bounded memory, even when the

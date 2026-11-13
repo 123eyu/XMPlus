@@ -817,6 +817,7 @@ class PlayerService {
     int? page,
     Track? track,
     double? resumePosition,
+    ({double position, int updatedAt})? historyProgress,
   }) {
     AppLog.instance.trace(
       "lib/services/player_service.dart::PlayerService.playAlbum",
@@ -833,6 +834,8 @@ class PlayerService {
           'page': page,
           'hintTrackId': track?.id,
           'resumePosition': resumePosition,
+          'historyPosition': historyProgress?.position,
+          'historyUpdatedAt': historyProgress?.updatedAt,
         });
       }
       final album = xmlyIdentifier(albumId),
@@ -909,7 +912,11 @@ class PlayerService {
         _queue = tracks;
         cursor = index;
         sourceAlbumId = album;
-        await _openCurrent(request, resumePosition: resumePosition);
+        await _openCurrent(
+          request,
+          resumePosition: resumePosition,
+          historyProgress: historyProgress,
+        );
       });
     });
   }
@@ -976,6 +983,7 @@ class PlayerService {
   Future<void> playTrack(
     Track track, {
     double? resumePosition,
+    ({double position, int updatedAt})? historyProgress,
     bool manualPosition = false,
   }) {
     AppLog.instance.trace(
@@ -991,6 +999,8 @@ class PlayerService {
           'trackId': track.id,
           'albumId': track.albumId,
           'resumePosition': resumePosition,
+          'historyPosition': historyProgress?.position,
+          'historyUpdatedAt': historyProgress?.updatedAt,
           'manualPosition': manualPosition,
         });
       }
@@ -1010,6 +1020,7 @@ class PlayerService {
         await _openCurrent(
           request,
           resumePosition: resumePosition,
+          historyProgress: historyProgress,
           // Bookmarks bypass chapter skipping just like a manual seek.
           manualReplay: manualPosition,
         );
@@ -1372,7 +1383,7 @@ class PlayerService {
     PlaybackSource source,
     int request,
     int epoch,
-    ({double position, int updatedAt})? local, {
+    ({double position, int updatedAt})? knownProgress, {
     required bool preservePosition,
   }) async {
     AppLog.instance.trace(
@@ -1431,8 +1442,9 @@ class PlayerService {
           if (!active() || preservePosition || _atEnd) return;
           final remote = cloud;
           if (remote != null &&
-              (local == null ||
-                  (remote['updated_at'] as num) * 1000 > local.updatedAt)) {
+              (knownProgress == null ||
+                  (remote['updated_at'] as num) * 1000 >
+                      knownProgress.updatedAt)) {
             final restored = policy.start(
               duration: duration,
               resumePosition: (remote['position'] as num).toDouble(),
@@ -1453,9 +1465,9 @@ class PlayerService {
               _sourceWarning = '云历史查询较慢，已使用本次查到的最新进度';
             }
           } else if (failed) {
-            _sourceWarning = local == null
+            _sourceWarning = knownProgress == null
                 ? '云进度暂不可用，继续当前播放'
-                : '云进度暂不可用，已使用本地进度';
+                : '云进度暂不可用，已保留当前进度';
           }
           _notify();
         } finally {
@@ -1473,6 +1485,7 @@ class PlayerService {
   Future<void> _openCurrent(
     int request, {
     double? resumePosition,
+    ({double position, int updatedAt})? historyProgress,
     bool manualReplay = false,
     bool startPlaying = true,
     String? localTaskId,
@@ -1490,6 +1503,7 @@ class PlayerService {
       await _openCurrentSource(
         request,
         resumePosition: resumePosition ?? selectedStart,
+        historyProgress: historyProgress,
         manualReplay: manualReplay || selectedStart != null,
         startPlaying: startPlaying,
         localTaskId: localTaskId,
@@ -1508,6 +1522,7 @@ class PlayerService {
   Future<void> _openCurrentSource(
     int request, {
     double? resumePosition,
+    ({double position, int updatedAt})? historyProgress,
     bool manualReplay = false,
     bool startPlaying = true,
     String? localTaskId,
@@ -1569,9 +1584,20 @@ class PlayerService {
       return;
     }
     _source = source;
-    final local = _localProgress(track);
+    var knownProgress = _localProgress(track);
+    // The history page already has a dated cloud observation. Keep it when
+    // a fresh query fails, without replacing newer local or remote progress.
+    if (historyProgress != null &&
+        historyProgress.position.isFinite &&
+        historyProgress.position >= 0 &&
+        historyProgress.position <= 2147483647 &&
+        historyProgress.updatedAt >= 0 &&
+        (knownProgress == null ||
+            historyProgress.updatedAt > knownProgress.updatedAt)) {
+      knownProgress = historyProgress;
+    }
     try {
-      final resume = saved ?? local?.position ?? 0.0;
+      final resume = saved ?? knownProgress?.position ?? 0.0;
       await ledger.startWatch(
         identity: source.identity,
         trackId: track.id,
@@ -1616,7 +1642,7 @@ class PlayerService {
           source,
           request,
           epoch,
-          local,
+          knownProgress,
           preservePosition: saved != null || manualReplay,
         ),
       );

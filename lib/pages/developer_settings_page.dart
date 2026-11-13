@@ -229,16 +229,31 @@ class _DeveloperSettingsPageState extends State<DeveloperSettingsPage> {
       try {
         if (clipboard) {
           final snapshot = await _log.snapshot(session.fileName);
-          if (!_canContinueExport()) return;
-          if (!snapshot.canCopyToClipboard(android: Platform.isAndroid)) {
-            throw StateError('日志过大，无法完整复制，请导出到文件');
+          try {
+            if (!_canContinueExport()) return;
+            if (!snapshot.canCopyToClipboard(android: Platform.isAndroid)) {
+              throw StateError('日志过大，无法完整复制，请导出到文件');
+            }
+            final text = await snapshot.readForClipboard(
+              android: Platform.isAndroid,
+            );
+            if (!_canContinueExport()) return;
+            await Clipboard.setData(ClipboardData(text: text));
+            if (_canContinueExport()) _message('日志已复制');
+          } finally {
+            try {
+              await snapshot.dispose();
+            } catch (error, stack) {
+              _log.write(
+                AppLogLevel.warning,
+                'log_export',
+                'Cleaning clipboard log snapshot failed',
+                error: error,
+                stackTrace: stack,
+                promptUser: false,
+              );
+            }
           }
-          final text = await snapshot.readForClipboard(
-            android: Platform.isAndroid,
-          );
-          if (!_canContinueExport()) return;
-          await Clipboard.setData(ClipboardData(text: text));
-          if (_canContinueExport()) _message('日志已复制');
         } else {
           final destination = await exportLogSession(
             session,
@@ -358,7 +373,7 @@ class _DeveloperSettingsPageState extends State<DeveloperSettingsPage> {
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         const SizedBox(height: 4),
-                        const Text('记录运行情况，方便排查问题。'),
+                        const Text('自动保留最近的运行记录，较早日志会清理。复现问题后请及时导出。'),
                         const SizedBox(height: 12),
                         InputDecorator(
                           decoration: const InputDecoration(
