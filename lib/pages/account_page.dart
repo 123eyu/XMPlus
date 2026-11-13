@@ -136,6 +136,7 @@ class AccountPage extends StatefulWidget {
     required this.accounts,
     this.onChanged,
     this.updates,
+    this.queryQuota,
     super.key,
   });
 
@@ -143,6 +144,7 @@ class AccountPage extends StatefulWidget {
   final AccountService accounts;
   final VoidCallback? onChanged;
   final Listenable? updates;
+  final Future<Quota> Function(String identity)? queryQuota;
 
   @override
   State<AccountPage> createState() {
@@ -482,7 +484,7 @@ class _AccountPageState extends State<AccountPage> {
         AppLog.instance.trace(
           "lib/pages/account_page.dart::_AccountPageState._quota.closure#1.closure#1",
         );
-        return client.queryQuota();
+        return widget.queryQuota?.call(identity) ?? client.queryQuota();
       });
       await _storeQuota(identity, quota);
       _refreshProfiles(identity: identity);

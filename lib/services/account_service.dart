@@ -35,7 +35,8 @@ class AccountService {
     this.quiesce,
     this.quiesceForRestore,
     this.settle,
-  }) {
+    XmlyClient Function(Credentials credentials)? clientFactory,
+  }) : _clientFactory = clientFactory ?? _defaultClient {
     AppLog.instance.trace(
       "lib/services/account_service.dart::AccountService.new",
     );
@@ -43,6 +44,14 @@ class AccountService {
 
   final AppStorage storage;
   final CredentialStore secrets;
+  final XmlyClient Function(Credentials credentials) _clientFactory;
+  static XmlyClient _defaultClient(Credentials credentials) {
+    AppLog.instance.trace(
+      "lib/services/account_service.dart::AccountService._defaultClient",
+    );
+    return XmlyClient(credentials: credentials);
+  }
+
   // Account pages can be replaced during navigation or a window resize while
   // their login dialog remains open. Keep SMS state for the account session.
   final smsLogin = XmlyLogin();
@@ -255,10 +264,8 @@ class AccountService {
                 '安全凭据与账号资料不一致',
               );
             }
-            restored[entry.key as String] = XmlyClient(
-              credentials: credentials,
-              urlCacheDirectory: _urlCacheDirectory,
-            );
+            restored[entry.key as String] = _clientFactory(credentials)
+              ..attachUrlCache(_urlCacheDirectory);
           }
           if ((referenced.isNotEmpty &&
                   (!referenced.contains(primaryAccountId) ||
@@ -377,13 +384,8 @@ class AccountService {
             (_clients.containsKey(identity) &&
                 storage.state['activeAccountId'] == identity &&
                 (!makePrimary || primaryAccountId == identity));
-        // A new secondary account does not replace either current selection.
-        final addingSecondary =
-            !makePrimary &&
-            primaryAccountId != null &&
-            !(storage.state['accounts'] as Map).containsKey(identity);
         // A candidate is never mounted during validation.
-        final candidate = XmlyClient(credentials: credentials);
+        final candidate = _clientFactory(credentials);
         var committed = false;
         var operationFailed = false;
         String? newRef;
@@ -397,19 +399,10 @@ class AccountService {
             // can use the verified token revision while the old token expires.
             _settlementClients[identity] = candidate;
           }
-          if (recovering && quiesceForRestore != null) {
-            // Repair only this identity's credential. Unknown operations remain
-            // blocked and reachable for reconciliation after authentication.
-            _admissionPaused = true;
-            await quiesceForRestore!();
-          } else if (!addingSecondary) {
-            if (recovering && _containsUnknown(storage.state['accounts'])) {
-              throw const AccountException(
-                'integration_required',
-                '请先连接账号恢复的任务暂停及听时保存服务',
-              );
-            }
-            await _prepareChange();
+          if (_clients.containsKey(identity)) {
+            // Replacing credentials releases live users of the old client.
+            // A new default account leaves existing playback on its source.
+            await _prepareChange(preserveUsage: true);
           }
           final previous = (storage.state['accounts'] as Map)[identity] as Map?;
           final oldRef = previous?['credentialRef'] as String?;
@@ -456,7 +449,6 @@ class AccountService {
             );
 
             final accounts = state['accounts'] as Map<String, dynamic>;
-            if (!recovering && !addingSecondary) _assertSettled(accounts);
             // Same uid/device identity retains every existing ledger/receipt.
             final record = Map<String, dynamic>.from(
               accounts[identity] as Map? ?? {},
@@ -585,7 +577,7 @@ class AccountService {
                 candidates.containsKey(identity)) {
               throw const AccountException('archive_invalid', '备份账号资料无效');
             }
-            final candidate = XmlyClient(credentials: credentials);
+            final candidate = _clientFactory(credentials);
             candidates[identity] = candidate;
             final quota = await candidate.queryQuota();
             if (quota.remainingSeconds < 0) {
@@ -920,13 +912,12 @@ class AccountService {
             storage.state['activeAccountId'] == identity)
           return;
         try {
-          await _prepareChange();
+          // New requests use this default; live sources retain their account.
           await storage.transaction((state) {
             AppLog.instance.trace(
               "lib/services/account_service.dart::AccountService.setPrimary.closure#1.closure#1.closure#1",
             );
 
-            _assertSettled(state['accounts'] as Map);
             state['primaryAccountId'] = identity;
             state['activeAccountId'] = identity;
           });
@@ -1047,11 +1038,19 @@ class AccountService {
     _missingCredentials.remove(candidate.identity);
   }
 
-  Future<void> _prepareChange() async {
+  Future<void> _prepareChange({bool preserveUsage = false}) async {
     AppLog.instance.trace(
       "lib/services/account_service.dart::AccountService._prepareChange",
     );
 
+    if (preserveUsage) {
+      if (quiesceForRestore == null) {
+        throw const AccountException('integration_required', '请先连接听时保存服务');
+      }
+      _admissionPaused = true;
+      await quiesceForRestore!();
+      return;
+    }
     if (quiesce == null || settle == null) {
       throw const AccountException('integration_required', '请先连接任务暂停及听时结算服务');
     }

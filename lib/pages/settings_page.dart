@@ -111,6 +111,7 @@ class _SettingsPageState extends State<SettingsPage> {
         accounts: widget.runtime.accounts,
         onChanged: widget.runtime.changed,
         updates: widget.runtime,
+        queryQuota: widget.runtime.ledger.queryQuota,
       ),
       _SettingsSection.backup => BackupPage(
         runtime: widget.runtime,

@@ -237,6 +237,8 @@ class AppRuntime extends ChangeNotifier {
 
   String? lifecycleError;
   Timer? _rewardTimer;
+  Timer? _usageTimer;
+  bool _syncingUsage = false;
   bool _refreshingRewards = false;
   int _rewardGeneration = 0;
   final Map<String, Quota> _rewardChecks = {};
@@ -285,6 +287,13 @@ class AppRuntime extends ChangeNotifier {
       }
       unawaited(autoDownloads.scanAll());
       _configureRewards();
+      _usageTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        AppLog.instance.trace(
+          "lib/services/app_runtime.dart::AppRuntime.load.closure#1.closure#1",
+        );
+        unawaited(_syncUsage());
+      });
+      unawaited(_syncUsage());
       AppLog.instance.write(AppLogLevel.info, 'runtime', 'Runtime loaded');
     });
   }
@@ -470,6 +479,7 @@ class AppRuntime extends ChangeNotifier {
 
     downloads.settingsChanged();
     _configureRewards();
+    unawaited(_syncUsage());
     notifyListeners();
   }
 
@@ -1033,6 +1043,48 @@ class AppRuntime extends ChangeNotifier {
     });
   }
 
+  Future<void> _syncUsage() async {
+    AppLog.instance.trace(
+      "lib/services/app_runtime.dart::AppRuntime._syncUsage",
+    );
+    if (_syncingUsage ||
+        closing ||
+        _closed ||
+        accounts.admissionPaused ||
+        restoringBackup ||
+        restoreNeedsReload)
+      return;
+    _syncingUsage = true;
+    final previous = storage.state['accounts'];
+    try {
+      for (final identity in accounts.accountIds.toList()) {
+        if (closing ||
+            _closed ||
+            accounts.admissionPaused ||
+            restoringBackup ||
+            restoreNeedsReload)
+          break;
+        try {
+          if (!ledger.hasDeferredUsage(identity)) continue;
+          await accounts.runWithAccount(identity, (_) {
+            AppLog.instance.trace(
+              "lib/services/app_runtime.dart::AppRuntime._syncUsage.closure#1",
+            );
+            return ledger.synchronize(identity);
+          });
+        } catch (_) {
+          // Preserve each original account's journal until it can synchronize.
+        }
+      }
+    } finally {
+      _syncingUsage = false;
+      if (!closing &&
+          !_closed &&
+          !identical(previous, storage.state['accounts']))
+        notifyListeners();
+    }
+  }
+
   Future<void> _quiesceForRestore() async {
     AppLog.instance.trace(
       "lib/services/app_runtime.dart::AppRuntime._quiesceForRestore",
@@ -1154,6 +1206,8 @@ class AppRuntime extends ChangeNotifier {
       autoDownloads.suspend();
       _rewardTimer?.cancel();
       _rewardTimer = null;
+      _usageTimer?.cancel();
+      _usageTimer = null;
       notifyListeners();
       try {
         try {

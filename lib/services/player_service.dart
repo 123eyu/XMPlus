@@ -225,6 +225,8 @@ class PlayerService {
   bool playing = false, buffering = false;
   double position = 0, duration = 0, rate = 1, volume = 100;
   double? _startSeekPosition;
+  String? _restoredTrackId;
+  double? _restoredPosition;
   double _observedPosition = 0;
   double? _endSeekPosition;
   int? _endAdvanceIntent;
@@ -554,7 +556,11 @@ class PlayerService {
       "lib/services/player_service.dart::PlayerService._newRequest",
     );
 
-    if (!keepStartPosition) _startSeekPosition = null;
+    if (!keepStartPosition) {
+      _startSeekPosition = null;
+      _restoredTrackId = null;
+      _restoredPosition = null;
+    }
     ++_advanceIntent;
     final previous = _requestChanged;
     _requestChanged = Completer<void>();
@@ -651,7 +657,13 @@ class PlayerService {
     _startSeekPosition = null;
     _sleepStopped = false;
     duration = current?.duration ?? 0;
-    position = 0;
+    final track = current;
+    final progress = track == null ? null : _latestQueueProgress(track);
+    _restoredTrackId = progress == null ? null : track!.id;
+    _restoredPosition = progress?.position;
+    position = duration > 0
+        ? (_restoredPosition ?? 0).clamp(0, duration).toDouble()
+        : _restoredPosition ?? 0;
     _loaded = true;
     await applySettings();
     _notify();
@@ -1314,12 +1326,16 @@ class PlayerService {
     });
   }
 
-  ({double position, int updatedAt})? _localProgress(Track track) {
+  ({double position, int updatedAt})? _localProgress(
+    Track track, {
+    String? identity,
+  }) {
     AppLog.instance.trace(
       "lib/services/player_service.dart::PlayerService._localProgress",
     );
 
-    final library = (storage.state['library'] as Map)[_progressIdentity];
+    final library =
+        (storage.state['library'] as Map)[identity ?? _progressIdentity];
     final progress = library is Map ? library['playbackProgress'] : null;
     final entry = progress is Map ? progress[track.id] : null;
     if (entry is! Map) return null;
@@ -1332,6 +1348,23 @@ class PlayerService {
         updated < 0)
       return null;
     return (position: saved.toDouble(), updatedAt: updated);
+  }
+
+  ({double position, int updatedAt})? _latestQueueProgress(Track track) {
+    AppLog.instance.trace(
+      "lib/services/player_service.dart::PlayerService._latestQueueProgress",
+    );
+    // The queue belongs to this device. Changing its default account must not
+    // lose the last position heard on this device under the previous account.
+    var latest = _localProgress(track);
+    for (final identity
+        in (storage.state['library'] as Map).keys.cast<String>()) {
+      final progress = _localProgress(track, identity: identity);
+      if (progress != null &&
+          (latest == null || progress.updatedAt > latest.updatedAt))
+        latest = progress;
+    }
+    return latest;
   }
 
   Future<void> _restoreCloudProgress(
@@ -1461,7 +1494,11 @@ class PlayerService {
         startPlaying: startPlaying,
         localTaskId: localTaskId,
       );
-      if (request == _request && _source != null) _startSeekPosition = null;
+      if (request == _request && _source != null) {
+        _startSeekPosition = null;
+        _restoredTrackId = null;
+        _restoredPosition = null;
+      }
     } finally {
       _loading = false;
       _notify();
@@ -1481,7 +1518,9 @@ class PlayerService {
 
     final track = current;
     if (track == null || request != _request) return;
-    final saved = resumePosition;
+    final saved =
+        resumePosition ??
+        (track.id == _restoredTrackId ? _restoredPosition : null);
     final previousTaskId = _source?.taskId;
     final preferredPrepaid =
         previousTaskId != null &&
@@ -1562,7 +1601,11 @@ class PlayerService {
       await _driver.open(source.uri, epoch: epoch);
       await _driver.setRate(rate);
       await _driver.setVolume(volume);
-      if (position > 0) await _driver.seek(position);
+      if (position > 0) {
+        // Opening snapshots precede the resume seek and must not overwrite it.
+        ++_seekRevision;
+        await _driver.seek(position);
+      }
       if (request != _request) {
         await _stopSource();
         return;
