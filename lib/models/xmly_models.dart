@@ -102,6 +102,7 @@ Map<String, dynamic> _publicRaw(Map<String, dynamic> raw) {
     'albumImage',
     'tracks',
     'totalCount',
+    'isRecordDesc',
     'likes',
     'total',
     'year',

@@ -195,6 +195,7 @@ class XmlyClient {
     return method == 'GET' &&
         (const [
               '/mobile/v1/album/track/v2',
+              '/mobile/v1/album/info',
               '/lite-mobile/like/v1/user-likes',
             ].contains(path) ||
             RegExp(r'^/mobile/track/[1-9][0-9]{0,18}$').hasMatch(path) ||
@@ -845,6 +846,30 @@ class XmlyClient {
     );
   }
 
+  Future<bool> _albumDefaultDescending(String number) async {
+    AppLog.instance.trace(
+      "lib/api/xmly_client.dart::XmlyClient._albumDefaultDescending",
+    );
+
+    final cached = _albums[number]?.raw['isRecordDesc'];
+    if (cached is bool) return cached;
+    final info = await request(
+      'GET',
+      mobile,
+      '/mobile/v1/album/info',
+      query: {'albumId': number, 'device': 'android'},
+      account: false,
+    );
+    info['isRecordDesc'] = info['isRecordDesc'] == true;
+    final album = Album.fromApi(info);
+    if (album.id != number) throw const XmlyException('id_mismatch', '专辑信息不匹配');
+    _albums[number] = album;
+    while (_albums.length > 512) {
+      _albums.remove(_albums.keys.first);
+    }
+    return info['isRecordDesc'] as bool;
+  }
+
   /// A validated ascending prefix, not necessarily a complete catalogue: the
   /// cache server can cap page one at 200 despite the requested 100000 items.
   Future<AlbumPage> cachedAlbum(String albumId) {
@@ -864,7 +889,7 @@ class XmlyClient {
           query: {
             'albumId': number,
             'device': 'android',
-            'isAsc': 'true',
+            'isAsc': '${!(await _albumDefaultDescending(number))}',
             'isQueryInvitationBrand': 'true',
             'pageId': 1,
             'pageSize': 100000,
@@ -921,11 +946,13 @@ class XmlyClient {
 
     final number = xmlyIdentifier(albumId);
     _paging(page, pageSize, maxPageSize: xmlyAlbumPageSize);
+    final defaultDescending = await _albumDefaultDescending(number);
     final query = <String, dynamic>{
       'albumId': number,
       'pageId': page,
       'pageSize': pageSize,
-      'isAsc': '$ascending',
+      // isAsc follows the album's default order, not universal ascending order.
+      'isAsc': '${ascending != defaultDescending}',
       'device': 'android',
       'isQueryInvitationBrand': 'true',
     };
