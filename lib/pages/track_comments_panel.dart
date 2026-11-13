@@ -360,6 +360,7 @@ class _TrackCommentsPanelState extends State<TrackCommentsPanel> {
                                 const SizedBox(height: 16),
                               ],
                               _CommentContent(
+                                key: ObjectKey(_feed),
                                 comment: comment,
                                 runtime: widget.runtime,
                                 trackId: widget.track.id,
@@ -1055,6 +1056,7 @@ class _CommentFeed extends ChangeNotifier {
   int page = 0, total = 0, _request = 0;
   bool busy = false, hasMore = false, retryReset = true, _disposed = false;
   Completer<void>? _pendingRefresh;
+  final _likesDuringLoad = <String, bool>{};
   String? error;
 
   void setLiked(String id, bool liked) {
@@ -1062,6 +1064,7 @@ class _CommentFeed extends ChangeNotifier {
       'lib/pages/track_comments_panel.dart::_CommentFeed.setLiked',
     );
     if (_disposed) return;
+    if (busy) _likesDuringLoad[id] = liked;
     for (var index = 0; index < comments.length; index++) {
       final comment = comments[index];
       if (comment.id != id) continue;
@@ -1091,6 +1094,7 @@ class _CommentFeed extends ChangeNotifier {
       }
       final request = ++_request;
       final nextPage = reset ? 1 : page + 1;
+      _likesDuringLoad.clear();
       busy = true;
       retryReset = reset;
       error = null;
@@ -1116,6 +1120,11 @@ class _CommentFeed extends ChangeNotifier {
         if (result.hasMore && added.isEmpty) {
           throw const XmlyException('repeated_comments', '评论分页没有前进，请刷新后重试');
         }
+        // A response can predate likes that completed while it was loading.
+        for (var index = 0; index < added.length; index++) {
+          final liked = _likesDuringLoad[added[index].id];
+          if (liked != null) added[index] = added[index].withLike(liked);
+        }
         comments = [if (!reset) ...comments, ...added];
         page = nextPage;
         total = result.total;
@@ -1127,6 +1136,7 @@ class _CommentFeed extends ChangeNotifier {
         }
       } finally {
         if (!_disposed && request == _request) {
+          _likesDuringLoad.clear();
           busy = false;
           final pending = _pendingRefresh;
           _pendingRefresh = null;
@@ -1152,6 +1162,7 @@ class _CommentFeed extends ChangeNotifier {
 
     _disposed = true;
     _request++;
+    _likesDuringLoad.clear();
     _pendingRefresh?.complete();
     _pendingRefresh = null;
     super.dispose();
