@@ -38,8 +38,6 @@ dependencies:
   device_info_plus: ^13.3.0
   sentry_flutter: 10.3.0
 dev_dependencies:
-  flutter_test:
-    sdk: flutter
   sentry_dart_plugin: 3.4.0
   analyzer: 14.7.0
 sentry:

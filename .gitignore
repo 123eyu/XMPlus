@@ -10,12 +10,14 @@
 /android/app/build/
 /dist/
 /coverage/
+/test/
 /ephemeral/
 
 # Local development and private application data
 .omp/
 .idea/
 .vscode/
+/.sentry-native/
 *.iml
 *.log
 *.tmp
