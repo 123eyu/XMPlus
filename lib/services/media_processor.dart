@@ -1235,7 +1235,12 @@ class MediaProcessor {
           diagnostic = null;
           final bytes = <int>[];
           diagnostic =
-              HttpLogAttempt(account: '公共嵌入封面（无账号）', method: 'GET', url: '$uri')
+              HttpLogAttempt(
+                  account: '公共嵌入封面（无账号）',
+                  method: 'GET',
+                  url: '$uri',
+                  reportFailure: false,
+                )
                 ..responseBytes = (() {
                   AppLog.instance.trace(
                     "lib/services/media_processor.dart::MediaProcessor._cover.closure#3",

@@ -1,3 +1,8 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+import 'package:uuid/uuid.dart';
+
 import '../models/xmly_models.dart';
 import 'xmly_client.dart';
 import "../services/app_log.dart";
@@ -114,6 +119,98 @@ class AlbumIntroductionData {
   final HomeSection recommendations;
 }
 
+/// Only the adjacent, bounded page summaries escape a membership scan. The
+/// HMAC key never leaves this object, so album markers cannot link scans.
+class _SubscriptionPagination {
+  _SubscriptionPagination()
+    : _markers = Hmac(sha256, utf8.encode(const Uuid().v4())) {
+    AppLog.instance.trace(
+      'lib/api/xmly_experience.dart::_SubscriptionPagination.new',
+    );
+  }
+
+  final Hmac _markers;
+  Map<String, Object?>? _previous, _current;
+
+  void observe({
+    required int page,
+    required int pageSize,
+    required Object? ret,
+    required Object? hasMore,
+    required List<dynamic> rows,
+    required Set<String> seen,
+  }) {
+    AppLog.instance.trace(
+      'lib/api/xmly_experience.dart::_SubscriptionPagination.observe',
+    );
+
+    final unique = <String>{};
+    final sequence = <String?>[];
+    var invalidIds = 0, added = 0;
+    for (final row in rows) {
+      final value = row['albumId'];
+      final text = value is String || value is int ? '$value' : '';
+      final match = RegExp(r'^(?:xmly:)?([1-9][0-9]{0,18})$').firstMatch(text);
+      if (match == null) {
+        invalidIds++;
+        sequence.add(null);
+        continue;
+      }
+      final id = match[1]!;
+      if (unique.add(id) && !seen.contains(id)) added++;
+      sequence.add(
+        _markers.convert(utf8.encode(id)).toString().substring(0, 16),
+      );
+    }
+    _previous = _current;
+    _current = Map.unmodifiable({
+      'page': page,
+      'pageSize': pageSize,
+      // XmlyClient.request only returns after checking HTTP status == 200.
+      'httpStatus': 200,
+      'ret': ret is int
+          ? ret
+          : ret is String
+          ? int.tryParse(ret)
+          : null,
+      'hasMore': hasMore is bool ? hasMore : null,
+      'resultCount': rows.length,
+      'uniqueCount': unique.length,
+      'duplicateCount': rows.length - invalidIds - unique.length,
+      'invalidIdCount': invalidIds,
+      'accumulatedBefore': seen.length,
+      'newCount': added,
+      'accumulatedAfter': seen.length + added,
+      // The endpoint allows at most 50 rows; preserve their order for comparison.
+      'albumMarkers': List<String?>.unmodifiable(sequence),
+    });
+  }
+
+  XmlyException failure(String reason, String code, String message) {
+    AppLog.instance.trace(
+      'lib/api/xmly_experience.dart::_SubscriptionPagination.failure',
+    );
+
+    return XmlyException(
+      code,
+      message,
+      diagnostics: Map.unmodifiable({
+        'pagination': Map<String, Object?>.unmodifiable({
+          'list': 'subscriptions',
+          'reason': reason,
+          if (_previous != null) 'previousPage': _previous,
+          if (_current != null) 'currentPage': _current,
+        }),
+      }),
+      fingerprint: List.unmodifiable([
+        'xmplus',
+        'subscription_pagination',
+        reason,
+      ]),
+    );
+  }
+}
+
 /// Lite client surfaces and explicit official subscription/favorite mutations.
 /// No audio admission, billing, history writes, or credential-bearing caches.
 class XmlyExperience {
@@ -205,6 +302,7 @@ class XmlyExperience {
     );
 
     final seen = <String>{};
+    final subscriptionPages = favorite ? null : _SubscriptionPagination();
     for (var page = 1; page <= 10000; page++) {
       final Iterable<String> ids;
       final bool more;
@@ -218,7 +316,11 @@ class XmlyExperience {
         });
         more = result.hasMore;
       } else {
-        final result = await _subscriptions(page: page);
+        final result = await _subscriptions(
+          page: page,
+          diagnostics: subscriptionPages,
+          seen: seen,
+        );
         ids = result.items.map((item) {
           AppLog.instance.trace(
             "lib/api/xmly_experience.dart::XmlyExperience._loadMembership.closure#2",
@@ -230,9 +332,23 @@ class XmlyExperience {
       final before = seen.length;
       seen.addAll(ids);
       if ((ids.isNotEmpty || more) && seen.length == before) {
+        if (subscriptionPages != null) {
+          throw subscriptionPages.failure(
+            'no_progress',
+            'repeated_page',
+            '列表分页未前进，请刷新后重试',
+          );
+        }
         throw const XmlyException('repeated_page', '列表分页未前进，请刷新后重试');
       }
       if (!more) return seen;
+    }
+    if (subscriptionPages != null) {
+      throw subscriptionPages.failure(
+        'page_limit',
+        'page_limit',
+        '列表超出读取范围，无法确认状态',
+      );
     }
     throw const XmlyException('page_limit', '列表超出读取范围，无法确认状态');
   }
@@ -485,6 +601,8 @@ class XmlyExperience {
   Future<SubscriptionPage> _subscriptions({
     int page = 1,
     int pageSize = 30,
+    _SubscriptionPagination? diagnostics,
+    Set<String> seen = const {},
   }) async {
     AppLog.instance.trace(
       "lib/api/xmly_experience.dart::XmlyExperience._subscriptions",
@@ -492,17 +610,32 @@ class XmlyExperience {
 
     _requireAccount();
     _paging(page, pageSize);
-    final data = await _get(
+    final response = await client.request(
+      'GET',
+      XmlyClient.mobile,
       '/fsubscribe-web/subscribe/comprehensive/rank/$_stamp',
-      {'pageId': page, 'sign': 2, 'size': pageSize},
+      query: {'pageId': page, 'sign': 2, 'size': pageSize},
+    );
+    if (response['data'] is! Map<String, dynamic>) throw _invalid;
+    final data = response['data'] as Map<String, dynamic>;
+    final rows = _list(data['albumResults'], maximum: pageSize);
+    final pages = diagnostics ?? _SubscriptionPagination();
+    pages.observe(
+      page: page,
+      pageSize: pageSize,
+      ret: response['ret'],
+      hasMore: data['hasMore'],
+      rows: rows,
+      seen: seen,
     );
     final items = <SubscriptionItem>[];
     final ids = <String>{};
-    for (final raw in _list(data['albumResults'], maximum: pageSize)) {
+    for (final raw in rows) {
       final row = xmlyMap(raw);
       final album = _album(row);
-      if (!ids.add(album.id))
-        throw const XmlyException('repeated_page', '订阅列表重复，请刷新后重试');
+      if (!ids.add(album.id)) {
+        throw pages.failure('duplicate_ids', 'repeated_page', '订阅列表重复，请刷新后重试');
+      }
       final unread = _integer(row['unreadNum']);
       if (unread == null || unread < 0) throw _invalid;
       items.add(
@@ -515,7 +648,9 @@ class XmlyExperience {
       );
     }
     final more = _more(data);
-    if (more && items.isEmpty) throw _invalid;
+    if (more && items.isEmpty) {
+      throw pages.failure('empty_page', _invalid.code, _invalid.message);
+    }
     return SubscriptionPage(items: items, hasMore: more);
   }
 

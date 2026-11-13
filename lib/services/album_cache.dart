@@ -766,6 +766,7 @@ class AlbumCache extends ChangeNotifier {
             final bytes = BytesBuilder(copy: false);
             diagnostic =
                 HttpLogAttempt(
+                    reportFailure: false,
                     account: '公共专辑封面（无账号）',
                     method: 'GET',
                     url: '$uri',

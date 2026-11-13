@@ -380,7 +380,7 @@ class UpdateService extends ChangeNotifier {
     AppLog.instance.trace(
       "lib/services/update_service.dart::UpdateService.check",
     );
-    return AppLog.instance.runWithErrorScope(() async {
+    return HttpLogOperation.run('update_check', () async {
       AppLog.instance.trace(
         "lib/services/update_service.dart::UpdateService.check.closure#1",
       );
@@ -561,7 +561,8 @@ class UpdateService extends ChangeNotifier {
       "lib/services/update_service.dart::UpdateService._recordFailure",
     );
 
-    if (!AppLog.instance.errorWasRecorded(failure)) {
+    if (!HttpLogOperation.reportFailure(failure, stack) &&
+        !AppLog.instance.errorWasRecorded(failure)) {
       AppLog.instance.write(
         AppLogLevel.error,
         'update',

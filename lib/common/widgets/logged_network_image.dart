@@ -72,7 +72,12 @@ class LoggedNetworkImage extends ImageProvider<LoggedNetworkImage> {
       AppLog.instance.trace(
         "lib/common/widgets/logged_network_image.dart::LoggedNetworkImage._loadAsync.begin",
       );
-      return HttpLogAttempt(account: 'image', method: 'GET', url: url)
+      return HttpLogAttempt(
+          account: 'image',
+          method: 'GET',
+          url: url,
+          reportFailure: false,
+        )
         ..requestHeaders = visibleHeaders
         ..requestHeaderAvailability = '显式图片请求头；底层 HTTP 库补充的请求头不可见'
         ..responseIsBinary = true;

@@ -11,11 +11,15 @@ class XmlyException implements Exception {
   final String code, message;
   final Duration? retryAfter;
   final bool definitive;
+  final Map<String, Object?>? diagnostics;
+  final List<String>? fingerprint;
   const XmlyException(
     this.code,
     this.message, {
     this.retryAfter,
     this.definitive = false,
+    this.diagnostics,
+    this.fingerprint,
   });
   @override
   String toString() {
