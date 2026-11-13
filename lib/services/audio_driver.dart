@@ -501,6 +501,14 @@ class MediaKitAudioDriver implements AudioDriver {
           await player.stop();
           await _releaseFocus();
           _epoch = epoch;
+          if (localUri.scheme == 'http') {
+            // The local cache owns upstream timeouts/retries. mpv's default
+            // five-second timeout must not abort buffering before it finishes.
+            await (player.platform as NativePlayer).setProperty(
+              'network-timeout',
+              '0',
+            );
+          }
           await player.open(Media(resource), play: false);
           await player.setPitch(1.0);
         } finally {
