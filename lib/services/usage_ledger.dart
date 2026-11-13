@@ -8,6 +8,7 @@ import '../api/xmly_client.dart';
 import '../models/xmly_models.dart';
 import '../storage/app_storage.dart';
 import 'app_log.dart';
+import 'network_retry.dart';
 
 enum DebitState { prepared, submitting, confirmed, uncertain, rejected }
 
@@ -533,7 +534,8 @@ class UsageLedger {
                 return receipt.operationId == operation['operationId'] &&
                     receipt.state == DebitState.rejected;
               });
-              if (!rejected ||
+              if (externallyRetried ||
+                  !rejected ||
                   !error.definitive ||
                   attempt >= 4 ||
                   const {

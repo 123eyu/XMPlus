@@ -462,7 +462,8 @@ class AudioCache {
             // repeatedly authorizing only that prefix must still hit the limit.
             if (downloadedBytes > before) _refreshAttempts = 0;
           } on XmlyException catch (error) {
-            if (error.code != 'media_unauthorized') rethrow;
+            if (externallyRetried || error.code != 'media_unauthorized')
+              rethrow;
             await _refreshAuthorization(epoch);
             continue;
           }
@@ -663,7 +664,12 @@ class AudioCache {
         }
         final rateLimited =
             error is XmlyException && error.code == 'rate_limited';
-        if (error is! _AudioTransportFailure && !rateLimited) rethrow;
+        if (externallyRetried ||
+            error is! _AudioTransportFailure && !rateLimited) {
+          if (error is _AudioTransportFailure)
+            Error.throwWithStackTrace(error.error, error.stack);
+          rethrow;
+        }
         _client?.close(force: true);
         _client = null;
         _checkProducer(epoch);

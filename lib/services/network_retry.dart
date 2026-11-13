@@ -5,6 +5,23 @@ import 'package:dio/dio.dart';
 
 import "app_log.dart";
 
+final _externalRetryKey = Object();
+
+/// A download consumer owns the bounded retry budget for this async operation.
+bool get externallyRetried {
+  AppLog.instance.trace(
+    'lib/services/network_retry.dart::externallyRetried.get',
+  );
+  return Zone.current[_externalRetryKey] == true;
+}
+
+Future<T> withExternalNetworkRetry<T>(Future<T> Function() action) {
+  AppLog.instance.trace(
+    'lib/services/network_retry.dart::withExternalNetworkRetry',
+  );
+  return runZoned(action, zoneValues: {_externalRetryKey: true});
+}
+
 bool retryableStatus(int? status) {
   AppLog.instance.trace("lib/services/network_retry.dart::retryableStatus");
   return status == 408 ||

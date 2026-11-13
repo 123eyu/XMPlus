@@ -543,6 +543,8 @@ class MediaProcessor {
             } on _MediaCancelled {
               rethrow;
             } catch (error, stack) {
+              // Download consumers retry the requested cover along with processing.
+              if (externallyRetried) rethrow;
               AppLog.instance.write(
                 AppLogLevel.warning,
                 'media',
@@ -704,6 +706,9 @@ class MediaProcessor {
               return xmlyMap(stream)['codec_type'] == 'video' &&
                   xmlyMap(xmlyMap(stream)['disposition'])['attached_pic'] == 1;
             })) {
+          if (externallyRetried) {
+            throw const XmlyException('media_validation', '封面未能写入成品');
+          }
           warnings.add('封面未能写入，已保留音频');
         }
         await _decode(output, checkpoint);
@@ -1356,7 +1361,8 @@ class MediaProcessor {
           if (retryableTransport(error)) diagnostic?.transportError = '$error';
           await diagnostic?.fail(error, stack);
         }
-        if (definitive ||
+        if (externallyRetried ||
+            definitive ||
             attempt == 4 ||
             error is FormatException ||
             error is TlsException ||

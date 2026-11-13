@@ -455,24 +455,33 @@ class _HomePageState extends State<HomePage> {
                       if (_channels.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 16, bottom: 4),
-                          child: AppTabStrip(
-                            key: const ValueKey('homeCategoryTabs'),
-                            children: [
-                              for (final channel in _channels)
-                                AppTabButton(
-                                  key: ValueKey(channel.pageId),
-                                  label: channel.title,
-                                  selected: channel.pageId == _pageId,
-                                  onPressed: () {
-                                    AppLog.instance.trace(
-                                      "lib/pages/home_page.dart::_HomePageState.build.closure#1.closure#1",
-                                    );
-                                    if (channel.pageId != _pageId) {
-                                      _loadHome(channel.pageId);
-                                    }
-                                  },
-                                ),
-                            ],
+                          child: ScrollConfiguration(
+                            behavior: ScrollConfiguration.of(context)
+                                .copyWith(scrollbars: false),
+                            child: SingleChildScrollView(
+                              key: const ValueKey('homeCategoryTabs'),
+                              primary: false,
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  for (final channel in _channels)
+                                    AppTabButton(
+                                      key: ValueKey(channel.pageId),
+                                      label: channel.title,
+                                      selected: channel.pageId == _pageId,
+                                      onPressed: () {
+                                        AppLog.instance.trace(
+                                          "lib/pages/home_page.dart::_HomePageState.build.closure#1.closure#1",
+                                        );
+                                        if (channel.pageId != _pageId) {
+                                          _loadHome(channel.pageId);
+                                        }
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       AnimatedSize(
@@ -492,30 +501,40 @@ class _HomePageState extends State<HomePage> {
                                       padding: const EdgeInsets.symmetric(
                                         vertical: 4,
                                       ),
-                                      child: AppTabStrip(
-                                        key: const ValueKey(
-                                          'homeSubcategoryTabs',
+                                      child: ScrollConfiguration(
+                                        behavior: ScrollConfiguration.of(
+                                          context,
+                                        ).copyWith(scrollbars: false),
+                                        child: SingleChildScrollView(
+                                          key: const ValueKey(
+                                            'homeSubcategoryTabs',
+                                          ),
+                                          primary: false,
+                                          scrollDirection: Axis.horizontal,
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              for (final tab in _tabs)
+                                                AppTabButton(
+                                                  key: ValueKey(tab.tabId),
+                                                  label: tab.title,
+                                                  selected: tab.tabId == _tabId,
+                                                  onPressed: () {
+                                                    AppLog.instance.trace(
+                                                      "lib/pages/home_page.dart::_HomePageState.build.closure#1.closure#2",
+                                                    );
+                                                    if (tabsCurrent &&
+                                                        tab.tabId != _tabId) {
+                                                      _loadHome(
+                                                        _pageId!,
+                                                        tabId: tab.tabId,
+                                                      );
+                                                    }
+                                                  },
+                                                ),
+                                            ],
+                                          ),
                                         ),
-                                        children: [
-                                          for (final tab in _tabs)
-                                            AppTabButton(
-                                              key: ValueKey(tab.tabId),
-                                              label: tab.title,
-                                              selected: tab.tabId == _tabId,
-                                              onPressed: () {
-                                                AppLog.instance.trace(
-                                                  "lib/pages/home_page.dart::_HomePageState.build.closure#1.closure#2",
-                                                );
-                                                if (tabsCurrent &&
-                                                    tab.tabId != _tabId) {
-                                                  _loadHome(
-                                                    _pageId!,
-                                                    tabId: tab.tabId,
-                                                  );
-                                                }
-                                              },
-                                            ),
-                                        ],
                                       ),
                                     ),
                                   ),

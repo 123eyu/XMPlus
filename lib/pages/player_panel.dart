@@ -131,7 +131,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
   XmlyClient? _likeClient;
   String? _likeKey, _likeTrackId, _likeError, _likeCountError;
   int? _likeCount;
-  bool _likeBusy = false, _likeCountLoading = false;
+  bool _liked = false, _likeBusy = false, _likeCountLoading = false;
   int _likeRequest = 0, _likeCountRequest = 0;
   XmlyClient? _manuscriptClient;
   String? _manuscriptKey, _manuscriptTrackId, _manuscript, _manuscriptError;
@@ -681,6 +681,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
         "lib/pages/player_panel.dart::_PlayerPanelState._refreshLikes.closure#1",
       );
       _likeCount = sameContext ? _likeCount ?? track?.likes : track?.likes;
+      if (!sameContext) _liked = false;
       _likeBusy = false;
       _likeCountLoading = false;
       _likeError = null;
@@ -777,7 +778,9 @@ class _PlayerPanelState extends State<PlayerPanel> {
         "lib/pages/player_panel.dart::_PlayerPanelState._likeAction.closure#1",
       );
       final client = _runtime.client, key = _runtime.client.cacheIdentity;
-      if (_likeBusy || !_likeContextCurrent(client, key, track.id)) return;
+      if (_likeBusy || _liked || !_likeContextCurrent(client, key, track.id)) {
+        return;
+      }
       if (!client.accountAvailable) {
         setState(() {
           AppLog.instance.trace(
@@ -813,6 +816,12 @@ class _PlayerPanelState extends State<PlayerPanel> {
           await XmlyExperience(client).likeTrack(track);
         });
         if (_likeCurrent(client, key, track.id, request)) {
+          setState(() {
+            AppLog.instance.trace(
+              'lib/pages/player_panel.dart::_PlayerPanelState._likeAction.closure#1.closure#4',
+            );
+            _liked = true;
+          });
           ScaffoldMessenger.of(context)
               .showSnackBar(const SnackBar(content: Text('点赞成功')));
         }
@@ -821,7 +830,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
         if (_likeCurrent(client, key, track.id, request)) {
           setState(() {
             AppLog.instance.trace(
-              "lib/pages/player_panel.dart::_PlayerPanelState._likeAction.closure#1.closure#4",
+              "lib/pages/player_panel.dart::_PlayerPanelState._likeAction.closure#1.closure#5",
             );
             _likeError = error is XmlyException ? error.message : '点赞操作未完成，请重试';
           });
@@ -832,7 +841,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
           if (_likeCurrent(client, key, track.id, request)) {
             setState(() {
               AppLog.instance.trace(
-                "lib/pages/player_panel.dart::_PlayerPanelState._likeAction.closure#1.closure#5",
+                "lib/pages/player_panel.dart::_PlayerPanelState._likeAction.closure#1.closure#6",
               );
               _likeBusy = false;
             });
@@ -857,12 +866,14 @@ class _PlayerPanelState extends State<PlayerPanel> {
       children: [
         PlaybackActionButton(
           tooltip:
-              '${_likeBusy
+              '${current && _liked
+                  ? '已点赞'
+                  : _likeBusy
                   ? '正在点赞'
                   : _runtime.client.accountAvailable
                   ? '点赞'
                   : '点赞（需登录）'} · 喜欢数：${count ?? '未知'}',
-          onPressed: track == null || !current || _likeBusy
+          onPressed: track == null || !current || _likeBusy || _liked
               ? null
               : () {
                   AppLog.instance.trace(
@@ -870,10 +881,12 @@ class _PlayerPanelState extends State<PlayerPanel> {
                   );
                   unawaited(_likeAction(track));
                 },
-          icon: const Icon(
-            Icons.thumb_up_outlined,
+          icon: Icon(
+            current && _liked
+                ? Icons.thumb_up_rounded
+                : Icons.thumb_up_outlined,
             size: 20,
-            semanticLabel: '点赞',
+            semanticLabel: current && _liked ? '已点赞' : '点赞',
           ),
           label: count?.toString() ?? '—',
         ),
@@ -1471,10 +1484,15 @@ class _PlayerPanelState extends State<PlayerPanel> {
         final coverUrl = track?.coverUrl?.toString();
         final compact = MediaQuery.sizeOf(context).width < 400;
         final widePlayer = MediaQuery.sizeOf(context).width >= 920;
-        Widget playControl({required Key key, double size = 48}) {
+        Widget playControl({
+          required Key key,
+          double size = 48,
+          bool coverBackground = false,
+        }) {
           AppLog.instance.trace(
             'lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.playControl',
           );
+          final showCover = coverBackground && coverUrl?.isNotEmpty == true;
           return PlaybackActionButton(
             key: key,
             showLabel: false,
@@ -1484,21 +1502,40 @@ class _PlayerPanelState extends State<PlayerPanel> {
             tooltip: _keyHint(playLabel, '空格'),
             onPressed: play,
             icon: SizedBox.square(
-              dimension: 26,
+              dimension: showCover ? size - 8 : 26,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
+                  if (showCover)
+                    Positioned.fill(
+                      child: ClipOval(
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            _RotatingPlayerCover(
+                              key: ValueKey(track!.id),
+                              playing: player.playing,
+                              child: _cover(coverUrl, size - 8, small: true),
+                            ),
+                            const ColoredBox(color: Color(0x55000000)),
+                          ],
+                        ),
+                      ),
+                    ),
                   if (player.loading ||
                       player.buffering ||
                       _busy ||
                       _cancelling)
                     CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: colors.onPrimaryContainer,
+                      color: showCover
+                          ? Colors.white
+                          : colors.onPrimaryContainer,
                     ),
                   Icon(
                     canPause ? Icons.pause_rounded : Icons.play_arrow_rounded,
                     size: 24,
+                    color: showCover ? Colors.white : null,
                   ),
                 ],
               ),
@@ -1634,6 +1671,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
                               children: [
                                 playControl(
                                   key: const ValueKey('dockPlayPause'),
+                                  coverBackground: true,
                                 ),
                                 Positioned.fill(
                                   child: IgnorePointer(
@@ -1788,7 +1826,10 @@ class _PlayerPanelState extends State<PlayerPanel> {
                         ),
                       ),
                     ),
-                    playControl(key: const ValueKey('miniPlayPause')),
+                    playControl(
+                      key: const ValueKey('miniPlayPause'),
+                      coverBackground: compact,
+                    ),
                     _button(
                       '下一集',
                       Icons.skip_next_rounded,
@@ -2016,7 +2057,11 @@ class _PlayerPanelState extends State<PlayerPanel> {
                 track == null ? null : player.previous,
                 iconSize: 30,
               ),
-              playControl(key: const ValueKey('playerPlayPause'), size: 64),
+              playControl(
+                key: const ValueKey('playerPlayPause'),
+                size: 64,
+                coverBackground: compact,
+              ),
               _button(
                 '下一集',
                 Icons.skip_next_rounded,
@@ -2359,5 +2404,72 @@ class _PlayerExpandTargetState extends State<_PlayerExpandTarget> {
         );
       },
     );
+  }
+}
+
+class _RotatingPlayerCover extends StatefulWidget {
+  const _RotatingPlayerCover({
+    required this.playing,
+    required this.child,
+    super.key,
+  });
+
+  final bool playing;
+  final Widget child;
+
+  @override
+  State<_RotatingPlayerCover> createState() {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_RotatingPlayerCover.createState',
+    );
+    return _RotatingPlayerCoverState();
+  }
+}
+
+class _RotatingPlayerCoverState extends State<_RotatingPlayerCover>
+    with SingleTickerProviderStateMixin {
+  late final _rotation = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 20),
+  );
+
+  @override
+  void initState() {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_RotatingPlayerCoverState.initState',
+    );
+    super.initState();
+    if (widget.playing) _rotation.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RotatingPlayerCover oldWidget) {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_RotatingPlayerCoverState.didUpdateWidget',
+    );
+    super.didUpdateWidget(oldWidget);
+    if (widget.playing == oldWidget.playing) return;
+    if (widget.playing) {
+      _rotation.repeat();
+    } else {
+      _rotation.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_RotatingPlayerCoverState.dispose',
+    );
+    _rotation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_RotatingPlayerCoverState.build',
+    );
+    return RotationTransition(turns: _rotation, child: widget.child);
   }
 }

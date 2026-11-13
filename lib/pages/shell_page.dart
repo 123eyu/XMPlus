@@ -199,44 +199,52 @@ class _ShellPageState extends State<ShellPage> {
             ? theme.textTheme.titleMedium
             : theme.textTheme.labelMedium;
         return Scaffold(
-          appBar: AppHeader(
-            showBrand: !compact,
-            title: AdaptiveText(_destinations[_selectedIndex].label),
-            actions: [
-              if (widget.onMiniPlayer != null)
-                PopupMenuButton<String>(
-                  tooltip: '窗口操作',
-                  offset: const Offset(0, 12),
-                  onSelected: (value) {
-                    AppLog.instance.trace(
-                      "lib/pages/shell_page.dart::_ShellPageState.build.closure#1.closure#1",
-                    );
+          appBar: useRail || usesWindowHeader
+              ? AppHeader(
+                  showBrand: !compact,
+                  title: AdaptiveText(_destinations[_selectedIndex].label),
+                  actions: [
+                    if (widget.onMiniPlayer != null)
+                      PopupMenuButton<String>(
+                        tooltip: '窗口操作',
+                        offset: const Offset(0, 12),
+                        onSelected: (value) {
+                          AppLog.instance.trace(
+                            "lib/pages/shell_page.dart::_ShellPageState.build.closure#1.closure#1",
+                          );
 
-                    if (value == 'mini') {
-                      widget.onMiniPlayer!();
-                    } else if (value == 'tray') {
-                      widget.onTray?.call();
-                    } else {
-                      widget.runtime.requestExit?.call();
-                    }
-                  },
-                  itemBuilder: (_) {
-                    AppLog.instance.trace(
-                      "lib/pages/shell_page.dart::_ShellPageState.build.closure#1.closure#2",
-                    );
-                    return [
-                      const PopupMenuItem(value: 'mini', child: Text('收起到小窗')),
-                      if (widget.onTray != null)
-                        const PopupMenuItem(
-                          value: 'tray',
-                          child: Text('收起到托盘'),
-                        ),
-                      const PopupMenuItem(value: 'exit', child: Text('彻底退出')),
-                    ];
-                  },
-                ),
-            ],
-          ),
+                          if (value == 'mini') {
+                            widget.onMiniPlayer!();
+                          } else if (value == 'tray') {
+                            widget.onTray?.call();
+                          } else {
+                            widget.runtime.requestExit?.call();
+                          }
+                        },
+                        itemBuilder: (_) {
+                          AppLog.instance.trace(
+                            "lib/pages/shell_page.dart::_ShellPageState.build.closure#1.closure#2",
+                          );
+                          return [
+                            const PopupMenuItem(
+                              value: 'mini',
+                              child: Text('收起到小窗'),
+                            ),
+                            if (widget.onTray != null)
+                              const PopupMenuItem(
+                                value: 'tray',
+                                child: Text('收起到托盘'),
+                              ),
+                            const PopupMenuItem(
+                              value: 'exit',
+                              child: Text('彻底退出'),
+                            ),
+                          ];
+                        },
+                      ),
+                  ],
+                )
+              : null,
           body: SafeArea(
             bottom: useRail,
             child: Row(

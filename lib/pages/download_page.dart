@@ -1266,15 +1266,32 @@ class _DownloadPageState extends State<DownloadPage> {
         _taskFilter,
       );
     }).toList();
-    final jobs = _service.albumJobs.where((job) {
+    final allJobs = _service.albumJobs.where((job) {
       AppLog.instance.trace(
         "lib/pages/download_page.dart::_DownloadPageState._taskList.closure#2",
       );
-      return job.state != 'completed' &&
-          job.state != 'cancelled' &&
-          (job.title.toLowerCase().contains(_taskFilter) ||
-              _taskFilter.isEmpty);
+      return job.state != 'completed' && job.state != 'cancelled';
     }).toList();
+    final taskJobs = {
+      for (final job in allJobs)
+        for (final id in job.taskIds) id: job.id,
+    };
+    final jobTasks = <String, List<DownloadTask>>{};
+    final standalone = <DownloadTask>[];
+    for (final task in visible) {
+      final jobId = taskJobs[task.id];
+      if (jobId == null) {
+        standalone.add(task);
+      } else {
+        (jobTasks[jobId] ??= []).add(task);
+      }
+    }
+    final jobs = [
+      for (final job in allJobs)
+        if (job.title.toLowerCase().contains(_taskFilter) ||
+            jobTasks.containsKey(job.id))
+          job,
+    ];
     final hasUnfinished =
         tasks.isNotEmpty ||
         _service.albumJobs.any((job) {
@@ -1466,14 +1483,18 @@ class _DownloadPageState extends State<DownloadPage> {
               child: Scrollbar(
                 child: ListView.builder(
                   key: const PageStorageKey('compact-download-tasks'),
-                  itemCount: jobs.length + visible.length,
+                  itemCount: jobs.length + standalone.length,
                   itemBuilder: (context, index) {
                     AppLog.instance.trace(
                       "lib/pages/download_page.dart::_DownloadPageState._taskList.closure#4.closure#7",
                     );
                     return index < jobs.length
-                        ? _albumJobCard(jobs[index])
-                        : _taskCard(visible[index - jobs.length], compact);
+                        ? _albumJobCard(
+                            jobs[index],
+                            jobTasks[jobs[index].id] ?? const [],
+                            compact,
+                          )
+                        : _taskCard(standalone[index - jobs.length], compact);
                   },
                 ),
               ),
@@ -1484,7 +1505,11 @@ class _DownloadPageState extends State<DownloadPage> {
     );
   }
 
-  Widget _albumJobCard(DownloadAlbumJob job) {
+  Widget _albumJobCard(
+    DownloadAlbumJob job,
+    List<DownloadTask> tasks,
+    bool compact,
+  ) {
     AppLog.instance.trace(
       'lib/pages/download_page.dart::_DownloadPageState._albumJobCard',
     );
@@ -1560,6 +1585,20 @@ class _DownloadPageState extends State<DownloadPage> {
               ),
           ],
         ),
+        if (tasks.isNotEmpty)
+          SizedBox(
+            height: (tasks.length * 48.0).clamp(48.0, 400.0).toDouble(),
+            child: ListView.builder(
+              primary: false,
+              itemCount: tasks.length,
+              itemBuilder: (_, index) {
+                AppLog.instance.trace(
+                  'lib/pages/download_page.dart::_DownloadPageState._albumJobCard.closure#6',
+                );
+                return _taskCard(tasks[index], compact);
+              },
+            ),
+          ),
       ],
     );
   }

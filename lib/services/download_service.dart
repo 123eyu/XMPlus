@@ -15,6 +15,8 @@ import 'usage_ledger.dart';
 import 'download_paths.dart';
 import 'media_processor.dart';
 import 'file_paths.dart';
+import 'http_log_operation.dart';
+import 'network_retry.dart';
 
 export '../models/download_task.dart';
 
@@ -523,7 +525,7 @@ class DownloadService {
     if (tracks.length > 5000) {
       throw const XmlyException('batch_too_large', '每批最多选择 5000 集');
     }
-    await _checkRoot(rootDirectory, settings);
+    await _checkRoot(rootDirectory, settings, cancelled, checkpoint);
     // Reuse the durable model's immutable, secret-free settings boundary.
     final snapshot = DownloadTask(
       id: 'preview',
@@ -664,75 +666,84 @@ class DownloadService {
     AppLog.instance.trace(
       "lib/services/download_service.dart::DownloadService._albumPage",
     );
-
-    Object? failure;
-    StackTrace? failureStack;
-    for (final candidate in _candidates(identity, settings)) {
-      try {
-        Future<AlbumPage> read(XmlyClient client) {
-          AppLog.instance.trace(
-            "lib/services/download_service.dart::DownloadService._albumPage.read",
-          );
-          return readRequests(
-            client,
-            settings,
-            () {
+    return _retry(
+      settings,
+      () async {
+        AppLog.instance.trace(
+          'lib/services/download_service.dart::DownloadService._albumPage.closure#1',
+        );
+        Object? failure;
+        StackTrace? failureStack;
+        for (final candidate in _candidates(identity, settings)) {
+          try {
+            Future<AlbumPage> read(XmlyClient client) {
               AppLog.instance.trace(
-                "lib/services/download_service.dart::DownloadService._albumPage.read.closure#1",
+                "lib/services/download_service.dart::DownloadService._albumPage.closure#1.read",
               );
-              return client.album(
-                albumId,
-                page: page,
-                pageSize: xmlyAlbumPageSize,
-                ascending: true,
-              );
-            },
-            cancelled: cancelled,
-            checkpoint: checkpoint,
-          );
-        }
-
-        final result = candidate == 'anonymous'
-            ? await read(anonymous)
-            : await _previewAccount(
-                candidate,
-                read,
-                null,
+              return readRequests(
+                client,
+                settings,
+                () {
+                  AppLog.instance.trace(
+                    "lib/services/download_service.dart::DownloadService._albumPage.closure#1.read.closure#1",
+                  );
+                  return client.album(
+                    albumId,
+                    page: page,
+                    pageSize: xmlyAlbumPageSize,
+                    ascending: true,
+                  );
+                },
                 cancelled: cancelled,
                 checkpoint: checkpoint,
               );
-        final offset = (page - 1) * xmlyAlbumPageSize;
-        if (result.total > 5000) {
-          throw const XmlyException('catalogue_limit', '专辑超过 5000 集下载上限');
-        }
-        if (total != null && result.total != total) {
-          throw const XmlyException('catalogue_changed', '专辑总集数已变化');
-        }
-        if (result.total < 0 ||
-            result.page != page ||
-            result.pageSize != xmlyAlbumPageSize ||
-            result.album.id != albumId ||
-            result.tracks.length !=
-                (result.total - offset).clamp(0, xmlyAlbumPageSize)) {
-          throw const XmlyException('invalid_catalogue', '专辑分页不完整或无效');
-        }
-        final ids = seen.toSet();
-        for (var index = 0; index < result.tracks.length; index++) {
-          final track = result.tracks[index];
-          if (track.albumId != albumId ||
-              track.officialPosition != offset + index + 1 ||
-              !ids.add(track.id)) {
-            throw const XmlyException('invalid_catalogue', '专辑声音顺序无效');
+            }
+
+            final result = candidate == 'anonymous'
+                ? await read(anonymous)
+                : await _previewAccount(
+                    candidate,
+                    read,
+                    null,
+                    cancelled: cancelled,
+                    checkpoint: checkpoint,
+                  );
+            final offset = (page - 1) * xmlyAlbumPageSize;
+            if (result.total > 5000) {
+              throw const XmlyException('catalogue_limit', '专辑超过 5000 集下载上限');
+            }
+            if (total != null && result.total != total) {
+              throw const XmlyException('catalogue_changed', '专辑总集数已变化');
+            }
+            if (result.total < 0 ||
+                result.page != page ||
+                result.pageSize != xmlyAlbumPageSize ||
+                result.album.id != albumId ||
+                result.tracks.length !=
+                    (result.total - offset).clamp(0, xmlyAlbumPageSize)) {
+              throw const XmlyException('invalid_catalogue', '专辑分页不完整或无效');
+            }
+            final ids = seen.toSet();
+            for (var index = 0; index < result.tracks.length; index++) {
+              final track = result.tracks[index];
+              if (track.albumId != albumId ||
+                  track.officialPosition != offset + index + 1 ||
+                  !ids.add(track.id)) {
+                throw const XmlyException('invalid_catalogue', '专辑声音顺序无效');
+              }
+            }
+            return result;
+          } catch (error, stack) {
+            failure = error;
+            failureStack = stack;
+            if (!_requestFailure(error)) rethrow;
           }
         }
-        return result;
-      } catch (error, stack) {
-        failure = error;
-        failureStack = stack;
-        if (!_requestFailure(error)) rethrow;
-      }
-    }
-    Error.throwWithStackTrace(failure!, failureStack!);
+        Error.throwWithStackTrace(failure!, failureStack!);
+      },
+      cancelled: cancelled,
+      checkpoint: checkpoint,
+    );
   }
 
   Future<void> pauseAlbum(String id) {
@@ -1139,7 +1150,12 @@ class DownloadService {
         "lib/services/download_service.dart::DownloadService._preview.closure#1",
       );
 
-      await _requireMediaTools();
+      await _requireMediaTools(
+        settings: settings,
+        control: control,
+        cancelled: cancelled,
+        checkpoint: checkpoint ?? control?.checkpoint,
+      );
       if (!previewBilling) {
         final deferred = {...settings, 'billingPreviewPending': true};
         return DownloadBatch._(
@@ -1240,7 +1256,7 @@ class DownloadService {
                     );
               if (cached == null &&
                   candidate != 'anonymous' &&
-                  refreshed.add(candidate)) {
+                  !refreshed.contains(candidate)) {
                 await readRequests(
                   client,
                   settings,
@@ -1254,6 +1270,7 @@ class DownloadService {
                   cancelled: cancelled,
                   checkpoint: checkpoint,
                 );
+                refreshed.add(candidate);
               }
               await control?.checkpoint();
               final audio =
@@ -1324,15 +1341,26 @@ class DownloadService {
               );
             }
 
-            final prepared = candidate == 'anonymous'
-                ? await read(anonymous)
-                : await _previewAccount(
-                    candidate,
-                    read,
-                    control,
-                    cancelled: cancelled,
-                    checkpoint: checkpoint,
-                  );
+            final prepared = await _retry(
+              settings,
+              () {
+                AppLog.instance.trace(
+                  'lib/services/download_service.dart::DownloadService._preview.closure#1.closure#1',
+                );
+                return candidate == 'anonymous'
+                    ? read(anonymous)
+                    : _previewAccount(
+                        candidate,
+                        read,
+                        control,
+                        cancelled: cancelled,
+                        checkpoint: checkpoint,
+                      );
+              },
+              control: control,
+              cancelled: cancelled,
+              checkpoint: checkpoint,
+            );
             item = prepared;
             reserved[candidate] = (reserved[candidate] ?? 0) + prepared.seconds;
             break;
@@ -1591,7 +1619,7 @@ class DownloadService {
       );
     }
     _ensureOpen();
-    await _requireMediaTools();
+    await _requireMediaTools(settings: batch.settings);
     if (!identical(batch.owner, this))
       throw const XmlyException('batch_invalid', '下载确认已失效');
     if (!confirmed) return;
@@ -1733,24 +1761,29 @@ class DownloadService {
           album.state = 'running';
           album.error = null;
         }
-        await storage.transaction((state) {
+        await _retry(batch.settings, () {
           AppLog.instance.trace(
-            "lib/services/download_service.dart::DownloadService._enqueue.persist.closure#1.closure#5",
+            'lib/services/download_service.dart::DownloadService._enqueue.persist.closure#1.closure#5',
           );
-
-          if (generation != _queueGeneration) throw const DownloadStopped();
-          if (allowed != null && !allowed()) throw const DownloadStopped();
-          state['downloads'] = next.values.map((item) {
+          return storage.transaction((state) {
             AppLog.instance.trace(
               "lib/services/download_service.dart::DownloadService._enqueue.persist.closure#1.closure#5.closure#1",
             );
-            return item.toJson();
-          }).toList();
-          state['downloadAlbums'] = [
-            for (final job in _albums.values)
-              if (job.id != album?.id) job.toJson(),
-            if (album != null) album.toJson(),
-          ];
+
+            if (generation != _queueGeneration) throw const DownloadStopped();
+            if (allowed != null && !allowed()) throw const DownloadStopped();
+            state['downloads'] = next.values.map((item) {
+              AppLog.instance.trace(
+                "lib/services/download_service.dart::DownloadService._enqueue.persist.closure#1.closure#5.closure#1.closure#1",
+              );
+              return item.toJson();
+            }).toList();
+            state['downloadAlbums'] = [
+              for (final job in _albums.values)
+                if (job.id != album?.id) job.toJson(),
+              if (album != null) album.toJson(),
+            ];
+          });
         });
         if (allowed != null) {
           for (final task in admitted) {
@@ -1776,11 +1809,16 @@ class DownloadService {
       return _queueCommands.synchronized(persist);
     }
 
-    if (batch.accountIdentity == 'anonymous') {
-      await admit(anonymous);
-    } else {
-      await accounts.runWithAccount(batch.accountIdentity, admit);
+    Future<void> enter() {
+      AppLog.instance.trace(
+        'lib/services/download_service.dart::DownloadService._enqueue.enter',
+      );
+      return batch.accountIdentity == 'anonymous'
+          ? admit(anonymous)
+          : accounts.runWithAccount(batch.accountIdentity, admit);
     }
+
+    await _retry(batch.settings, enter);
     _pump();
   }
 
@@ -2815,56 +2853,75 @@ class DownloadService {
           throw const DownloadStopped();
         _automaticGuards.remove(id);
         while (true) {
-          control._normalizedFailure = null;
-          control._failureCause = null;
-          control._failureStack = null;
-          await control.checkpoint();
-          await _requireMediaTools(checkpoint: control.checkpoint);
-          await control.checkpoint();
           try {
-            final String path;
-            if (task(id).processingFailed) {
-              final process = processOnly;
-              if (process == null) {
-                throw const XmlyException('integration_required', '媒体处理服务未接入');
-              }
-              await control.processing();
-              path = await process(task(id), control);
-            } else {
-              final audio = await _orderedAdmission(id, control);
-              await control.checkpoint();
-              await _change(id, (item) {
+            final path = await _retry(
+              task(id).settings,
+              () async {
                 AppLog.instance.trace(
-                  "lib/services/download_service.dart::DownloadService._run.closure#1.closure#1",
+                  'lib/services/download_service.dart::DownloadService._run.closure#1.closure#1',
                 );
-                return item.copyWith(
-                  state: DownloadState.downloading,
-                  retryAt: null,
-                  error: null,
-                );
-              });
-              await control.checkpoint();
-              // Network producers enter only after normal account admission.
-              path = await transfer(task(id), audio, control);
-            }
+                control._normalizedFailure = null;
+                control._failureCause = null;
+                control._failureStack = null;
+                await control.checkpoint();
+                await _requireMediaTools(checkpoint: control.checkpoint);
+                final String path;
+                if (task(id).processingFailed) {
+                  final process = processOnly;
+                  if (process == null) {
+                    throw const XmlyException(
+                      'integration_required',
+                      '媒体处理服务未接入',
+                    );
+                  }
+                  await control.processing();
+                  path = await process(task(id), control);
+                } else {
+                  final audio = await _orderedAdmission(id, control);
+                  await control.checkpoint();
+                  await _change(id, (item) {
+                    AppLog.instance.trace(
+                      "lib/services/download_service.dart::DownloadService._run.closure#1.closure#1.closure#1",
+                    );
+                    return item.copyWith(
+                      state: DownloadState.downloading,
+                      retryAt: null,
+                      error: null,
+                    );
+                  });
+                  await control.checkpoint();
+                  // Network producers enter only after normal account admission.
+                  path = await transfer(task(id), audio, control);
+                }
+                if (!p.isAbsolute(path)) {
+                  throw const XmlyException('invalid_output', '媒体处理未返回有效成品路径');
+                }
+                return path;
+              },
+              control: control,
+              taskId: id,
+            );
             // The backend returns only after committing a verified output. A
             // concurrent pause/cancel must preserve this completed result.
-            if (!p.isAbsolute(path)) {
-              throw const XmlyException('invalid_output', '媒体处理未返回有效成品路径');
-            }
-            await _change(id, (item) {
+            await _retry(task(id).settings, () {
               AppLog.instance.trace(
-                "lib/services/download_service.dart::DownloadService._run.closure#1.closure#2",
+                'lib/services/download_service.dart::DownloadService._run.closure#1.closure#2',
               );
-              return item.copyWith(
-                state: DownloadState.completed,
-                finalPath: path,
-                bytesPerSecond: 0,
-                error: null,
-                processingFailed: false,
-                outputMissing: false,
-                outputDeleted: false,
-              );
+              return _change(id, (item) {
+                AppLog.instance.trace(
+                  "lib/services/download_service.dart::DownloadService._run.closure#1.closure#2.closure#1",
+                );
+                return item.copyWith(
+                  state: DownloadState.completed,
+                  finalPath: path,
+                  bytesPerSecond: 0,
+                  error: null,
+                  processingFailed: false,
+                  outputMissing: false,
+                  outputDeleted: false,
+                  retryAt: null,
+                );
+              });
             });
             return;
           } catch (error, stack) {
@@ -2879,7 +2936,6 @@ class DownloadService {
             } on DownloadStopped {
               rethrow;
             } catch (cleanupError, cleanupStack) {
-              _failure(task(id), error, stack);
               if (!AppLog.instance.errorWasRecorded(cleanupError)) {
                 AppLog.instance.write(
                   AppLogLevel.error,
@@ -2888,12 +2944,12 @@ class DownloadService {
                   data: {'taskId': id},
                   error: cleanupError,
                   stackTrace: cleanupStack,
-                  promptUser: true,
+                  localOnly: true,
                 );
               }
               Error.throwWithStackTrace(error, stack);
             }
-            // API/transport own bounded request retries; do not multiply them here.
+            // Every stage has exhausted its bounded budget before rotating.
             rethrow;
           }
         }
@@ -3354,54 +3410,59 @@ class DownloadService {
     AppLog.instance.trace(
       "lib/services/download_service.dart::DownloadService._save",
     );
-    return storage.transaction((state) {
+    return _retry(storage.state['settings'] as Map, () {
       AppLog.instance.trace(
-        "lib/services/download_service.dart::DownloadService._save.closure#1",
+        'lib/services/download_service.dart::DownloadService._save.closure#1',
       );
-
-      state['downloads'] = values.values.map((item) {
+      return storage.transaction((state) {
         AppLog.instance.trace(
           "lib/services/download_service.dart::DownloadService._save.closure#1.closure#1",
         );
-        return item.toJson();
-      }).toList();
-      state['downloadAlbums'] = _albums.values.map((job) {
-        AppLog.instance.trace(
-          "lib/services/download_service.dart::DownloadService._save.closure#1.closure#2",
-        );
-        return job.toJson();
-      }).toList();
-      if (removedTasks.isEmpty && !cancelPending) return;
-      final subscriptions = (state['settings'] as Map)['autoDownloads'];
-      if (subscriptions is! Map) return;
-      for (final albums in subscriptions.values) {
-        if (albums is! Map) continue;
-        for (final entry in albums.entries) {
-          final record = entry.value;
-          if (record is! Map || record['enabled'] != true) continue;
-          final pending = record['pending'] as List? ?? const [];
-          final retired = <String>{
-            for (final task in removedTasks)
-              if (task.track.albumId == entry.key) task.track.id,
-            if (cancelPending)
-              for (final item in pending)
-                if (item is Map && item['id'] is String) item['id'] as String,
-          };
-          if (retired.isEmpty) continue;
-          // Reuse the subscription's existing observed baseline, not a task
-          // tombstone: later scans must not recreate manually removed work.
-          record['seen'] = {
-            ...List<String>.from(record['seen'] as List? ?? const []),
-            ...retired,
-          }.toList();
-          record['pending'] = pending.where((item) {
-            AppLog.instance.trace(
-              "lib/services/download_service.dart::DownloadService._save.closure#1.closure#3",
-            );
-            return item is! Map || !retired.contains(item['id']);
-          }).toList();
+
+        state['downloads'] = values.values.map((item) {
+          AppLog.instance.trace(
+            "lib/services/download_service.dart::DownloadService._save.closure#1.closure#1.closure#1",
+          );
+          return item.toJson();
+        }).toList();
+        state['downloadAlbums'] = _albums.values.map((job) {
+          AppLog.instance.trace(
+            "lib/services/download_service.dart::DownloadService._save.closure#1.closure#1.closure#2",
+          );
+          return job.toJson();
+        }).toList();
+        if (removedTasks.isEmpty && !cancelPending) return;
+        final subscriptions = (state['settings'] as Map)['autoDownloads'];
+        if (subscriptions is! Map) return;
+        for (final albums in subscriptions.values) {
+          if (albums is! Map) continue;
+          for (final entry in albums.entries) {
+            final record = entry.value;
+            if (record is! Map || record['enabled'] != true) continue;
+            final pending = record['pending'] as List? ?? const [];
+            final retired = <String>{
+              for (final task in removedTasks)
+                if (task.track.albumId == entry.key) task.track.id,
+              if (cancelPending)
+                for (final item in pending)
+                  if (item is Map && item['id'] is String) item['id'] as String,
+            };
+            if (retired.isEmpty) continue;
+            // Reuse the subscription's existing observed baseline, not a task
+            // tombstone: later scans must not recreate manually removed work.
+            record['seen'] = {
+              ...List<String>.from(record['seen'] as List? ?? const []),
+              ...retired,
+            }.toList();
+            record['pending'] = pending.where((item) {
+              AppLog.instance.trace(
+                "lib/services/download_service.dart::DownloadService._save.closure#1.closure#1.closure#3",
+              );
+              return item is! Map || !retired.contains(item['id']);
+            }).toList();
+          }
         }
-      }
+      });
     });
   }
 
@@ -3518,13 +3579,138 @@ class DownloadService {
     AppLog.instance.trace(
       "lib/services/download_service.dart::DownloadService.readRequests",
     );
-    return client.withReadPolicy(
-      action,
-      rateLimitRetries: _option(settings, 'retryLimit', 3, 0, 1000),
-      minimumRateLimitDelay: const Duration(minutes: 5),
-      cancelled: cancelled ?? control?.stopped,
-      checkpoint: checkpoint ?? control?.checkpoint,
+    Future<T> read() {
+      AppLog.instance.trace(
+        'lib/services/download_service.dart::DownloadService.readRequests.read',
+      );
+      return client.withReadPolicy(
+        action,
+        rateLimitRetries: _option(settings, 'retryLimit', 3, 0, 1000),
+        minimumRateLimitDelay: const Duration(minutes: 5),
+        cancelled: cancelled ?? control?.stopped,
+        checkpoint: checkpoint ?? control?.checkpoint,
+      );
+    }
+
+    if (externallyRetried) return read();
+    return HttpLogOperation.run('download_read', () async {
+      AppLog.instance.trace(
+        'lib/services/download_service.dart::DownloadService.readRequests.closure#1',
+      );
+      try {
+        return await _retry(
+          settings,
+          read,
+          control: control,
+          cancelled: cancelled,
+          checkpoint: checkpoint,
+        );
+      } on DownloadStopped {
+        throw const XmlyException('request_cancelled', '请求已停止');
+      }
+    });
+  }
+
+  static Future<T> _retry<T>(
+    Map settings,
+    Future<T> Function() action, {
+    DownloadControl? control,
+    Future<void>? cancelled,
+    Future<void> Function()? checkpoint,
+    String? taskId,
+  }) async {
+    AppLog.instance.trace(
+      'lib/services/download_service.dart::DownloadService._retry',
     );
+    if (externallyRetried) return action();
+    final limit = _option(settings, 'retryLimit', 3, 0, 1000);
+    var stopped = false;
+    cancelled?.then((_) {
+      AppLog.instance.trace(
+        'lib/services/download_service.dart::DownloadService._retry.closure#1',
+      );
+      stopped = true;
+    });
+    Future<void> checked() async {
+      AppLog.instance.trace(
+        'lib/services/download_service.dart::DownloadService._retry.checked',
+      );
+      if (stopped) throw const DownloadStopped();
+      await checkpoint?.call();
+      await control?.checkpoint();
+    }
+
+    for (var attempt = 0; ; attempt++) {
+      await checked();
+      try {
+        return await AppLog.instance.runWithErrorScope(() {
+          AppLog.instance.trace(
+            'lib/services/download_service.dart::DownloadService._retry.closure#2',
+          );
+          return withExternalNetworkRetry(action);
+        }, localOnly: true);
+      } catch (error, stack) {
+        await checked();
+        final cause = identical(error, control?._normalizedFailure)
+            ? control!._failureCause ?? error
+            : error;
+        if (cause is DownloadStopped ||
+            cause is AccountException && cause.code == 'paused' ||
+            cause is XmlyException &&
+                const {
+                  'request_cancelled',
+                  'client_closed',
+                  'cache_closed',
+                  'cache_paused',
+                  'cache_source_changed',
+                  'closed',
+                }.contains(cause.code)) {
+          throw const DownloadStopped();
+        }
+        if (attempt >= limit ||
+            cause is XmlyException &&
+                const {
+                  'confirmation_changed',
+                  'confirmation_required',
+                  'usage_uncertain',
+                  'receipt_required',
+                }.contains(cause.code))
+          rethrow;
+        var delay = retryDelay(attempt.clamp(0, 4), null);
+        if (cause is XmlyException) {
+          final server = cause.retryAfter ?? Duration.zero;
+          if (server > delay) delay = server;
+          if (cause.code == 'rate_limited' &&
+              delay < const Duration(minutes: 5)) {
+            delay = const Duration(minutes: 5);
+          }
+        }
+        AppLog.instance.write(
+          AppLogLevel.warning,
+          'download',
+          '下载环节失败，等待重试',
+          data: {
+            'retry': attempt + 1,
+            'retryLimit': limit,
+            'delayMs': delay.inMilliseconds,
+            if (taskId != null) 'taskId': taskId,
+          },
+          error: cause,
+          stackTrace: stack,
+          localOnly: true,
+        );
+        if (control != null) {
+          await control.wait(delay);
+        } else {
+          try {
+            await waitToRetry(delay, closed: cancelled, checkpoint: checked);
+          } catch (_) {
+            await checked();
+            rethrow;
+          }
+        }
+      }
+    }
   }
 
   static int _option(Map settings, String key, int fallback, int min, int max) {
@@ -3543,28 +3729,57 @@ class DownloadService {
 
   static Future<void> _requireMediaTools({
     Future<void> Function()? checkpoint,
+    Map settings = const {},
+    DownloadControl? control,
+    Future<void>? cancelled,
   }) async {
     AppLog.instance.trace(
       "lib/services/download_service.dart::DownloadService._requireMediaTools",
     );
 
     if (Platform.isAndroid)
-      await MediaProcessor().checkTools(checkpoint: checkpoint);
+      await _retry(
+        settings,
+        () {
+          AppLog.instance.trace(
+            'lib/services/download_service.dart::DownloadService._requireMediaTools.closure#1',
+          );
+          return MediaProcessor().checkTools(checkpoint: checkpoint);
+        },
+        control: control,
+        cancelled: cancelled,
+        checkpoint: checkpoint,
+      );
   }
 
-  static Future<void> _checkRoot(String path, [Map? settings]) {
+  static Future<void> _checkRoot(
+    String path, [
+    Map? settings,
+    Future<void>? cancelled,
+    Future<void> Function()? checkpoint,
+  ]) {
     AppLog.instance.trace(
       "lib/services/download_service.dart::DownloadService._checkRoot",
     );
-    return DownloadPaths().checkRoot(
-      path,
-      minimumFreeMiB: _option(
-        settings ?? const {},
-        'minimumFreeMiB',
-        512,
-        512,
-        1048576,
-      ),
+    return _retry(
+      settings ?? const {},
+      () {
+        AppLog.instance.trace(
+          'lib/services/download_service.dart::DownloadService._checkRoot.closure#1',
+        );
+        return DownloadPaths().checkRoot(
+          path,
+          minimumFreeMiB: _option(
+            settings ?? const {},
+            'minimumFreeMiB',
+            512,
+            512,
+            1048576,
+          ),
+        );
+      },
+      cancelled: cancelled,
+      checkpoint: checkpoint,
     );
   }
 

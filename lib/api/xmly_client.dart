@@ -429,7 +429,7 @@ class XmlyClient {
         final until = _cooldowns[origin];
         if (until != null && until.isAfter(DateTime.now())) {
           final delay = until.difference(DateTime.now());
-          if (policy?.rateLimitRetries == 0) {
+          if (externallyRetried || policy?.rateLimitRetries == 0) {
             throw XmlyException(
               'rate_limited',
               '请求过于频繁，请稍后重试',
@@ -475,7 +475,7 @@ class XmlyClient {
             },
           );
         } on _RetryableStatus catch (error) {
-          if (!readOnly || failures++ >= 4) {
+          if (!readOnly || externallyRetried || failures++ >= 4) {
             final failure = XmlyException(
               readOnly ? 'network' : 'uncertain',
               readOnly ? '喜马拉雅服务暂时不可用' : '请求结果未知，请核对后重试',
@@ -495,7 +495,7 @@ class XmlyClient {
             AppLog.instance.linkError(limit, error);
             throw limit;
           }
-          if (!readOnly || failures++ >= 4) {
+          if (!readOnly || externallyRetried || failures++ >= 4) {
             final failure = XmlyException(
               readOnly ? 'network' : 'uncertain',
               readOnly ? '请求失败或超时' : '请求结果未知，请核对后重试',
@@ -504,7 +504,7 @@ class XmlyClient {
             throw failure;
           }
         } on TimeoutException catch (error) {
-          if (!readOnly || failures++ >= 4) {
+          if (!readOnly || externallyRetried || failures++ >= 4) {
             final failure = XmlyException(
               readOnly ? 'network' : 'uncertain',
               readOnly ? '请求失败或超时' : '请求结果未知，请核对后重试',
@@ -513,7 +513,7 @@ class XmlyClient {
             throw failure;
           }
         } on IOException catch (error) {
-          if (!readOnly || failures++ >= 4) {
+          if (!readOnly || externallyRetried || failures++ >= 4) {
             final failure = XmlyException(
               readOnly ? 'network' : 'uncertain',
               readOnly ? '请求失败或超时' : '请求结果未知，请核对后重试',
@@ -523,7 +523,8 @@ class XmlyClient {
           }
         } on XmlyException catch (error) {
           if (_closed || policy?.stopped == true) diagnostic.cancelled(error);
-          if (!readOnly || error.code != 'rate_limited') rethrow;
+          if (!readOnly || externallyRetried || error.code != 'rate_limited')
+            rethrow;
           if (policy != null) {
             if (rateRetries++ >= policy.rateLimitRetries) rethrow;
             final server = error.retryAfter ?? Duration.zero;
@@ -2045,7 +2046,8 @@ class XmlyClient {
               quality: quality,
             );
           } on XmlyException catch (error) {
-            if (error.code != 'media_unauthorized' ||
+            if (externallyRetried ||
+                error.code != 'media_unauthorized' ||
                 attempt >= mediaAuthRetries)
               rethrow;
           }
@@ -2566,7 +2568,9 @@ class XmlyClient {
           }
           if (error is XmlyException && error.code == 'rate_limited') {
             await diagnostic.fail(error, stack, promptUser: false);
-            if (rateRetries++ >= (policy?.rateLimitRetries ?? 4)) rethrow;
+            if (externallyRetried ||
+                rateRetries++ >= (policy?.rateLimitRetries ?? 4))
+              rethrow;
             final server = error.retryAfter ?? Duration.zero;
             final minimum = policy?.minimumRateLimitDelay ?? Duration.zero;
             await _retryWait(server > minimum ? server : minimum, policy);

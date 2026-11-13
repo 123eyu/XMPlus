@@ -57,6 +57,7 @@ class AppLog {
   final _status = StreamController<void>.broadcast();
   final _errors = StreamController<void>.broadcast();
   final _errorScopeKey = Object();
+  final _localOnlyKey = Object();
   int _nextErrorScopeId = 0;
 
   /// Receives immutable Cookie-cleaned values plus transient original error
@@ -106,7 +107,11 @@ class AppLog {
   }
 
   void requestUploadPrompt() {
-    if (_closed || _promptClaimed || _pendingError) return;
+    if (Zone.current[_localOnlyKey] == true ||
+        _closed ||
+        _promptClaimed ||
+        _pendingError)
+      return;
     _pendingError = true;
     if (!_errors.isClosed) _errors.add(null);
   }
@@ -119,17 +124,26 @@ class AppLog {
     return scope;
   }
 
-  Future<T> runWithErrorScope<T>(Future<T> Function() action) {
+  Future<T> runWithErrorScope<T>(
+    Future<T> Function() action, {
+    bool localOnly = false,
+  }) {
     final scope = _ErrorScope(++_nextErrorScopeId, _currentErrorScope);
-    return runZoned(() async {
-      try {
-        return await action();
-      } finally {
-        scope.active = false;
-        scope.errors?.clear();
-        scope.errors = null;
-      }
-    }, zoneValues: {_errorScopeKey: scope});
+    return runZoned(
+      () async {
+        try {
+          return await action();
+        } finally {
+          scope.active = false;
+          scope.errors?.clear();
+          scope.errors = null;
+        }
+      },
+      zoneValues: {
+        _errorScopeKey: scope,
+        _localOnlyKey: localOnly || Zone.current[_localOnlyKey] == true,
+      },
+    );
   }
 
   bool errorWasRecorded(Object error) =>
@@ -322,6 +336,7 @@ class AppLog {
     String? requestId,
   }) {
     if (_inside || _closed) return;
+    localOnly = localOnly || Zone.current[_localOnlyKey] == true;
     if (promptUser) requestUploadPrompt();
     if (networkError) level = AppLogLevel.error;
     if (!networkError && level.index < _level.index) return;
