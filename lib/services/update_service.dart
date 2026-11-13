@@ -287,7 +287,12 @@ class UpdateService extends ChangeNotifier {
       if (_disposed) throw StateError('Update service is closed');
       final bytes = <int>[];
       final diagnostic =
-          HttpLogAttempt(account: '公共更新检查（无账号）', method: 'GET', url: url)
+          HttpLogAttempt(
+              reportFailure: false,
+              account: '公共更新检查（无账号）',
+              method: 'GET',
+              url: url,
+            )
             ..requestHeaders = Map<String, dynamic>.from(_http.options.headers)
             ..responseBytes = (() {
               AppLog.instance.trace(
@@ -380,7 +385,7 @@ class UpdateService extends ChangeNotifier {
     AppLog.instance.trace(
       "lib/services/update_service.dart::UpdateService.check",
     );
-    return HttpLogOperation.run('update_check', () async {
+    return AppLog.instance.runWithErrorScope(() async {
       AppLog.instance.trace(
         "lib/services/update_service.dart::UpdateService.check.closure#1",
       );
@@ -534,8 +539,16 @@ class UpdateService extends ChangeNotifier {
           }
         }
       } catch (failure, stack) {
-        if (!_disposed)
-          _recordFailure('Checking for updates failed', failure, stack);
+        if (!_disposed) {
+          AppLog.instance.write(
+            AppLogLevel.error,
+            'update',
+            'Checking for updates failed',
+            error: failure,
+            stackTrace: stack,
+            localOnly: true,
+          );
+        }
         error = failure is FormatException
             ? failure.message.toString()
             : '检查更新失败，请检查网络后重试；也可前往官方发布页';
