@@ -66,6 +66,8 @@ class DesktopPlaybackWindow {
           try {
             await _normalWindow();
             saved.bounds = await windowManager.getBounds();
+            // Hidden windows cannot produce a frame until they are shown.
+            await windowManager.show();
             await WidgetsBinding.instance.endOfFrame;
             final view = WidgetsBinding.instance.platformDispatcher.views.first;
             // Window bounds include the native resize frame; content needs 90dp.
@@ -76,7 +78,6 @@ class DesktopPlaybackWindow {
             await windowManager.setMinimumSize(Size(320, height));
             await windowManager.setSize(Size(420, height));
             await windowManager.setAlwaysOnTop(true);
-            await windowManager.show();
           } catch (failure, stack) {
             if (!AppLog.instance.errorWasRecorded(failure)) {
               AppLog.instance.write(
