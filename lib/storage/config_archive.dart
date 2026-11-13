@@ -1,6 +1,7 @@
 // ZIP layout adapted from PiliPlus lib/utils/config_archive.dart, commit
 // d9e9626f1a3f89cd9ca85e18f61aaba02634e12a (GNU GPL v3).
 // Source: https://github.com/bggRGjQaUbCoE/PiliPlus
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -116,11 +117,33 @@ class ConfigArchive {
     return sha256.convert(utf8.encode(storage.directory)).toString();
   }
 
-  Future<List<int>> export({bool includeAccount = false}) async {
+  Future<List<int>> export({
+    bool includeAccount = false,
+    Future<void>? cancelled,
+  }) async {
     AppLog.instance.trace(
       "lib/storage/config_archive.dart::ConfigArchive.export",
     );
 
+    var stopped = false;
+    unawaited(
+      cancelled?.then((_) {
+        AppLog.instance.trace(
+          "lib/storage/config_archive.dart::ConfigArchive.export.closure#1",
+        );
+        stopped = true;
+      }),
+    );
+    void checkCancelled() {
+      AppLog.instance.trace(
+        "lib/storage/config_archive.dart::ConfigArchive.export.checkCancelled",
+      );
+      if (stopped) throw const ConfigArchiveException('备份导出已取消');
+    }
+
+    // Observe an already completed cancellation before preparing the archive.
+    await Future<void>.value();
+    checkCancelled();
     final state = storage.state;
     final tasks = {
       'downloads': _clean(state['downloads']),
@@ -137,11 +160,13 @@ class ConfigArchive {
     if (includeAccount) {
       final records = <Map<String, dynamic>>[];
       for (final entry in (state['accounts'] as Map).entries) {
+        checkCancelled();
         final record = entry.value as Map;
         Map<String, dynamic>? pair;
         final ref = record['credentialRef'];
         if (ref is String) {
           final encoded = await secrets.read(ref);
+          checkCancelled();
           if (encoded == null)
             throw const ConfigArchiveException('安全凭据缺失，未导出备份');
           final credentials = Credentials.parse(encoded);
@@ -162,6 +187,7 @@ class ConfigArchive {
         ...tasks,
       };
     }
+    checkCancelled();
     files['meta.json'] = {
       'type': 'data_archive',
       'formatVersion': 65536,
@@ -187,11 +213,36 @@ class ConfigArchive {
     return bytes;
   }
 
-  Future<ArchiveImport> inspect(List<int> bytes) async {
+  Future<ArchiveImport> inspect(
+    List<int> bytes, {
+    Future<void>? cancelled,
+  }) async {
     AppLog.instance.trace(
       "lib/storage/config_archive.dart::ConfigArchive.inspect",
     );
 
+    var stopped = false;
+    XmlyClient? checkingAccount;
+    unawaited(
+      cancelled?.then((_) {
+        AppLog.instance.trace(
+          "lib/storage/config_archive.dart::ConfigArchive.inspect.closure#1",
+        );
+        stopped = true;
+        // These clients belong to the preview, never to the active accounts.
+        checkingAccount?.close();
+      }),
+    );
+    void checkCancelled() {
+      AppLog.instance.trace(
+        "lib/storage/config_archive.dart::ConfigArchive.inspect.checkCancelled",
+      );
+      if (stopped) throw const ConfigArchiveException('备份导入已取消');
+    }
+
+    // Observe an already completed cancellation before parsing the ZIP.
+    await Future<void>.value();
+    checkCancelled();
     final Map<String, dynamic> payload;
     try {
       if (bytes.length > maxBytes || bytes.isEmpty)
@@ -247,15 +298,17 @@ class ConfigArchive {
     // No mutation, SMS, claim or report: candidate verification is config only.
     final account = payload['account.json'] as Map?;
     for (final record in account?['accounts'] as List? ?? const []) {
+      checkCancelled();
       if ((record as Map)['credentials'] == null) continue;
       final pair = Credentials.parse(record['credentials']);
-      final client = XmlyClient(credentials: pair);
+      final client = checkingAccount = XmlyClient(credentials: pair);
       try {
         final quota = await client.queryQuota();
         if (quota.remainingSeconds < 0)
           throw const ConfigArchiveException('备份账号无法核验');
       } finally {
         client.close();
+        checkingAccount = null;
       }
     }
     final missing = <String>{};
@@ -264,6 +317,7 @@ class ConfigArchive {
         "lib/storage/config_archive.dart::ConfigArchive.inspect.roots",
       );
 
+      checkCancelled();
       if (node is Map) {
         for (final entry in node.entries) {
           if (_rootKeys.contains(entry.key) &&
@@ -282,6 +336,7 @@ class ConfigArchive {
     }
 
     await roots(payload);
+    checkCancelled();
     final sameOrigin = payload['meta.json']['origin'] == _origin;
     final summary = <String>[
       if (payload.containsKey('setting.json')) '替换应用设置',
