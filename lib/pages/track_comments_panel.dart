@@ -82,6 +82,8 @@ class _TrackCommentsPanelState extends State<TrackCommentsPanel> {
   final _scroll = ScrollController();
   final _compose = TextEditingController();
   bool _sending = false;
+  // Switching away and back can reuse the same client while a send is pending.
+  int _sendRequest = 0;
   String? _composeError;
   late _CommentFeed _feed;
   String? _expandedComment;
@@ -115,6 +117,9 @@ class _TrackCommentsPanelState extends State<TrackCommentsPanel> {
     if (identical(_feed.client, widget.runtime.client)) return;
     _feed.dispose();
     _expandedComment = null;
+    _sendRequest++;
+    _sending = false;
+    _composeError = null;
     _openFeed();
   }
 
@@ -182,6 +187,7 @@ class _TrackCommentsPanelState extends State<TrackCommentsPanel> {
     if (_sending) return;
     final client = widget.runtime.client, trackId = widget.track.id;
     final content = _compose.text;
+    final request = ++_sendRequest;
     setState(() {
       AppLog.instance.trace(
         "lib/pages/track_comments_panel.dart::_TrackCommentsPanelState._send.closure#1",
@@ -196,6 +202,7 @@ class _TrackCommentsPanelState extends State<TrackCommentsPanel> {
       }
       await XmlyComments(client).create(trackId, content);
       if (!mounted ||
+          request != _sendRequest ||
           widget.track.id != trackId ||
           !identical(client, widget.runtime.client))
         return;
@@ -205,6 +212,7 @@ class _TrackCommentsPanelState extends State<TrackCommentsPanel> {
     } catch (error, stack) {
       _recordCommentsError('Creating comment failed', error, stack);
       if (mounted &&
+          request == _sendRequest &&
           widget.track.id == trackId &&
           identical(client, widget.runtime.client)) {
         setState(() {
@@ -216,7 +224,7 @@ class _TrackCommentsPanelState extends State<TrackCommentsPanel> {
         });
       }
     } finally {
-      if (mounted)
+      if (mounted && request == _sendRequest)
         setState(() {
           AppLog.instance.trace(
             "lib/pages/track_comments_panel.dart::_TrackCommentsPanelState._send.closure#3",
@@ -242,6 +250,8 @@ class _TrackCommentsPanelState extends State<TrackCommentsPanel> {
         oldWidget.track.id != widget.track.id) {
       _feed.dispose();
       _expandedComment = null;
+      _sendRequest++;
+      _sending = false;
       _compose.clear();
       _composeError = null;
       if (_scroll.hasClients) _scroll.jumpTo(0);
@@ -353,6 +363,7 @@ class _TrackCommentsPanelState extends State<TrackCommentsPanel> {
                                 comment: comment,
                                 runtime: widget.runtime,
                                 trackId: widget.track.id,
+                                onLiked: _feed.setLiked,
                                 onChanged: () {
                                   AppLog.instance.trace(
                                     "lib/pages/track_comments_panel.dart::_TrackCommentsPanelState._buildPanel.closure#1.closure#1",
@@ -525,6 +536,7 @@ class _CommentContent extends StatefulWidget {
     required this.comment,
     required this.runtime,
     required this.trackId,
+    required this.onLiked,
     required this.onChanged,
     this.action,
     this.compact = false,
@@ -532,6 +544,7 @@ class _CommentContent extends StatefulWidget {
   final TrackComment comment;
   final AppRuntime runtime;
   final String trackId;
+  final void Function(String commentId, bool liked) onLiked;
   final Future<void> Function() onChanged;
   final Widget? action;
   final bool compact;
@@ -547,17 +560,7 @@ class _CommentContent extends StatefulWidget {
 
 class _CommentContentState extends State<_CommentContent> {
   bool _busy = false;
-  TrackComment? _updated;
   String? _error;
-
-  @override
-  void didUpdateWidget(covariant _CommentContent oldWidget) {
-    AppLog.instance.trace(
-      'lib/pages/track_comments_panel.dart::_CommentContentState.didUpdateWidget',
-    );
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.comment, widget.comment)) _updated = null;
-  }
 
   Future<void> _mutate({bool delete = false}) async {
     AppLog.instance.trace(
@@ -565,7 +568,8 @@ class _CommentContentState extends State<_CommentContent> {
     );
     if (_busy) return;
     final runtime = widget.runtime, client = widget.runtime.client;
-    final comment = _updated ?? widget.comment;
+    final comment = widget.comment;
+    final onLiked = widget.onLiked;
     setState(() {
       AppLog.instance.trace(
         "lib/pages/track_comments_panel.dart::_CommentContentState._mutate.closure#1",
@@ -626,25 +630,20 @@ class _CommentContentState extends State<_CommentContent> {
       final api = XmlyComments(client);
       if (delete) {
         await api.delete(widget.trackId, comment);
+        if (mounted && identical(client, runtime.client))
+          await widget.onChanged();
       } else {
         await api.setLiked(widget.trackId, comment, liked: !comment.liked);
-        if (mounted)
-          setState(() {
-            AppLog.instance.trace(
-              "lib/pages/track_comments_panel.dart::_CommentContentState._mutate.closure#3",
-            );
-
-            _updated = comment.withLike(!comment.liked);
-          });
+        // The feed owns the result even if this row scrolled out of view.
+        if (identical(client, runtime.client))
+          onLiked(comment.id, !comment.liked);
       }
-      if (mounted && identical(client, runtime.client))
-        await widget.onChanged();
     } catch (error, stack) {
       _recordCommentsError('Comment mutation failed', error, stack);
       if (mounted)
         setState(() {
           AppLog.instance.trace(
-            "lib/pages/track_comments_panel.dart::_CommentContentState._mutate.closure#4",
+            "lib/pages/track_comments_panel.dart::_CommentContentState._mutate.closure#3",
           );
 
           _error = error is XmlyException ? error.message : '评论操作失败，请重试';
@@ -653,7 +652,7 @@ class _CommentContentState extends State<_CommentContent> {
       if (mounted)
         setState(() {
           AppLog.instance.trace(
-            "lib/pages/track_comments_panel.dart::_CommentContentState._mutate.closure#5",
+            "lib/pages/track_comments_panel.dart::_CommentContentState._mutate.closure#4",
           );
 
           _busy = false;
@@ -666,7 +665,7 @@ class _CommentContentState extends State<_CommentContent> {
     AppLog.instance.trace(
       'lib/pages/track_comments_panel.dart::_CommentContentState.build',
     );
-    final theme = Theme.of(context), comment = _updated ?? widget.comment;
+    final theme = Theme.of(context), comment = widget.comment;
     final own =
         comment.uid.isNotEmpty &&
         comment.uid == widget.runtime.client.credentials?.uid;
@@ -918,6 +917,7 @@ class _InlineRepliesState extends State<_InlineReplies>
                     runtime: widget.runtime,
                     trackId: widget.trackId,
                     compact: true,
+                    onLiked: _feed.setLiked,
                     onChanged: () {
                       AppLog.instance.trace(
                         "lib/pages/track_comments_panel.dart::_InlineRepliesState.build.closure#1.closure#1",
@@ -1056,6 +1056,21 @@ class _CommentFeed extends ChangeNotifier {
   bool busy = false, hasMore = false, retryReset = true, _disposed = false;
   Completer<void>? _pendingRefresh;
   String? error;
+
+  void setLiked(String id, bool liked) {
+    AppLog.instance.trace(
+      'lib/pages/track_comments_panel.dart::_CommentFeed.setLiked',
+    );
+    if (_disposed) return;
+    for (var index = 0; index < comments.length; index++) {
+      final comment = comments[index];
+      if (comment.id != id) continue;
+      // A refresh may have replaced the row while the like was pending.
+      comments[index] = comment.withLike(liked);
+      notifyListeners();
+      return;
+    }
+  }
 
   Future<void> load({bool reset = false}) {
     AppLog.instance.trace(

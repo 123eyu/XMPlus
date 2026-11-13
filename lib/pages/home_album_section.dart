@@ -177,101 +177,93 @@ class _HomeAlbumCard extends StatelessWidget {
         '${_count(stats!.subscribeCount!)} 订阅',
       if (stats?.finished == true) '完结',
     ];
-    return Tooltip(
-      message: album.title,
-      child: Material(
-        color: ranking ? colors.surfaceContainerLow : Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          hoverColor: colors.primary.withValues(alpha: .045),
-          focusColor: colors.primary.withValues(alpha: .09),
-          highlightColor: colors.primary.withValues(alpha: .07),
-          child: Padding(
-            padding: EdgeInsets.all(ranking ? 8 : 4),
-            child: ranking
-                ? Row(
-                    children: [
-                      SizedBox(
-                        width: MediaQuery.textScalerOf(context).scale(22) * 1.5,
-                        child: Text(
-                          '$rank'.padLeft(2, '0'),
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w600,
-                            color: rank! <= 3
-                                ? colors.primary
-                                : colors.onSurfaceVariant.withValues(
-                                    alpha: .65,
-                                  ),
-                          ),
+    return Material(
+      color: ranking ? colors.surfaceContainerLow : Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        hoverColor: colors.primary.withValues(alpha: .045),
+        focusColor: colors.primary.withValues(alpha: .09),
+        highlightColor: colors.primary.withValues(alpha: .07),
+        child: Padding(
+          padding: EdgeInsets.all(ranking ? 8 : 4),
+          child: ranking
+              ? Row(
+                  children: [
+                    SizedBox(
+                      width: MediaQuery.textScalerOf(context).scale(22) * 1.5,
+                      child: Text(
+                        '$rank'.padLeft(2, '0'),
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w600,
+                          color: rank! <= 3
+                              ? colors.primary
+                              : colors.onSurfaceVariant.withValues(alpha: .65),
                         ),
                       ),
-                      if (showCover) ...[
-                        CoverImage(uri: album.coverUrl, size: coverSize),
-                        const SizedBox(width: 8),
-                      ],
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            title,
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Expanded(child: artist),
-                                if (stats?.score != null) ...[
-                                  const SizedBox(width: 8),
-                                  _score(context),
-                                ],
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
+                    ),
+                    if (showCover) ...[
+                      CoverImage(uri: album.coverUrl, size: coverSize),
+                      const SizedBox(width: 8),
                     ],
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (showCover) ...[
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: CoverImage(
-                            uri: album.coverUrl,
-                            size: coverSize,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                      ],
-                      SizedBox(height: titleHeight, child: title),
-                      const SizedBox(height: 4),
-                      artist,
-                      const SizedBox(height: 4),
-                      Row(
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Text(
-                              details.join(' · '),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                height: 1.4,
-                                color: colors.onSurfaceVariant,
-                              ),
-                            ),
+                          title,
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Expanded(child: artist),
+                              if (stats?.score != null) ...[
+                                const SizedBox(width: 8),
+                                _score(context),
+                              ],
+                            ],
                           ),
-                          if (stats?.score != null) ...[
-                            const SizedBox(width: 8),
-                            _score(context),
-                          ],
                         ],
                       ),
+                    ),
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (showCover) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: CoverImage(uri: album.coverUrl, size: coverSize),
+                      ),
+                      const SizedBox(height: 6),
                     ],
-                  ),
-          ),
+                    SizedBox(height: titleHeight, child: title),
+                    const SizedBox(height: 4),
+                    artist,
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            details.join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              height: 1.4,
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        if (stats?.score != null) ...[
+                          const SizedBox(width: 8),
+                          _score(context),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
         ),
       ),
     );
