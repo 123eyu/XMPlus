@@ -370,6 +370,7 @@ class XmlyClient {
         AppLogLevel.debug,
         'api',
         'XmlyClient.request parameters',
+        localOnly: true,
         data: {
           'method': method,
           'origin': origin,
@@ -379,7 +380,7 @@ class XmlyClient {
         },
       );
     }
-    return AppLog.instance.runWithErrorScope(() async {
+    return HttpLogOperation.run('api_request', () async {
       AppLog.instance.trace(
         "lib/api/xmly_client.dart::XmlyClient.request.closure#1",
       );
@@ -709,7 +710,9 @@ class XmlyClient {
         throw failure;
       }
       final code = '${payload['ret'] ?? 0}';
+      diagnostic.apiCode = int.tryParse(code);
       if (code != (origin == searchOrigin ? '200' : '0')) {
+        diagnostic.apiRejected = true;
         if (code == '429') _rateLimit(origin, const Duration(seconds: 30));
         if (code == '401') {
           if (authenticated) _expire();
@@ -2011,6 +2014,7 @@ class XmlyClient {
         AppLogLevel.debug,
         'api',
         'XmlyClient.resolve parameters',
+        localOnly: true,
         data: {
           'trackId': trackId,
           'quality': quality ?? this.quality,
@@ -2019,7 +2023,7 @@ class XmlyClient {
         },
       );
     }
-    return AppLog.instance.runWithErrorScope(() {
+    return HttpLogOperation.run('audio_resolve', () {
       AppLog.instance.trace(
         "lib/api/xmly_client.dart::XmlyClient.resolve.closure#1",
       );
@@ -2056,7 +2060,7 @@ class XmlyClient {
     AppLog.instance.trace(
       "lib/api/xmly_client.dart::XmlyClient.cachedPrepaidAudio",
     );
-    return AppLog.instance.runWithErrorScope(() {
+    return HttpLogOperation.run('cached_audio', () {
       AppLog.instance.trace(
         "lib/api/xmly_client.dart::XmlyClient.cachedPrepaidAudio.closure#1",
       );

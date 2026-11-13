@@ -38,6 +38,7 @@ class AudioCache {
   Completer<void>? _interruptedWait;
   int _producerEpoch = 0;
   Object? _failure;
+  bool _failureReported = false;
   StackTrace? _failureStack;
   bool _closed = false, _paused = false, _background = false;
   bool _validated = false, _ranges = true;
@@ -343,7 +344,10 @@ class AudioCache {
 
     if (_closed) throw const XmlyException('cache_closed', '缓存已关闭');
     if (_paused) throw const XmlyException('cache_paused', '下载已暂停');
-    if (_failure != null) Error.throwWithStackTrace(_failure!, _failureStack!);
+    if (_failure != null) {
+      if (_failureReported) AppLog.instance.inheritRecordedError(_failure!);
+      Error.throwWithStackTrace(_failure!, _failureStack!);
+    }
   }
 
   void _checkProducer(int epoch) {
@@ -393,6 +397,7 @@ class AudioCache {
       if (!_ranges && !complete) _validated = false;
       _paused = false;
       _failure = null;
+      _failureReported = false;
       _failureStack = null;
     }
   }
@@ -422,7 +427,7 @@ class AudioCache {
 
   Future<void> _produce(int epoch) {
     AppLog.instance.trace("lib/services/audio_cache.dart::AudioCache._produce");
-    return AppLog.instance.runWithErrorScope(() async {
+    return HttpLogOperation.run('audio_download', () async {
       AppLog.instance.trace(
         "lib/services/audio_cache.dart::AudioCache._produce.closure#1",
       );
@@ -489,7 +494,11 @@ class AudioCache {
                   'media_unauthorized',
                   'rate_limited',
                 }.contains(error.code));
-        if (!expected) {
+        final reported =
+            !_closed &&
+            !_paused &&
+            HttpLogOperation.reportFailure(error, stack, promptUser: !expected);
+        if (!expected && !reported) {
           if (!AppLog.instance.errorWasRecorded(error)) {
             AppLog.instance.write(
               AppLogLevel.error,
@@ -511,6 +520,7 @@ class AudioCache {
             ? const XmlyException('cache_paused', '下载已暂停')
             : error;
         AppLog.instance.linkError(_failure!, error);
+        _failureReported = AppLog.instance.errorWasRecorded(error);
         _failureStack = stack;
         for (final waiter in _waiting.values) {
           waiter.completeError(_failure!, stack);
@@ -521,7 +531,7 @@ class AudioCache {
         _running = null;
         _signal();
       }
-    });
+    }, independent: true);
   }
 
   Future<void> _refreshAuthorization(int epoch) async {

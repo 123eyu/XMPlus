@@ -135,6 +135,10 @@ class AppLog {
   bool errorWasRecorded(Object error) =>
       _currentErrorScope?.errors?.contains(error) ?? false;
 
+  /// A shared producer can deliver one recorded occurrence to another active
+  /// consumer. This does not suppress future invocations using the same error.
+  void inheritRecordedError(Object error) => _currentErrorScope?.record(error);
+
   void linkError(Object replacement, Object original) {
     final scope = _currentErrorScope;
     if (scope != null && (scope.errors?.contains(original) ?? false)) {
@@ -314,6 +318,7 @@ class AppLog {
     StackTrace? stackTrace,
     bool networkError = false,
     bool promptUser = false,
+    bool localOnly = false,
     String? requestId,
   }) {
     if (_inside || _closed) return;
@@ -340,11 +345,13 @@ class AppLog {
       _pendingBytes += bytes.length;
       if (_persistenceError != null) _boundTail();
       final scope = _currentErrorScope;
-      if (error != null && level.index >= AppLogLevel.error.index) {
+      if (!localOnly &&
+          error != null &&
+          level.index >= AppLogLevel.error.index) {
         scope?.record(error);
       }
       final callback = sink;
-      if (callback != null && category != 'method') {
+      if (!localOnly && callback != null && category != 'method') {
         try {
           final result = callback(
             AppLogRecord(

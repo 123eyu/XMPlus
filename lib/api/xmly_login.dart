@@ -209,6 +209,7 @@ class XmlyLogin {
         AppLogLevel.debug,
         'api',
         'XmlyLogin._request parameters',
+        localOnly: true,
         data: {
           'method': method,
           'path': path,
@@ -217,7 +218,7 @@ class XmlyLogin {
         },
       );
     }
-    return AppLog.instance.runWithErrorScope(() async {
+    return HttpLogOperation.run('login_request', () async {
       AppLog.instance.trace(
         "lib/api/xmly_login.dart::XmlyLogin._request.closure#1",
       );
@@ -355,6 +356,12 @@ class XmlyLogin {
             }
           }
           final transportFailure = retryableTransport(error) || timedOut;
+          if (error is XmlyLoginError &&
+              error.upstreamCode != null &&
+              diagnostic.status == 200) {
+            diagnostic.apiCode = error.upstreamCode;
+            diagnostic.apiRejected = true;
+          }
           if (error is! XmlyException && error is! FormatException) {
             diagnostic.transportError = '$error';
           }
