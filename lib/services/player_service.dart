@@ -1598,13 +1598,12 @@ class PlayerService {
       _pendingDurationPosition = duration <= 0 ? position : null;
       rate = settings.speed;
       volume = settings.outputVolume;
-      await _driver.open(source.uri, epoch: epoch);
+      await _driver.open(source.uri, epoch: epoch, startPosition: position);
       await _driver.setRate(rate);
       await _driver.setVolume(volume);
       if (position > 0) {
-        // Opening snapshots precede the resume seek and must not overwrite it.
+        // Discard opening snapshots from before the load hook applies the start.
         ++_seekRevision;
-        await _driver.seek(position);
       }
       if (request != _request) {
         await _stopSource();

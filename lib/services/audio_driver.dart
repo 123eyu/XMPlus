@@ -33,7 +33,11 @@ class AudioSnapshot {
 /// The only sound-device boundary. Tests implement this with recorded commands.
 abstract class AudioDriver {
   Stream<AudioSnapshot> get snapshots;
-  Future<void> open(Uri localUri, {required int epoch});
+  Future<void> open(
+    Uri localUri, {
+    required int epoch,
+    double startPosition = 0,
+  });
   Future<void> play();
   Future<void> pause();
   Future<void> stop();
@@ -477,7 +481,11 @@ class MediaKitAudioDriver implements AudioDriver {
   }
 
   @override
-  Future<void> open(Uri localUri, {required int epoch}) async {
+  Future<void> open(
+    Uri localUri, {
+    required int epoch,
+    double startPosition = 0,
+  }) async {
     AppLog.instance.trace(
       "lib/services/audio_driver.dart::MediaKitAudioDriver.open",
     );
@@ -509,7 +517,15 @@ class MediaKitAudioDriver implements AudioDriver {
               '0',
             );
           }
-          await player.open(Media(resource), play: false);
+          // open completes before mpv finishes loading. Media.start is applied
+          // by its load hook; an immediate standalone seek can be lost.
+          await player.open(
+            Media(
+              resource,
+              start: Duration(microseconds: (startPosition * 1000000).round()),
+            ),
+            play: false,
+          );
           await player.setPitch(1.0);
         } finally {
           _opening = false;
@@ -518,7 +534,11 @@ class MediaKitAudioDriver implements AudioDriver {
       },
       operation: 'open',
       arguments: AppLog.instance.level == AppLogLevel.debug
-          ? {'uri': localUri.toString(), 'epoch': epoch}
+          ? {
+              'uri': localUri.toString(),
+              'epoch': epoch,
+              'startPosition': startPosition,
+            }
           : null,
     );
   }
