@@ -32,9 +32,9 @@ class _BackupPageState extends State<BackupPage> {
   bool _includeAccount = false;
   bool _busy = false;
   bool _waitingForReload = false;
-  bool get _importActive {
+  bool get _operationActive {
     AppLog.instance.trace(
-      "lib/pages/backup_page.dart::_BackupPageState._importActive.get",
+      "lib/pages/backup_page.dart::_BackupPageState._operationActive.get",
     );
     return mounted && _cancelled?.isCompleted == false;
   }
@@ -107,7 +107,7 @@ class _BackupPageState extends State<BackupPage> {
       try {
         await action();
       } catch (error, stack) {
-        if (!mounted || cancelled.isCompleted) return;
+        if (cancelled.isCompleted) return;
         final expected =
             error is ConfigArchiveException ||
             error is FormatException ||
@@ -192,9 +192,12 @@ class _BackupPageState extends State<BackupPage> {
             '仍要导出',
           ))
         return;
-      if (!mounted) return;
-      final bytes = await _archive.export(includeAccount: includeAccount);
-      if (!mounted) return;
+      if (!_operationActive) return;
+      final bytes = await _archive.export(
+        includeAccount: includeAccount,
+        cancelled: _cancelled?.future,
+      );
+      if (!_operationActive) return;
       final date = DateTime.now().toIso8601String().substring(0, 10);
       final saved = await FilePicker.saveFile(
         fileName: 'XMPlus-$date${includeAccount ? '-含账号' : ''}.zip',
@@ -202,7 +205,7 @@ class _BackupPageState extends State<BackupPage> {
         mimeType: 'application/zip',
         dialogTitle: '保存备份',
       );
-      if (saved != null && mounted)
+      if (saved != null && _operationActive)
         setState(() {
           AppLog.instance.trace(
             "lib/pages/backup_page.dart::_BackupPageState._export.closure#1.closure#1",
@@ -226,9 +229,9 @@ class _BackupPageState extends State<BackupPage> {
         type: FileType.custom,
         allowedExtensions: ['zip'],
       );
-      if (file == null || !_importActive) return;
+      if (file == null || !_operationActive) return;
       final length = await file.length();
-      if (!_importActive) return;
+      if (!_operationActive) return;
       if (length != null && length > ConfigArchive.maxBytes) {
         throw const ConfigArchiveException('备份超过 64 MiB');
       }
@@ -237,7 +240,7 @@ class _BackupPageState extends State<BackupPage> {
       final stream = _importStream = StreamIterator(file.readAsByteStream());
       try {
         while (await stream.moveNext()) {
-          if (!_importActive) return;
+          if (!_operationActive) return;
           final chunk = stream.current;
           if (bytes.length + chunk.length > ConfigArchive.maxBytes) {
             throw const ConfigArchiveException('备份超过 64 MiB');
@@ -248,12 +251,12 @@ class _BackupPageState extends State<BackupPage> {
         _importStream = null;
         await stream.cancel();
       }
-      if (!_importActive) return;
+      if (!_operationActive) return;
       final draft = await _archive.inspect(
         bytes.takeBytes(),
         cancelled: _cancelled?.future,
       );
-      if (!_importActive) return;
+      if (!_operationActive) return;
       final replacements = <String, String>{};
       for (final oldRoot in draft.missingDirectories) {
         if (!await _confirm(
@@ -262,11 +265,11 @@ class _BackupPageState extends State<BackupPage> {
           '选择目录',
         ))
           return;
-        if (!_importActive) return;
+        if (!_operationActive) return;
         final selected = await FilePicker.getDirectoryPath(
           dialogTitle: '选择新的下载目录',
         );
-        if (selected == null || !_importActive) return;
+        if (selected == null || !_operationActive) return;
         replacements[oldRoot] = selected;
       }
       final accepted = await _confirm(
@@ -287,7 +290,7 @@ class _BackupPageState extends State<BackupPage> {
         ),
         '确认恢复',
       );
-      if (!accepted || !_importActive) return;
+      if (!accepted || !_operationActive) return;
       try {
         await widget.runtime.restoreBackup(draft, relocatedRoots: replacements);
       } catch (_) {
