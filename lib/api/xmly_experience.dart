@@ -119,7 +119,7 @@ class AlbumIntroductionData {
   final HomeSection recommendations;
 }
 
-/// Only the adjacent, bounded page summaries escape a membership scan. The
+/// Only the five most recent, bounded page summaries escape a membership scan.
 /// HMAC key never leaves this object, so album markers cannot link scans.
 class _SubscriptionPagination {
   _SubscriptionPagination()
@@ -130,13 +130,14 @@ class _SubscriptionPagination {
   }
 
   final Hmac _markers;
-  Map<String, Object?>? _previous, _current;
+  final _recent = <Map<String, Object?>>[];
 
   void observe({
     required int page,
     required int pageSize,
     required Object? ret,
-    required Object? hasMore,
+    required Map<String, dynamic> data,
+    required int elapsedMs,
     required List<dynamic> rows,
     required Set<String> seen,
   }) {
@@ -162,28 +163,43 @@ class _SubscriptionPagination {
         _markers.convert(utf8.encode(id)).toString().substring(0, 16),
       );
     }
-    _previous = _current;
-    _current = Map.unmodifiable({
-      'page': page,
-      'pageSize': pageSize,
-      // XmlyClient.request only returns after checking HTTP status == 200.
-      'httpStatus': 200,
-      'ret': ret is int
-          ? ret
-          : ret is String
-          ? int.tryParse(ret)
-          : null,
-      'hasMore': hasMore is bool ? hasMore : null,
-      'resultCount': rows.length,
-      'uniqueCount': unique.length,
-      'duplicateCount': rows.length - invalidIds - unique.length,
-      'invalidIdCount': invalidIds,
-      'accumulatedBefore': seen.length,
-      'newCount': added,
-      'accumulatedAfter': seen.length + added,
-      // The endpoint allows at most 50 rows; preserve their order for comparison.
-      'albumMarkers': List<String?>.unmodifiable(sequence),
-    });
+    _recent.add(
+      Map.unmodifiable({
+        'page': page,
+        'pageSize': pageSize,
+        'elapsedMs': elapsedMs,
+        // XmlyClient.request only returns after checking HTTP status == 200.
+        'httpStatus': 200,
+        'ret': ret is int
+            ? ret
+            : ret is String
+            ? int.tryParse(ret)
+            : null,
+        'hasMore': data['hasMore'] is bool ? data['hasMore'] : null,
+        'responsePaging': {
+          for (final key in const [
+            'pageId',
+            'pageSize',
+            'size',
+            'totalCount',
+            'maxPageId',
+            'nextPageId',
+          ])
+            if (data.containsKey(key)) key: XmlyExperience._integer(data[key]),
+        },
+        'resultCount': rows.length,
+        'uniqueCount': unique.length,
+        'duplicateCount': rows.length - invalidIds - unique.length,
+        'invalidIdCount': invalidIds,
+        'accumulatedBefore': seen.length,
+        'newCount': added,
+        'overlapCount': unique.length - added,
+        'accumulatedAfter': seen.length + added,
+        // The endpoint allows at most 50 rows; preserve their order for comparison.
+        'albumMarkers': List<String?>.unmodifiable(sequence),
+      }),
+    );
+    if (_recent.length > 5) _recent.removeAt(0);
   }
 
   XmlyException failure(String reason, String code, String message) {
@@ -198,8 +214,12 @@ class _SubscriptionPagination {
         'pagination': Map<String, Object?>.unmodifiable({
           'list': 'subscriptions',
           'reason': reason,
-          if (_previous != null) 'previousPage': _previous,
-          if (_current != null) 'currentPage': _current,
+          'method': 'GET',
+          'endpoint': '/fsubscribe-web/subscribe/comprehensive/rank',
+          if (_recent.length > 2)
+            'earlierPages': List.unmodifiable(_recent.take(_recent.length - 2)),
+          if (_recent.length > 1) 'previousPage': _recent[_recent.length - 2],
+          if (_recent.isNotEmpty) 'currentPage': _recent.last,
         }),
       }),
       fingerprint: List.unmodifiable([
@@ -209,6 +229,20 @@ class _SubscriptionPagination {
       ]),
     );
   }
+}
+
+class _SubscriptionMembership {
+  _SubscriptionMembership() {
+    AppLog.instance.trace(
+      'lib/api/xmly_experience.dart::_SubscriptionMembership.new',
+    );
+  }
+
+  final ids = <String>{};
+  final pagination = _SubscriptionPagination();
+  int page = 1;
+  bool complete = false;
+  Future<void>? pending;
 }
 
 /// Lite client surfaces and explicit official subscription/favorite mutations.
@@ -221,7 +255,7 @@ class XmlyExperience {
   static final _favoriteMembership = Expando<Future<Set<String>>>(
     'favoriteMembership',
   );
-  static final _subscriptionMembership = Expando<Future<Set<String>>>(
+  static final _subscriptionMembership = Expando<_SubscriptionMembership>(
     'subscriptionMembership',
   );
 
@@ -276,19 +310,18 @@ class XmlyExperience {
     _subscriptionMembership[client] = null;
   }
 
-  Future<Set<String>> _membership({required bool favorite}) async {
+  Future<Set<String>> _membership() async {
     AppLog.instance.trace(
       "lib/api/xmly_experience.dart::XmlyExperience._membership",
     );
 
     _requireAccount();
-    final cache = favorite ? _favoriteMembership : _subscriptionMembership;
-    final pending = cache[client] ??= _loadMembership(favorite: favorite);
+    final cache = _favoriteMembership;
+    final pending = cache[client] ??= _loadMembership();
     try {
       final ids = await pending;
       _requireAccount();
-      if (!identical(cache[client], pending))
-        return await _membership(favorite: favorite);
+      if (!identical(cache[client], pending)) return await _membership();
       return ids;
     } catch (_) {
       if (identical(cache[client], pending)) cache[client] = null;
@@ -296,61 +329,62 @@ class XmlyExperience {
     }
   }
 
-  Future<Set<String>> _loadMembership({required bool favorite}) async {
+  Future<Set<String>> _loadMembership() async {
     AppLog.instance.trace(
       "lib/api/xmly_experience.dart::XmlyExperience._loadMembership",
     );
 
     final seen = <String>{};
-    final subscriptionPages = favorite ? null : _SubscriptionPagination();
     for (var page = 1; page <= 10000; page++) {
-      final Iterable<String> ids;
-      final bool more;
-      if (favorite) {
-        final result = await _favorites(page: page);
-        ids = result.items.map((track) {
-          AppLog.instance.trace(
-            "lib/api/xmly_experience.dart::XmlyExperience._loadMembership.closure#1",
-          );
-          return track.id;
-        });
-        more = result.hasMore;
-      } else {
-        final result = await _subscriptions(
-          page: page,
-          diagnostics: subscriptionPages,
-          seen: seen,
+      final result = await _favorites(page: page);
+      final ids = result.items.map((track) {
+        AppLog.instance.trace(
+          'lib/api/xmly_experience.dart::XmlyExperience._loadMembership.closure#1',
         );
-        ids = result.items.map((item) {
-          AppLog.instance.trace(
-            "lib/api/xmly_experience.dart::XmlyExperience._loadMembership.closure#2",
-          );
-          return item.album.id;
-        });
-        more = result.hasMore;
-      }
+        return track.id;
+      });
+      final more = result.hasMore;
       final before = seen.length;
       seen.addAll(ids);
       if ((ids.isNotEmpty || more) && seen.length == before) {
-        if (subscriptionPages != null) {
-          throw subscriptionPages.failure(
-            'no_progress',
-            'repeated_page',
-            '列表分页未前进，请刷新后重试',
-          );
-        }
         throw const XmlyException('repeated_page', '列表分页未前进，请刷新后重试');
       }
       if (!more) return seen;
     }
-    if (subscriptionPages != null) {
-      throw subscriptionPages.failure(
+    throw const XmlyException('page_limit', '列表超出读取范围，无法确认状态');
+  }
+
+  Future<void> _loadSubscriptionPage(_SubscriptionMembership membership) async {
+    AppLog.instance.trace(
+      'lib/api/xmly_experience.dart::XmlyExperience._loadSubscriptionPage',
+    );
+
+    if (membership.page > 10000) {
+      throw membership.pagination.failure(
         'page_limit',
         'page_limit',
         '列表超出读取范围，无法确认状态',
       );
     }
-    throw const XmlyException('page_limit', '列表超出读取范围，无法确认状态');
+    final result = await _subscriptions(
+      page: membership.page,
+      diagnostics: membership.pagination,
+      seen: membership.ids,
+    );
+    final before = membership.ids.length;
+    for (final item in result.items) {
+      membership.ids.add(item.album.id);
+    }
+    if ((result.items.isNotEmpty || result.hasMore) &&
+        membership.ids.length == before) {
+      throw membership.pagination.failure(
+        'no_progress',
+        'repeated_page',
+        '列表分页未前进，请刷新后重试',
+      );
+    }
+    membership.complete = !result.hasMore;
+    membership.page++;
   }
 
   static const _invalid = XmlyException('invalid_experience', '喜马拉雅返回的列表格式无效');
@@ -610,6 +644,7 @@ class XmlyExperience {
 
     _requireAccount();
     _paging(page, pageSize);
+    final elapsed = Stopwatch()..start();
     final response = await client.request(
       'GET',
       XmlyClient.mobile,
@@ -624,7 +659,8 @@ class XmlyExperience {
       page: page,
       pageSize: pageSize,
       ret: response['ret'],
-      hasMore: data['hasMore'],
+      data: data,
+      elapsedMs: elapsed.elapsedMilliseconds,
       rows: rows,
       seen: seen,
     );
@@ -718,7 +754,7 @@ class XmlyExperience {
 
     _requireAccount();
     final id = 'xmly:${xmlyIdentifier(trackId)}';
-    return (await _membership(favorite: true)).contains(id);
+    return (await _membership()).contains(id);
   }
 
   Future<bool> isSubscribed(String albumId) async {
@@ -726,9 +762,24 @@ class XmlyExperience {
       "lib/api/xmly_experience.dart::XmlyExperience.isSubscribed",
     );
 
-    _requireAccount();
     final id = xmlyIdentifier(albumId);
-    return (await _membership(favorite: false)).contains(id);
+    while (true) {
+      _requireAccount();
+      final membership = _subscriptionMembership[client] ??=
+          _SubscriptionMembership();
+      if (membership.ids.contains(id)) return true;
+      // A partial scan can confirm membership, never absence.
+      if (membership.complete) return false;
+      final pending = membership.pending ??= _loadSubscriptionPage(membership);
+      try {
+        await pending;
+      } catch (_) {
+        _requireAccount();
+        if (identical(_subscriptionMembership[client], membership)) rethrow;
+      } finally {
+        if (identical(membership.pending, pending)) membership.pending = null;
+      }
+    }
   }
 
   static void _mutationSuccess(Map<String, dynamic> response) {
