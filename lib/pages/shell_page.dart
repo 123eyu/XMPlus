@@ -524,7 +524,11 @@ class _ShellPageStackState extends State<_ShellPageStack> {
                         );
                         _finishTransition(index);
                       },
-                      child: RepaintBoundary(child: widget.children[index]),
+                      child: RepaintBoundary(
+                        // Keep portal children under the same visibility and
+                        // semantics gates as their page while it fades out.
+                        child: Overlay.wrap(child: widget.children[index]),
+                      ),
                     ),
                   ),
                 ),

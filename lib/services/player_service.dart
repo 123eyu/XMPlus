@@ -226,7 +226,7 @@ class PlayerService {
     AppLog.instance.trace(
       "lib/services/player_service.dart::PlayerService.queueOrderLabel.get",
     );
-    return queueSource == 'updates' ? '倒序（由旧到新）' : '队列顺序';
+    return queueSource == 'updates' ? '由旧到新' : '队列顺序';
   }
 
   bool playing = false, buffering = false;
@@ -538,6 +538,7 @@ class PlayerService {
               'duplicate_page',
               'catalogue_changed',
               'queue_full',
+              'queue_changed',
             }.contains(failure.code);
     if (expected) return;
     AppLog.instance.requestUploadPrompt();
@@ -3698,6 +3699,105 @@ class PlayerService {
         cursor = index;
         sourceAlbumId = '';
         ++generation;
+        _notify();
+      });
+    });
+  }
+
+  Future<void> reverseQueue() {
+    AppLog.instance.trace(
+      "lib/services/player_service.dart::PlayerService.reverseQueue",
+    );
+
+    return _run(() async {
+      AppLog.instance.trace(
+        "lib/services/player_service.dart::PlayerService.reverseQueue.closure#1",
+      );
+
+      if (_queue.isEmpty) return;
+      final selected = current!;
+      final version = generation, epoch = _epoch, request = _request;
+      final advanceIntent = _advanceIntent;
+      final client = currentClient, identity = libraryIdentity;
+      final album = sourceAlbumId, source = queueSource;
+      bool active() {
+        AppLog.instance.trace(
+          "lib/services/player_service.dart::PlayerService.reverseQueue.closure#1.active",
+        );
+
+        return !_closed &&
+            version == generation &&
+            epoch == _epoch &&
+            request == _request &&
+            current?.id == selected.id &&
+            sourceAlbumId == album &&
+            queueSource == source &&
+            identical(client, currentClient) &&
+            !accounts.admissionPaused;
+      }
+
+      var tracks = _queue;
+      if (!_completeAlbumQueue) {
+        // Reversing a paged album must include chapters outside the loaded page.
+        tracks = await client.withReadPolicy(
+          () {
+            AppLog.instance.trace(
+              "lib/services/player_service.dart::PlayerService.reverseQueue.closure#1.closure#1",
+            );
+            return XmlyCatalogue(client).album(album);
+          },
+          rateLimitRetries: 0,
+          cancelled: _requestChanged.future,
+          checkpoint: () async {
+            AppLog.instance.trace(
+              "lib/services/player_service.dart::PlayerService.reverseQueue.closure#1.closure#2",
+            );
+
+            if (!active()) throw const DownloadStopped();
+          },
+        );
+      }
+      await _commands.synchronized(() async {
+        AppLog.instance.trace(
+          "lib/services/player_service.dart::PlayerService.reverseQueue.closure#1.closure#3",
+        );
+
+        if (!active()) {
+          throw const XmlyException('queue_changed', '播放列表已变化，请重新排序');
+        }
+        final byId = {for (final track in tracks) track.id: track};
+        for (final track in _queue) {
+          final candidate = byId[track.id];
+          if (candidate == null ||
+              (source == 'album' &&
+                  track.officialPosition != null &&
+                  candidate.officialPosition != track.officialPosition)) {
+            throw const XmlyException('catalogue_changed', '专辑内容已更新，请重试');
+          }
+        }
+        final next = tracks.reversed.toList();
+        final index = next.indexWhere((track) {
+          AppLog.instance.trace(
+            "lib/services/player_service.dart::PlayerService.reverseQueue.closure#1.closure#3.closure#1",
+          );
+          return track.id == selected.id;
+        });
+        final owners = {
+          for (final track in next)
+            if (_queueAccountIdentities[track.id] ??
+                    (source == 'album' ? identity : null)
+                case final owner?)
+              track.id: owner,
+        };
+        // As with dragging, an explicit reorder becomes a complete custom queue.
+        await _saveQueue(next, index, '', accountIdentities: owners);
+        _queue = next;
+        cursor = index;
+        sourceAlbumId = '';
+        // A newer playback request may arrive while storage commits the queue.
+        if (generation == version) ++generation;
+        if (_advanceIntent == advanceIntent) ++_advanceIntent;
+        _shuffle.reset();
         _notify();
       });
     });

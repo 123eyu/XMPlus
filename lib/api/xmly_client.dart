@@ -174,21 +174,22 @@ class XmlyClient {
           RegExp(r'^/mobile/track/pay/[1-9][0-9]{0,18}/ts-[0-9]+$')
               .hasMatch(path);
     if (origin == searchOrigin)
-      return method == 'GET' &&
-          const {
-            '/revision/search',
-            '/revision/track/simple',
-            '/revision/comment/queryReplies',
-            '/revision/user/basic',
-            '/revision/user/pub',
-            '/revision/user/track',
-            '/revision/user/following',
-            '/revision/album/v1/simple',
-            '/revision/category/v2/allCategory',
-            '/revision/category/v2/albums',
-            '/revision/rank/v3/cluster',
-            '/revision/rank/v3/element',
-          }.contains(path);
+      return _webAccountEndpoint(method, path) ||
+          (method == 'GET' &&
+              const {
+                '/revision/search',
+                '/revision/track/simple',
+                '/revision/comment/queryReplies',
+                '/revision/user/basic',
+                '/revision/user/pub',
+                '/revision/user/track',
+                '/revision/user/following',
+                '/revision/album/v1/simple',
+                '/revision/category/v2/allCategory',
+                '/revision/category/v2/albums',
+                '/revision/rank/v3/cluster',
+                '/revision/rank/v3/element',
+              }.contains(path));
     if (origin == pcOrigin)
       return method == 'GET' &&
           const {
@@ -208,7 +209,8 @@ class XmlyClient {
     if (origin == collector)
       return method == 'POST' && path == '/nyx/v1/history/merge/android';
     if (origin == welfare)
-      return (method == 'GET' &&
+      return _publicAnchorTrackEndpoint(method, origin, path) ||
+          (method == 'GET' &&
               RegExp(
                 r'^/lite-earn/ting/welfare/queryVipDurationTask/ts-[0-9]+$',
               ).hasMatch(path)) ||
@@ -258,6 +260,31 @@ class XmlyClient {
                 .hasMatch(path) ||
             RegExp(r'^/track-feed/v1/track-feed/dynamic/ts-[0-9]+$')
                 .hasMatch(path));
+  }
+
+  static bool _webAccountEndpoint(String method, String path) {
+    AppLog.instance.trace(
+      "lib/api/xmly_client.dart::XmlyClient._webAccountEndpoint",
+    );
+    return (method == 'GET' && path == '/revision/user/basic') ||
+        (method == 'POST' &&
+            const {
+              '/revision/follow/setFollow',
+              '/revision/follow/cancelFollow',
+            }.contains(path));
+  }
+
+  static bool _publicAnchorTrackEndpoint(
+    String method,
+    String origin,
+    String path,
+  ) {
+    AppLog.instance.trace(
+      "lib/api/xmly_client.dart::XmlyClient._publicAnchorTrackEndpoint",
+    );
+    return method == 'GET' &&
+        origin == welfare &&
+        path == '/m-revision/common/anchor/queryAnchorTracksByPage';
   }
 
   static Duration _retryAfter(String? value) {
@@ -436,8 +463,11 @@ class XmlyClient {
         throw const XmlyException('client_closed', '连接已关闭', definitive: true);
       method = method.toUpperCase();
       if (!_endpoint(method, origin, path) ||
+          (account && _publicAnchorTrackEndpoint(method, origin, path)) ||
+          (account && const {pcOrigin, hotWordsOrigin}.contains(origin)) ||
           (account &&
-              const {searchOrigin, pcOrigin, hotWordsOrigin}.contains(origin)))
+              origin == searchOrigin &&
+              !_webAccountEndpoint(method, path)))
         throw const XmlyException(
           'invalid_endpoint',
           '请求地址不受支持',
@@ -619,6 +649,10 @@ class XmlyClient {
       'Accept': origin == collector ? '*/*' : 'application/json',
       if (origin == collector) 'User-Agent': 'ting_3.4.10.3(Android,30)',
       if (authenticated) 'Cookie': credentials!.cookie,
+      if (authenticated && origin == searchOrigin) ...{
+        'Origin': searchOrigin,
+        'Referer': '$searchOrigin/',
+      },
       if (signed)
         'x-tk': XmlyCrypto.freshTicket(
           credentials!,

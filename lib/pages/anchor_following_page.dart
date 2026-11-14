@@ -280,13 +280,18 @@ class _AnchorFollowingPageState extends State<AnchorFollowingPage> {
       unawaited(_load());
   }
 
-  void _open(AnchorProfile anchor) {
+  Future<void> _open(AnchorProfile anchor) async {
     AppLog.instance.trace(
       "lib/pages/anchor_following_page.dart::_AnchorFollowingPageState._open",
     );
 
+    final generation = _generation;
+    final identities = Map<String, String>.of(widget.accountIdentities);
     final accountIdentity = _originIdentities[anchor.uid];
-    Navigator.of(context).push(
+    final runtime = widget.runtime, revision = runtime.libraryRevision;
+    final primary = runtime.accounts.primaryAccountId;
+    final uids = _uids, accounts = runtime.accounts.accountIds.toSet();
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
         settings: const RouteSettings(name: AnchorPage.routeName),
         builder: (_) {
@@ -304,6 +309,20 @@ class _AnchorFollowingPageState extends State<AnchorFollowingPage> {
         },
       ),
     );
+    if (!_current(generation) ||
+        !mapEquals(widget.accountIdentities, identities) ||
+        !identical(widget.runtime, runtime) ||
+        runtime.libraryRevision == revision)
+      return;
+    final currentUids = _uids;
+    final currentAccounts = runtime.accounts.accountIds.toSet();
+    if (runtime.accounts.primaryAccountId != primary ||
+        currentUids.length != uids.length ||
+        !currentUids.containsAll(uids) ||
+        currentAccounts.length != accounts.length ||
+        !currentAccounts.containsAll(accounts))
+      return;
+    await _refresh();
   }
 
   Widget _footer() {
