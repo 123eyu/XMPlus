@@ -17,6 +17,7 @@ import '../common/widgets/playback_action_button.dart';
 import '../models/xmly_models.dart';
 import '../services/app_log.dart';
 import '../services/app_runtime.dart';
+import 'anchor_page.dart';
 import 'catalogue_page.dart';
 import 'manuscript_reader.dart';
 import 'playback_settings_page.dart';
@@ -139,6 +140,10 @@ class _PlayerPanelState extends State<PlayerPanel> {
   bool _manuscriptLoaded = false;
   int _manuscriptRequest = 0;
   Completer<void>? _manuscriptCancelled;
+  Album? _creatorAlbum;
+  String? _creatorTrackId, _creatorAlbumId, _creatorResolvedAlbumId;
+  int _creatorRequest = 0;
+  Completer<void>? _creatorCancelled;
   AppRuntime get _runtime {
     AppLog.instance.trace(
       "lib/pages/player_panel.dart::_PlayerPanelState._runtime.get",
@@ -163,10 +168,12 @@ class _PlayerPanelState extends State<PlayerPanel> {
     _runtime.addListener(_favoriteContextChanged);
     _runtime.addListener(_likeContextChanged);
     _runtime.addListener(_manuscriptContextChanged);
+    _runtime.addListener(_creatorContextChanged);
     if (widget.expanded) {
       unawaited(_refreshFavorite());
       _refreshLikes();
       unawaited(_refreshManuscript());
+      unawaited(_refreshCreator());
     }
   }
 
@@ -181,9 +188,11 @@ class _PlayerPanelState extends State<PlayerPanel> {
       oldWidget.runtime.removeListener(_favoriteContextChanged);
       oldWidget.runtime.removeListener(_likeContextChanged);
       oldWidget.runtime.removeListener(_manuscriptContextChanged);
+      oldWidget.runtime.removeListener(_creatorContextChanged);
       _runtime.addListener(_manuscriptContextChanged);
       _runtime.addListener(_favoriteContextChanged);
       _runtime.addListener(_likeContextChanged);
+      _runtime.addListener(_creatorContextChanged);
       _dragPosition = null;
       _dragEpoch = null;
     }
@@ -196,6 +205,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
     if (oldWidget.runtime != _runtime ||
         oldWidget.expanded != widget.expanded) {
       unawaited(_refreshManuscript());
+      unawaited(_refreshCreator());
     }
   }
 
@@ -208,6 +218,10 @@ class _PlayerPanelState extends State<PlayerPanel> {
     _runtime.removeListener(_favoriteContextChanged);
     _runtime.removeListener(_likeContextChanged);
     _runtime.removeListener(_manuscriptContextChanged);
+    _runtime.removeListener(_creatorContextChanged);
+    _creatorRequest++;
+    _creatorCancelled?.complete();
+    _creatorCancelled = null;
     _manuscriptRequest++;
     _manuscriptCancelled?.complete();
     _manuscriptCancelled = null;
@@ -298,6 +312,106 @@ class _PlayerPanelState extends State<PlayerPanel> {
               child: child,
             ),
           );
+  }
+
+  void _creatorContextChanged() {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_PlayerPanelState._creatorContextChanged',
+    );
+    if (!mounted || !widget.expanded) return;
+    final track = _runtime.player.current;
+    if (track?.id != _creatorTrackId || track?.albumId != _creatorAlbumId) {
+      unawaited(_refreshCreator());
+      return;
+    }
+    final cached = track == null || track.albumId.isEmpty
+        ? null
+        : _runtime.albumCache[track.albumId]?.album;
+    if (cached?.anchorUid != null && !identical(cached, _creatorAlbum)) {
+      setState(() {
+        AppLog.instance.trace(
+          'lib/pages/player_panel.dart::_PlayerPanelState._creatorContextChanged.closure#1',
+        );
+        _creatorAlbum = cached;
+      });
+    }
+  }
+
+  Future<void> _refreshCreator() async {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_PlayerPanelState._refreshCreator',
+    );
+    final runtime = _runtime;
+    final track = runtime.player.current;
+    final trackId = track?.id, albumId = track?.albumId;
+    final request = ++_creatorRequest;
+    _creatorCancelled?.complete();
+    _creatorCancelled = null;
+    _creatorTrackId = trackId;
+    _creatorAlbumId = albumId;
+    final cached = albumId == null || albumId.isEmpty
+        ? null
+        : runtime.albumCache[albumId]?.album;
+    final previous = _creatorAlbum?.id == albumId ? _creatorAlbum : null;
+    setState(() {
+      AppLog.instance.trace(
+        'lib/pages/player_panel.dart::_PlayerPanelState._refreshCreator.closure#1',
+      );
+      _creatorAlbum = cached?.anchorUid != null ? cached : previous ?? cached;
+    });
+    if (!widget.expanded ||
+        trackId == null ||
+        albumId == null ||
+        albumId.isEmpty ||
+        _creatorAlbum?.anchorUid != null ||
+        (previous != null && _creatorResolvedAlbumId == albumId)) {
+      return;
+    }
+    final cancelled = _creatorCancelled = Completer<void>();
+    bool current() {
+      AppLog.instance.trace(
+        'lib/pages/player_panel.dart::_PlayerPanelState._refreshCreator.current',
+      );
+      return mounted &&
+          widget.expanded &&
+          identical(runtime, _runtime) &&
+          request == _creatorRequest &&
+          runtime.player.current?.id == trackId &&
+          runtime.player.current?.albumId == albumId;
+    }
+
+    try {
+      final page = await runtime.anonymous.withReadPolicy(
+        () {
+          AppLog.instance.trace(
+            'lib/pages/player_panel.dart::_PlayerPanelState._refreshCreator.closure#2',
+          );
+          return runtime.anonymous.album(albumId, pageSize: 1);
+        },
+        rateLimitRetries: 0,
+        cancelled: cancelled.future,
+      );
+      if (current() && page.album.id == albumId) {
+        setState(() {
+          AppLog.instance.trace(
+            'lib/pages/player_panel.dart::_PlayerPanelState._refreshCreator.closure#3',
+          );
+          _creatorAlbum = page.album;
+          _creatorResolvedAlbumId = albumId;
+        });
+      }
+    } catch (error, stack) {
+      if (current()) {
+        _recordPlayerPanelError(
+          'Player creator load failed',
+          error,
+          stack,
+          recoverable: true,
+        );
+      }
+    } finally {
+      if (current()) _creatorCancelled = null;
+    }
   }
 
   void _manuscriptContextChanged() {
@@ -1879,6 +1993,14 @@ class _PlayerPanelState extends State<PlayerPanel> {
             : player.policy.sleepWaitingForEnd || remaining == null
             ? '本集结束后${sleep.action.name == 'exit' ? '退出' : '暂停'}'
             : playbackTime(remaining.inSeconds.toDouble());
+        final creatorAlbum = _creatorAlbum?.id == track?.albumId
+            ? _creatorAlbum
+            : null;
+        final albumArtist = creatorAlbum?.artist.trim() ?? '';
+        final artist = albumArtist.isNotEmpty
+            ? albumArtist
+            : track?.artist.trim() ?? '';
+        final anchorUid = creatorAlbum?.anchorUid;
         final metadata = Column(
           crossAxisAlignment: widePlayer
               ? CrossAxisAlignment.center
@@ -1898,7 +2020,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
             if (track != null &&
                 (track.albumId.isNotEmpty ||
                     track.album.isNotEmpty ||
-                    track.artist.isNotEmpty)) ...[
+                    artist.isNotEmpty)) ...[
               SizedBox(height: compact ? 4 : 10),
               if (track.albumId.isNotEmpty)
                 TextButton(
@@ -1935,13 +2057,69 @@ class _PlayerPanelState extends State<PlayerPanel> {
                     color: colors.onSurfaceVariant,
                   ),
                 ),
-              if (track.artist.isNotEmpty)
-                AdaptiveText(
-                  track.artist,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
+              if (artist.isNotEmpty)
+                anchorUid == null
+                    ? Text(
+                        artist,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      )
+                    : Tooltip(
+                        message: '查看主播：$artist',
+                        child: TextButton(
+                          key: const ValueKey('playerAnchorLink'),
+                          onPressed: () {
+                            AppLog.instance.trace(
+                              'lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#4',
+                            );
+                            _navigator.push(
+                              MaterialPageRoute<void>(
+                                builder: (_) {
+                                  AppLog.instance.trace(
+                                    'lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#4.closure#1',
+                                  );
+                                  return AnchorPage(
+                                    runtime: _runtime,
+                                    uid: anchorUid,
+                                  );
+                                },
+                              ),
+                            );
+                          },
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(48, 48),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            alignment: widePlayer
+                                ? Alignment.center
+                                : Alignment.centerLeft,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ExcludeSemantics(
+                                child: ClipOval(
+                                  child: CoverImage(
+                                    uri: creatorAlbum?.anchorAvatarUrl,
+                                    size: 28,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  artist,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
             ],
           ],
         );
@@ -1962,7 +2140,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
             PlaybackActionButton(
               onPressed: () {
                 AppLog.instance.trace(
-                  "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#4",
+                  "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#5",
                 );
                 showSleepTimerDialog(context, _runtime);
               },
@@ -1988,11 +2166,11 @@ class _PlayerPanelState extends State<PlayerPanel> {
                   ? null
                   : () {
                       AppLog.instance.trace(
-                        "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#5",
+                        "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#6",
                       );
                       _act(() async {
                         AppLog.instance.trace(
-                          "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#5.closure#1",
+                          "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#6.closure#1",
                         );
 
                         final savedPosition = player.position;
@@ -2097,7 +2275,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
                 child: PlaybackActionButton(
                   onPressed: () {
                     AppLog.instance.trace(
-                      "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#6",
+                      "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#7",
                     );
 
                     player.cancelSleep();
@@ -2127,7 +2305,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
               tooltip: '收起播放器',
               onPressed: () {
                 AppLog.instance.trace(
-                  "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#7",
+                  "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#8",
                 );
                 Navigator.of(context).maybePop();
               },
@@ -2165,7 +2343,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
                             index,
                         onPressed: () {
                           AppLog.instance.trace(
-                            "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#8",
+                            "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#9",
                           );
                           _selectPage(index);
                         },
@@ -2176,7 +2354,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       AppLog.instance.trace(
-                        "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#9",
+                        "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#10",
                       );
                       final minPaneWidth = math.max(
                         460.0,
@@ -2193,7 +2371,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
                         LayoutBuilder(
                           builder: (context, constraints) {
                             AppLog.instance.trace(
-                              "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#9.closure#1",
+                              "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#10.closure#1",
                             );
                             final textHeight = MediaQuery.textScalerOf(context)
                                 .scale(56);
@@ -2275,7 +2453,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
                             itemCount: order.length,
                             findChildIndexCallback: (key) {
                               AppLog.instance.trace(
-                                "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#9.closure#2",
+                                "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#10.closure#2",
                               );
                               final index = order.indexOf(
                                 (key as ValueKey<int>).value,
@@ -2284,7 +2462,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
                             },
                             itemBuilder: (context, index) {
                               AppLog.instance.trace(
-                                "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#9.closure#3",
+                                "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.closure#10.closure#3",
                               );
                               final page = order[index];
                               return _PlayerPage(

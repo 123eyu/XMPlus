@@ -18,7 +18,19 @@ const Set<PointerDeviceKind> desktopDragDevices = {
 class CustomScrollBehavior extends MaterialScrollBehavior {
   const CustomScrollBehavior();
 
-  // Keep Material's desktop scrollbar rather than suppressing it upstream.
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    AppLog.instance.trace(
+      "lib/common/widgets/scroll_behavior.dart::CustomScrollBehavior.buildScrollbar",
+    );
+    if (axisDirectionToAxis(details.direction) == Axis.horizontal) return child;
+    return super.buildScrollbar(context, child, details);
+  }
+
   @override
   Widget buildOverscrollIndicator(
     BuildContext context,

@@ -474,6 +474,26 @@ class AppRuntime extends ChangeNotifier {
     }
   }
 
+  bool get showHotWords {
+    AppLog.instance.trace(
+      'lib/services/app_runtime.dart::AppRuntime.showHotWords.get',
+    );
+    return (storage.state['settings'] as Map)['showHotWords'] as bool? ?? true;
+  }
+
+  Future<void> setShowHotWords(bool value) async {
+    AppLog.instance.trace(
+      'lib/services/app_runtime.dart::AppRuntime.setShowHotWords',
+    );
+    await storage.transaction((state) {
+      AppLog.instance.trace(
+        'lib/services/app_runtime.dart::AppRuntime.setShowHotWords.closure#1',
+      );
+      (state['settings'] as Map)['showHotWords'] = value;
+    });
+    notifyListeners();
+  }
+
   void changed() {
     AppLog.instance.trace("lib/services/app_runtime.dart::AppRuntime.changed");
 

@@ -116,6 +116,17 @@ Map<String, dynamic> _publicRaw(Map<String, dynamic> raw) {
     if (value is String || value is bool || (value is num && value.isFinite))
       result[key] = value;
   }
+  final uid = xmlyPositive(raw['uid']);
+  if (uid != null) result['uid'] = uid;
+  if (raw['avatarPath'] is String) {
+    final avatar = _cover({'coverSmall': raw['avatarPath']});
+    if (avatar != null &&
+        !avatar.hasQuery &&
+        !avatar.hasFragment &&
+        (!avatar.hasPort || avatar.port == 80 || avatar.port == 443)) {
+      result['avatarPath'] = avatar.toString();
+    }
+  }
   final nickname = raw['userInfo'] is Map
       ? (raw['userInfo'] as Map)['nickname']
       : null;
@@ -298,6 +309,20 @@ class Album {
        raw = Map.unmodifiable(_publicRaw(raw)) {
     AppLog.instance.trace("lib/models/xmly_models.dart::Album.new");
   }
+  String? get anchorUid {
+    AppLog.instance.trace('lib/models/xmly_models.dart::Album.anchorUid.get');
+    return xmlyPositive(raw['uid'])?.toString();
+  }
+
+  Uri? get anchorAvatarUrl {
+    AppLog.instance.trace(
+      'lib/models/xmly_models.dart::Album.anchorAvatarUrl.get',
+    );
+    return raw['avatarPath'] is String
+        ? Uri.tryParse(raw['avatarPath'] as String)
+        : null;
+  }
+
   factory Album.fromApi(Map<String, dynamic> value) {
     AppLog.instance.trace("lib/models/xmly_models.dart::Album.factory:fromApi");
     return Album(
@@ -698,14 +723,53 @@ class ResolvedAudio {
   }
 }
 
+class AnchorSearchResult {
+  const AnchorSearchResult({
+    required this.uid,
+    required this.nickname,
+    this.avatarUrl,
+    this.tracksCount,
+    this.followersCount,
+    this.isVerified = false,
+  });
+
+  final String uid, nickname;
+  final Uri? avatarUrl;
+  final int? tracksCount, followersCount;
+  final bool isVerified;
+
+  factory AnchorSearchResult.fromApi(Map<String, dynamic> value) {
+    AppLog.instance.trace(
+      'lib/models/xmly_models.dart::AnchorSearchResult.factory:fromApi',
+    );
+    int? count(Object? raw) {
+      AppLog.instance.trace(
+        'lib/models/xmly_models.dart::AnchorSearchResult.factory:fromApi.count',
+      );
+      return raw is num && raw.isFinite && raw >= 0 ? raw.toInt() : null;
+    }
+
+    return AnchorSearchResult(
+      uid: xmlyIdentifier(_text(value['uid'])),
+      nickname: _text(value['nickname']),
+      avatarUrl: _cover({'coverSmall': value['smallPic']}),
+      tracksCount: count(value['tracks_counts']),
+      followersCount: count(value['followers_counts']),
+      isVerified: value['isVerified'] == true,
+    );
+  }
+}
+
 class SearchPage {
   final List<Track> tracks;
   final List<Album> albums;
+  final List<AnchorSearchResult> users;
   final int page, pageSize, total;
   final String kind;
   SearchPage({
     this.tracks = const [],
     this.albums = const [],
+    this.users = const [],
     required this.page,
     required this.pageSize,
     required this.total,

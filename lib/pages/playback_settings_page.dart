@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../api/xmly_client.dart';
+import '../api/xmly_experience.dart';
 import '../common/widgets/app_header.dart';
 import '../common/widgets/local_panel.dart';
 import '../models/xmly_models.dart';
@@ -57,6 +59,65 @@ Future<void> persistPlaybackSetting(
       throw const FormatException('同步设置无效');
   });
   await runtime.player.applySettings(updateSource: key == 'listenAndDownload');
+  runtime.changed();
+}
+
+/// Imports both values together, rejecting an outdated preview before any write.
+Future<void> persistAlbumSkipSettings(
+  AppRuntime runtime,
+  String albumId, {
+  required int skipIntroSeconds,
+  required int skipOutroSeconds,
+  required XmlyClient expectedClient,
+  required String expectedIdentity,
+  required String expectedCacheIdentity,
+  required Object? expectedSkipIntroSeconds,
+  required Object? expectedSkipOutroSeconds,
+  required bool Function() isCurrent,
+}) async {
+  AppLog.instance.trace(
+    'lib/pages/playback_settings_page.dart::persistAlbumSkipSettings',
+  );
+  xmlyIdentifier(albumId);
+  if (skipIntroSeconds < 0 ||
+      skipIntroSeconds > 3600 ||
+      skipOutroSeconds < 0 ||
+      skipOutroSeconds > 3600) {
+    throw const FormatException('片头和片尾必须为 0–3600 的整数秒');
+  }
+  await runtime.storage.transaction((state) {
+    AppLog.instance.trace(
+      'lib/pages/playback_settings_page.dart::persistAlbumSkipSettings.closure#1',
+    );
+    final settings = state['settings'] as Map;
+    final existing =
+        (settings['albumOverrides'] as Map?)?[albumId] as Map? ?? const {};
+    if (!isCurrent() ||
+        !identical(runtime.client, expectedClient) ||
+        !expectedClient.accountAvailable ||
+        expectedClient.identity != expectedIdentity ||
+        expectedClient.cacheIdentity != expectedCacheIdentity ||
+        existing['skipIntroSeconds'] != expectedSkipIntroSeconds ||
+        existing['skipOutroSeconds'] != expectedSkipOutroSeconds) {
+      throw const XmlyException('skip_recommendation_stale', '设置已变化，请重新获取建议');
+    }
+    final overrides = settings.putIfAbsent('albumOverrides', () {
+      AppLog.instance.trace(
+        'lib/pages/playback_settings_page.dart::persistAlbumSkipSettings.closure#1.closure#1',
+      );
+      return <String, dynamic>{};
+    }) as Map;
+    final target = overrides.putIfAbsent(albumId, () {
+      AppLog.instance.trace(
+        'lib/pages/playback_settings_page.dart::persistAlbumSkipSettings.closure#1.closure#2',
+      );
+      return <String, dynamic>{};
+    }) as Map;
+    target['skipIntroSeconds'] = skipIntroSeconds;
+    target['skipOutroSeconds'] = skipOutroSeconds;
+    PlaybackSettings.resolve(settings['playback'] as Map? ?? const {}, target);
+  });
+  await runtime.player.applySettings();
   runtime.changed();
 }
 
@@ -219,6 +280,55 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
   String? _error;
   String? _historyResult;
   final Map<String, double> _drafts = {};
+  int _recommendationGeneration = 0;
+  bool Function()? _recommendationCurrent;
+  String? _skipResult;
+
+  @override
+  void initState() {
+    AppLog.instance.trace(
+      'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.initState',
+    );
+    super.initState();
+    widget.runtime.addListener(_invalidateRecommendation);
+  }
+
+  @override
+  void didUpdateWidget(covariant PlaybackSettingsPage oldWidget) {
+    AppLog.instance.trace(
+      'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.didUpdateWidget',
+    );
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.runtime != widget.runtime) {
+      oldWidget.runtime.removeListener(_invalidateRecommendation);
+      widget.runtime.addListener(_invalidateRecommendation);
+    }
+    if (oldWidget.runtime != widget.runtime ||
+        oldWidget.albumId != widget.albumId) {
+      _recommendationGeneration++;
+      _skipResult = null;
+    }
+  }
+
+  void _invalidateRecommendation() {
+    AppLog.instance.trace(
+      'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._invalidateRecommendation',
+    );
+    if (_recommendationCurrent?.call() == false) {
+      _recommendationGeneration++;
+    }
+  }
+
+  @override
+  void dispose() {
+    AppLog.instance.trace(
+      'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.dispose',
+    );
+    _recommendationGeneration++;
+    _recommendationCurrent = null;
+    widget.runtime.removeListener(_invalidateRecommendation);
+    super.dispose();
+  }
 
   Map get _settings {
     AppLog.instance.trace(
@@ -240,6 +350,183 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     );
     return (_settings['albumOverrides'] as Map?)?[widget.albumId] as Map? ??
         const {};
+  }
+
+  Future<void> _getSkipRecommendation() {
+    AppLog.instance.trace(
+      'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._getSkipRecommendation',
+    );
+    return AppLog.instance.runWithErrorScope(() async {
+      AppLog.instance.trace(
+        'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._getSkipRecommendation.closure#1',
+      );
+      final runtime = widget.runtime;
+      final albumId = widget.albumId;
+      if (_busy || albumId == null) return;
+      final client = runtime.client;
+      if (!client.accountAvailable) {
+        setState(() {
+          AppLog.instance.trace(
+            'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._getSkipRecommendation.closure#1.closure#1',
+          );
+          _skipResult = '登录后可获取建议';
+        });
+        return;
+      }
+      final generation = ++_recommendationGeneration;
+      final identity = client.identity;
+      final cacheIdentity = client.cacheIdentity;
+      final originalIntro = _album['skipIntroSeconds'];
+      final originalOutro = _album['skipOutroSeconds'];
+      bool current() {
+        AppLog.instance.trace(
+          'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._getSkipRecommendation.closure#1.current',
+        );
+        return mounted &&
+            generation == _recommendationGeneration &&
+            identical(widget.runtime, runtime) &&
+            widget.albumId == albumId &&
+            identical(runtime.client, client) &&
+            client.accountAvailable &&
+            client.identity == identity &&
+            client.cacheIdentity == cacheIdentity &&
+            _album['skipIntroSeconds'] == originalIntro &&
+            _album['skipOutroSeconds'] == originalOutro;
+      }
+
+      _recommendationCurrent = current;
+      setState(() {
+        AppLog.instance.trace(
+          'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._getSkipRecommendation.closure#1.closure#2',
+        );
+        _busy = true;
+        _error = null;
+        _skipResult = null;
+      });
+      widget.onSavingChanged?.call(true);
+      var applying = false;
+      try {
+        final recommendation = await XmlyExperience(client)
+            .albumSkipRecommendation(albumId);
+        if (!current()) return;
+        if (recommendation == null) {
+          setState(() {
+            AppLog.instance.trace(
+              'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._getSkipRecommendation.closure#1.closure#3',
+            );
+            _skipResult = '暂无建议';
+          });
+          return;
+        }
+        final apply = await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            AppLog.instance.trace(
+              'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._getSkipRecommendation.closure#1.closure#4',
+            );
+            return AlertDialog(
+              title: const Text('片头片尾建议'),
+              content: SingleChildScrollView(
+                child: Text(
+                  '跳过片头：${recommendation.skipIntroSeconds} 秒\n'
+                  '跳过片尾：${recommendation.skipOutroSeconds} 秒\n\n'
+                  '应用后会替换本专辑当前的片头和片尾设置。',
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    AppLog.instance.trace(
+                      'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._getSkipRecommendation.closure#1.closure#4.closure#1',
+                    );
+                    Navigator.pop(context, false);
+                  },
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    AppLog.instance.trace(
+                      'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._getSkipRecommendation.closure#1.closure#4.closure#2',
+                    );
+                    Navigator.pop(context, true);
+                  },
+                  child: const Text('应用到本专辑'),
+                ),
+              ],
+            );
+          },
+        );
+        if (apply != true || !current()) return;
+        applying = true;
+        await persistAlbumSkipSettings(
+          runtime,
+          albumId,
+          skipIntroSeconds: recommendation.skipIntroSeconds,
+          skipOutroSeconds: recommendation.skipOutroSeconds,
+          expectedClient: client,
+          expectedIdentity: identity,
+          expectedCacheIdentity: cacheIdentity,
+          expectedSkipIntroSeconds: originalIntro,
+          expectedSkipOutroSeconds: originalOutro,
+          isCurrent: current,
+        );
+        if (mounted && widget.runtime == runtime && widget.albumId == albumId) {
+          setState(() {
+            AppLog.instance.trace(
+              'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._getSkipRecommendation.closure#1.closure#5',
+            );
+            _skipResult = '已应用到本专辑';
+          });
+        }
+      } catch (error, stack) {
+        if (!mounted || widget.runtime != runtime || widget.albumId != albumId)
+          return;
+        if (error is XmlyException &&
+            error.code == 'skip_recommendation_stale') {
+          setState(() {
+            AppLog.instance.trace(
+              'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._getSkipRecommendation.closure#1.closure#6',
+            );
+            _skipResult = error.message;
+          });
+          return;
+        }
+        if (!applying && !current()) return;
+        if (error is! XmlyException &&
+            !(error is StorageException &&
+                const {'too_large', 'secret_in_state'}.contains(error.code)) &&
+            !AppLog.instance.errorWasRecorded(error)) {
+          AppLog.instance.write(
+            AppLogLevel.error,
+            'settings',
+            applying
+                ? 'Applying skip recommendation failed'
+                : 'Reading skip recommendation failed',
+            error: error,
+            stackTrace: stack,
+            promptUser: applying,
+          );
+        }
+        setState(() {
+          AppLog.instance.trace(
+            'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._getSkipRecommendation.closure#1.closure#7',
+          );
+          _error = applying ? '设置保存或应用失败，请重试' : null;
+          _skipResult = applying ? null : '暂时无法获取建议';
+        });
+      } finally {
+        _recommendationCurrent = null;
+        if (mounted) {
+          setState(() {
+            AppLog.instance.trace(
+              'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._getSkipRecommendation.closure#1.closure#8',
+            );
+            _busy = false;
+          });
+          widget.onSavingChanged?.call(false);
+        }
+      }
+    });
   }
 
   String _source(String key) {
@@ -927,6 +1214,31 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                       0,
                       3600,
                     ),
+                    if (widget.albumId != null) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: OutlinedButton.icon(
+                            key: const ValueKey('getSkipRecommendation'),
+                            onPressed: _busy ? null : _getSkipRecommendation,
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size(48, 48),
+                            ),
+                            icon: const Icon(Icons.auto_fix_high_outlined),
+                            label: const Text('获取建议'),
+                          ),
+                        ),
+                      ),
+                      if (_skipResult != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                          child: Text(
+                            _skipResult!,
+                            key: const ValueKey('skipRecommendationResult'),
+                          ),
+                        ),
+                    ],
                     if (!widget.quick) ...[
                       _number(
                         'seekBackwardSeconds',

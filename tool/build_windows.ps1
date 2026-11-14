@@ -158,6 +158,8 @@ function Tool-Identity([string]$Executable, [string]$Argument) {
 function Assert-ProjectClientsStopped {
     $prefix = $ProjectRoot.TrimEnd('\') + '\'
     foreach ($item in Get-CimInstance -ClassName Win32_Process -Filter "Name='XMPlus.exe' OR Name='xmly_flutter.exe'") {
+        $process = Get-Process -Id $item.ProcessId -ErrorAction SilentlyContinue
+        if ($null -eq $process -or $process.HasExited) { continue }
         $path = [string]$item.ExecutablePath
         if (-not $path) { throw "Cannot identify the application at PID $($item.ProcessId)." }
         if ($path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {

@@ -776,6 +776,9 @@ class ConfigArchive {
 
     if (settings.containsKey('autoClaim') && settings['autoClaim'] is! bool)
       throw const FormatException();
+    if (settings.containsKey('showHotWords') &&
+        settings['showHotWords'] is! bool)
+      throw const FormatException();
     final appearance = settings['appearance'];
     if (settings.containsKey('catalogueAscending') &&
         settings['catalogueAscending'] is! bool) {

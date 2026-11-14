@@ -344,6 +344,7 @@ class AlbumCache extends ChangeNotifier {
                 : album.intro,
             coverUrl: album.coverUrl ?? previousAlbum?.coverUrl,
             total: album.total,
+            raw: album.raw,
           );
           // A complete observation replaces the catalogue. Partial observations
           // replace only their known positions, in either display order; keep the
@@ -508,10 +509,11 @@ class AlbumCache extends ChangeNotifier {
     }
     if (value['total'] is! int || (value['total'] as int) < 0)
       throw const FormatException('Invalid album total');
+    final raw = xmlyMap(value['raw']);
     return Album.fromJson({
       ...value,
       'cover_url': _publicCover(value['cover_url']),
-      'raw': <String, dynamic>{},
+      'raw': {'uid': raw['uid'], 'avatarPath': _publicCover(raw['avatarPath'])},
     });
   }
 

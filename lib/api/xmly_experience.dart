@@ -119,6 +119,39 @@ class AlbumIntroductionData {
   final HomeSection recommendations;
 }
 
+class AlbumSkipRecommendation {
+  const AlbumSkipRecommendation({
+    required this.skipIntroSeconds,
+    required this.skipOutroSeconds,
+  });
+
+  factory AlbumSkipRecommendation.fromApi(Map<String, dynamic> recommendation) {
+    AppLog.instance.trace(
+      'lib/api/xmly_experience.dart::AlbumSkipRecommendation.factory:fromApi',
+    );
+    int seconds(Object? value) {
+      AppLog.instance.trace(
+        'lib/api/xmly_experience.dart::AlbumSkipRecommendation.factory:fromApi.seconds',
+      );
+      if (value is! num || !value.isFinite || value < 0) {
+        throw const XmlyException('invalid_skip_recommendation', '暂时无法获取建议');
+      }
+      final rounded = (value / 1000).round();
+      if (rounded > 3600) {
+        throw const XmlyException('invalid_skip_recommendation', '暂时无法获取建议');
+      }
+      return rounded;
+    }
+
+    return AlbumSkipRecommendation(
+      skipIntroSeconds: seconds(recommendation['recommendHeadSkip']),
+      skipOutroSeconds: seconds(recommendation['recommendHeadTail']),
+    );
+  }
+
+  final int skipIntroSeconds, skipOutroSeconds;
+}
+
 /// Only the five most recent, bounded page summaries escape a membership scan.
 /// HMAC key never leaves this object, so album markers cannot link scans.
 class _SubscriptionPagination {
@@ -258,6 +291,33 @@ class XmlyExperience {
   static final _subscriptionMembership = Expando<_SubscriptionMembership>(
     'subscriptionMembership',
   );
+
+  Future<AlbumSkipRecommendation?> albumSkipRecommendation(
+    String albumId,
+  ) async {
+    AppLog.instance.trace(
+      'lib/api/xmly_experience.dart::XmlyExperience.albumSkipRecommendation',
+    );
+    client.context();
+    final response = await client.request(
+      'GET',
+      XmlyClient.mobile,
+      '/mobile-settings/v1/skipsegment/get/$_stamp',
+      query: {'albumId': xmlyIdentifier(albumId), 'isShowRecommend': true},
+      account: true,
+      signed: false,
+    );
+    final data = response['data'];
+    if (data is! Map || !data.containsKey('recommendSkip')) {
+      throw const XmlyException('invalid_skip_recommendation', '暂时无法获取建议');
+    }
+    final recommendation = data['recommendSkip'];
+    if (recommendation == null) return null;
+    if (recommendation is! Map) {
+      throw const XmlyException('invalid_skip_recommendation', '暂时无法获取建议');
+    }
+    return AlbumSkipRecommendation.fromApi(xmlyMap(recommendation));
+  }
 
   Future<AlbumIntroductionData> albumIntroduction(String albumId) async {
     AppLog.instance.trace(

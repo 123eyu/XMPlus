@@ -94,7 +94,7 @@ class AppTabButton extends StatelessWidget {
   }
 }
 
-/// Keeps category rows at one height and makes overflow visible on desktop.
+/// Keeps category rows at one height with horizontal scrolling.
 class AppTabStrip extends StatefulWidget {
   const AppTabStrip({required this.children, super.key});
 
@@ -129,20 +129,11 @@ class _AppTabStripState extends State<AppTabStrip> {
     );
     return ScrollConfiguration(
       behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-      child: Scrollbar(
+      child: SingleChildScrollView(
         controller: _scroll,
-        thumbVisibility: true,
-        interactive: true,
-        scrollbarOrientation: ScrollbarOrientation.bottom,
-        thickness: 3,
-        radius: const Radius.circular(3),
-        child: SingleChildScrollView(
-          controller: _scroll,
-          primary: false,
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(mainAxisSize: MainAxisSize.min, children: widget.children),
-        ),
+        primary: false,
+        scrollDirection: Axis.horizontal,
+        child: Row(mainAxisSize: MainAxisSize.min, children: widget.children),
       ),
     );
   }

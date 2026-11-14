@@ -58,12 +58,309 @@ class TrackCommentPage {
   final bool hasMore;
 }
 
+class AlbumReview {
+  const AlbumReview({
+    required this.id,
+    required this.author,
+    required this.content,
+    required this.createdAt,
+    required this.replyCount,
+    this.uid = '',
+    this.avatarUrl,
+  });
+
+  factory AlbumReview.fromApi(Map<String, dynamic> row) {
+    AppLog.instance.trace(
+      'lib/api/xmly_comments.dart::AlbumReview.factory:fromApi',
+    );
+    if (row['content'] is! String || row['createdAt'] is! int) {
+      throw XmlyComments._invalid;
+    }
+    return AlbumReview(
+      id: xmlyIdentifier('${row['commentId'] ?? ''}'),
+      uid: XmlyComments._reviewUid(row['uid']),
+      author: XmlyComments._text(row['nickname']),
+      content: row['content'] as String,
+      createdAt: XmlyComments._createdAt(row['createdAt']),
+      replyCount: XmlyComments._count(row['replyCount'] ?? 0),
+      avatarUrl: XmlyComments._avatar(row['smallHeader']),
+    );
+  }
+
+  final String id, author, content, createdAt, uid;
+  final Uri? avatarUrl;
+  final int replyCount;
+}
+
+class AlbumReviewPage {
+  AlbumReviewPage({
+    required List<AlbumReview> comments,
+    required this.page,
+    required this.pageSize,
+    required this.maxPageId,
+    required this.total,
+    this.albumScore,
+    this.allCommentsCount,
+    this.albumValidScoreNum,
+  }) : comments = List.unmodifiable(comments) {
+    AppLog.instance.trace('lib/api/xmly_comments.dart::AlbumReviewPage.new');
+  }
+
+  factory AlbumReviewPage.fromApi(
+    Map<String, dynamic> data, {
+    required int page,
+  }) {
+    AppLog.instance.trace(
+      'lib/api/xmly_comments.dart::AlbumReviewPage.factory:fromApi',
+    );
+    final pagination = xmlyMap(data['comments']);
+    XmlyComments._reviewPagination(pagination, page, 30);
+    final comments = <AlbumReview>[];
+    final ids = <String>{};
+    void append(Object? raw) {
+      AppLog.instance.trace(
+        'lib/api/xmly_comments.dart::AlbumReviewPage.factory:fromApi.append',
+      );
+      if (raw is! Map) throw XmlyComments._invalid;
+      final review = AlbumReview.fromApi(xmlyMap(raw));
+      if (ids.add(review.id)) comments.add(review);
+    }
+
+    if (page == 1 && data['ToppedComment'] != null) {
+      append(data['ToppedComment']);
+    }
+    for (final raw in pagination['list'] as List) {
+      append(raw);
+    }
+    final score = data['albumScore'];
+    if (score != null && (score is! num || !score.isFinite || score < 0)) {
+      throw XmlyComments._invalid;
+    }
+    return AlbumReviewPage(
+      comments: comments,
+      page: page,
+      pageSize: pagination['pageSize'] as int,
+      maxPageId: pagination['maxPageId'] as int,
+      total: pagination['totalCount'] as int,
+      albumScore: (score as num?)?.toDouble(),
+      allCommentsCount: data['allCommentsCount'] == null
+          ? null
+          : XmlyComments._count(data['allCommentsCount']),
+      albumValidScoreNum: data['albumValidScoreNum'] == null
+          ? null
+          : XmlyComments._count(data['albumValidScoreNum']),
+    );
+  }
+
+  final List<AlbumReview> comments;
+  final int page, pageSize, maxPageId, total;
+  final double? albumScore;
+  final int? allCommentsCount, albumValidScoreNum;
+  bool get hasMore {
+    AppLog.instance.trace(
+      'lib/api/xmly_comments.dart::AlbumReviewPage.hasMore.get',
+    );
+    return page < maxPageId;
+  }
+}
+
+class AlbumReviewReply {
+  const AlbumReviewReply({
+    required this.id,
+    required this.commentId,
+    required this.author,
+    required this.content,
+    required this.createdAt,
+    this.uid = '',
+    this.avatarUrl,
+    this.parentReplyId = '',
+    this.parentReplyNickName = '',
+  });
+
+  factory AlbumReviewReply.fromApi(
+    Map<String, dynamic> row, {
+    required String commentId,
+  }) {
+    AppLog.instance.trace(
+      'lib/api/xmly_comments.dart::AlbumReviewReply.factory:fromApi',
+    );
+    final rootId = xmlyIdentifier(commentId);
+    if (xmlyIdentifier('${row['commentId'] ?? ''}') != rootId ||
+        row['content'] is! String ||
+        row['createdAt'] is! int) {
+      throw XmlyComments._invalid;
+    }
+    return AlbumReviewReply(
+      id: xmlyIdentifier('${row['replyId'] ?? ''}'),
+      commentId: rootId,
+      uid: XmlyComments._reviewUid(row['uid']),
+      author: XmlyComments._text(row['nickname']),
+      content: row['content'] as String,
+      createdAt: XmlyComments._createdAt(row['createdAt']),
+      avatarUrl: XmlyComments._avatar(row['smallHeader']),
+      parentReplyId: XmlyComments._reviewUid(row['parentReplyId']),
+      parentReplyNickName: XmlyComments._text(row['parentReplyNickName']),
+    );
+  }
+
+  final String id, commentId, author, content, createdAt, uid;
+  final String parentReplyId, parentReplyNickName;
+  final Uri? avatarUrl;
+}
+
+class AlbumReviewRepliesPage {
+  AlbumReviewRepliesPage({
+    required this.root,
+    required List<AlbumReviewReply> replies,
+    required this.page,
+    required this.pageSize,
+    required this.maxPageId,
+    required this.total,
+  }) : replies = List.unmodifiable(replies) {
+    AppLog.instance.trace(
+      'lib/api/xmly_comments.dart::AlbumReviewRepliesPage.new',
+    );
+  }
+
+  factory AlbumReviewRepliesPage.fromApi(
+    Map<String, dynamic> data, {
+    required String commentId,
+    required int page,
+  }) {
+    AppLog.instance.trace(
+      'lib/api/xmly_comments.dart::AlbumReviewRepliesPage.factory:fromApi',
+    );
+    final rootId = xmlyIdentifier(commentId);
+    AlbumReview? root;
+    if (data['RootComment'] != null) {
+      if (data['RootComment'] is! Map) throw XmlyComments._invalid;
+      root = AlbumReview.fromApi(xmlyMap(data['RootComment']));
+      if (root.id != rootId) throw XmlyComments._invalid;
+    }
+    final pagination = xmlyMap(data['commentReplys']);
+    XmlyComments._reviewPagination(pagination, page, 20);
+    final replies = <AlbumReviewReply>[];
+    final ids = <String>{};
+    for (final raw in pagination['list'] as List) {
+      if (raw is! Map) throw XmlyComments._invalid;
+      final reply = AlbumReviewReply.fromApi(xmlyMap(raw), commentId: rootId);
+      if (ids.add(reply.id)) replies.add(reply);
+    }
+    return AlbumReviewRepliesPage(
+      root: root,
+      replies: replies,
+      page: page,
+      pageSize: pagination['pageSize'] as int,
+      maxPageId: pagination['maxPageId'] as int,
+      total: pagination['totalCount'] as int,
+    );
+  }
+
+  final AlbumReview? root;
+  final List<AlbumReviewReply> replies;
+  final int page, pageSize, maxPageId, total;
+  bool get hasMore {
+    AppLog.instance.trace(
+      'lib/api/xmly_comments.dart::AlbumReviewRepliesPage.hasMore.get',
+    );
+    return page < maxPageId;
+  }
+}
+
 class XmlyComments {
   XmlyComments(this.client) {
     AppLog.instance.trace('lib/api/xmly_comments.dart::XmlyComments.new');
   }
   final XmlyClient client;
   static const _invalid = XmlyException('invalid_comments', '评论列表格式无效，请重试');
+
+  static String _reviewUid(Object? value) {
+    AppLog.instance.trace(
+      'lib/api/xmly_comments.dart::XmlyComments._reviewUid',
+    );
+    return value == null || value == 0 || value == '0'
+        ? ''
+        : xmlyIdentifier('$value');
+  }
+
+  static void _reviewPagination(
+    Map<String, dynamic> data,
+    int page,
+    int requestedSize,
+  ) {
+    AppLog.instance.trace(
+      'lib/api/xmly_comments.dart::XmlyComments._reviewPagination',
+    );
+    final pageId = _count(data['pageId']);
+    final size = _count(data['pageSize']);
+    final pages = _count(data['maxPageId']);
+    _count(data['totalCount']);
+    final list = data['list'];
+    if (pageId != page ||
+        size < 1 ||
+        size > requestedSize ||
+        (pages > 0 && page > pages) ||
+        list is! List ||
+        list.length > size) {
+      throw _invalid;
+    }
+  }
+
+  Future<AlbumReviewPage> loadAlbumReviews(
+    String albumId, {
+    int page = 1,
+  }) async {
+    AppLog.instance.trace(
+      'lib/api/xmly_comments.dart::XmlyComments.loadAlbumReviews',
+    );
+    if (page < 1 || page > 10000) throw _invalid;
+    final response = await client.request(
+      'GET',
+      XmlyClient.mobile,
+      '/album-comment-mobile/web/album/comment/list/query/${DateTime.now().millisecondsSinceEpoch}',
+      query: {
+        'albumId': xmlyIdentifier(albumId),
+        'pageId': page,
+        'pageSize': 30,
+        'order': 'content-score-desc',
+      },
+      account: false,
+      signed: false,
+    );
+    if (response['data'] is! Map) throw _invalid;
+    return AlbumReviewPage.fromApi(xmlyMap(response['data']), page: page);
+  }
+
+  Future<AlbumReviewRepliesPage> loadAlbumReviewReplies(
+    String albumId,
+    String commentId, {
+    int page = 1,
+  }) async {
+    AppLog.instance.trace(
+      'lib/api/xmly_comments.dart::XmlyComments.loadAlbumReviewReplies',
+    );
+    if (page < 1 || page > 10000) throw _invalid;
+    final rootId = xmlyIdentifier(commentId);
+    final response = await client.request(
+      'GET',
+      XmlyClient.mobile,
+      '/album-comment-mobile/ipad/album/comment/reply/list/query/${DateTime.now().millisecondsSinceEpoch}',
+      query: {
+        'albumId': xmlyIdentifier(albumId),
+        'commentId': rootId,
+        'pageId': page,
+        'pageSize': 20,
+      },
+      account: false,
+      signed: false,
+    );
+    if (response['data'] is! Map) throw _invalid;
+    return AlbumReviewRepliesPage.fromApi(
+      xmlyMap(response['data']),
+      commentId: rootId,
+      page: page,
+    );
+  }
 
   static int _count(Object? value) {
     AppLog.instance.trace('lib/api/xmly_comments.dart::XmlyComments._count');

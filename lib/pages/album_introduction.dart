@@ -15,6 +15,7 @@ class AlbumIntroduction extends StatelessWidget {
     required this.client,
     required this.albumId,
     required this.onOpenAlbum,
+    this.subscriptionAction,
     super.key,
   });
 
@@ -22,6 +23,7 @@ class AlbumIntroduction extends StatelessWidget {
   final XmlyClient client;
   final String albumId;
   final ValueChanged<Album> onOpenAlbum;
+  final Widget? subscriptionAction;
 
   @override
   Widget build(BuildContext context) {
@@ -34,36 +36,51 @@ class AlbumIntroduction extends StatelessWidget {
       children: [
         if (text.trim().isNotEmpty)
           Text(text, maxLines: 3, overflow: TextOverflow.ellipsis),
-        TextButton.icon(
-          onPressed: () {
-            AppLog.instance.trace(
-              'lib/pages/album_introduction.dart::AlbumIntroduction.build.closure#1',
-            );
-            showLocalPanel<void>(
-              context: context,
-              title: '专辑简介',
-              width: 640,
-              builder: (context) {
-                AppLog.instance.trace(
-                  'lib/pages/album_introduction.dart::AlbumIntroduction.build.closure#1.closure#1',
-                );
-                return _CompleteIntroduction(
-                  client: client,
-                  albumId: albumId,
-                  onOpenAlbum: (album) {
+        TextButtonTheme(
+          data: TextButtonThemeData(
+            style: (TextButtonTheme.of(context).style ?? const ButtonStyle())
+                .merge(TextButton.styleFrom(minimumSize: const Size(48, 48))),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: TextButton.icon(
+                  onPressed: () {
                     AppLog.instance.trace(
-                      "lib/pages/album_introduction.dart::AlbumIntroduction.build.closure#1.closure#1.closure#1",
+                      'lib/pages/album_introduction.dart::AlbumIntroduction.build.closure#1',
                     );
+                    showLocalPanel<void>(
+                      context: context,
+                      title: '专辑简介',
+                      width: 640,
+                      builder: (context) {
+                        AppLog.instance.trace(
+                          'lib/pages/album_introduction.dart::AlbumIntroduction.build.closure#1.closure#1',
+                        );
+                        return _CompleteIntroduction(
+                          client: client,
+                          albumId: albumId,
+                          onOpenAlbum: (album) {
+                            AppLog.instance.trace(
+                              "lib/pages/album_introduction.dart::AlbumIntroduction.build.closure#1.closure#1.closure#1",
+                            );
 
-                    Navigator.of(context).pop();
-                    onOpenAlbum(album);
+                            Navigator.of(context).pop();
+                            onOpenAlbum(album);
+                          },
+                        );
+                      },
+                    );
                   },
-                );
-              },
-            );
-          },
-          icon: const Icon(Icons.notes_rounded, size: 18),
-          label: const Text('查看完整简介'),
+                  icon: const Icon(Icons.notes_rounded, size: 18),
+                  label: const Text('查看完整简介'),
+                ),
+              ),
+              if (subscriptionAction != null)
+                Flexible(child: subscriptionAction!),
+            ],
+          ),
         ),
       ],
     );

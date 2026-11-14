@@ -21,6 +21,8 @@ class XmlyClient {
   static const mobile = 'https://mobile.ximalaya.com';
   static const cachedAlbumOrigin = 'https://mobwsa.ximalaya.com';
   static const searchOrigin = 'https://www.ximalaya.com';
+  static const pcOrigin = 'https://pc.ximalaya.com';
+  static const hotWordsOrigin = 'https://search.ximalaya.com';
   static const collector = 'https://xdcs-collector.ximalaya.com';
   static const welfare = 'https://m.ximalaya.com';
   static const paidOrigin = 'https://mpaywsa.ximalaya.com';
@@ -178,6 +180,22 @@ class XmlyClient {
             '/revision/track/simple',
             '/revision/comment/queryReplies',
           }.contains(path);
+    if (origin == pcOrigin)
+      return method == 'GET' &&
+          const {
+            '/simple-revision-for-pc/user/basic',
+            '/simple-revision-for-pc/user/pub',
+            '/simple-revision-for-pc/user/track',
+            '/simple-revision-for-pc/metadata/v2/group/all',
+            '/simple-revision-for-pc/metadata/v2/group/channels',
+            '/simple-revision-for-pc/metadata/v2/channel/info',
+            '/simple-revision-for-pc/metadata/v2/channel/albums',
+            '/simple-revision-for-pc/rank/v4/rankTabs',
+            '/simple-revision-for-pc/rank/v4/element',
+            '/simple-revision-for-pc/play/v1/show',
+          }.contains(path);
+    if (origin == hotWordsOrigin)
+      return method == 'GET' && path == '/hotWordBillboard/list/2.0';
     if (origin == collector)
       return method == 'POST' && path == '/nyx/v1/history/merge/android';
     if (origin == welfare)
@@ -215,6 +233,14 @@ class XmlyClient {
             RegExp(r'^/fmobile-album/album/rec/detail/ts-[0-9]+$')
                 .hasMatch(path) ||
             RegExp(r'^/comment-mobile/v1/track/comment/[0-9]+$')
+                .hasMatch(path) ||
+            RegExp(
+              r'^/album-comment-mobile/web/album/comment/list/query/[0-9]+$',
+            ).hasMatch(path) ||
+            RegExp(
+              r'^/album-comment-mobile/ipad/album/comment/reply/list/query/[0-9]+$',
+            ).hasMatch(path) ||
+            RegExp(r'^/mobile-settings/v1/skipsegment/get/[0-9]+$')
                 .hasMatch(path) ||
             RegExp(r'^/fmobile-user/homePage/ts-[0-9]+$').hasMatch(path) ||
             RegExp(r'^/lite-mobile/index/v1/(?:subPages|modules)/[0-9]+$')
@@ -401,7 +427,8 @@ class XmlyClient {
         throw const XmlyException('client_closed', '连接已关闭', definitive: true);
       method = method.toUpperCase();
       if (!_endpoint(method, origin, path) ||
-          (account && origin == searchOrigin))
+          (account &&
+              const {searchOrigin, pcOrigin, hotWordsOrigin}.contains(origin)))
         throw const XmlyException(
           'invalid_endpoint',
           '请求地址不受支持',
@@ -738,7 +765,10 @@ class XmlyClient {
           origin == mobile &&
           path == '/favourite-business/favorite/track' &&
           data?['favorite'] == 'true';
-      if (code != (origin == searchOrigin ? '200' : '0') && !alreadyLiked) {
+      final successCode = origin == searchOrigin || origin == pcOrigin
+          ? '200'
+          : '0';
+      if (code != successCode && !alreadyLiked) {
         diagnostic.apiRejected = true;
         try {
           if (code == '429') _rateLimit(origin, const Duration(seconds: 30));
@@ -839,7 +869,7 @@ class XmlyClient {
 
     if (query.trim().isEmpty ||
         query.length > 200 ||
-        !['track', 'album'].contains(kind))
+        !['track', 'album', 'user'].contains(kind))
       throw const XmlyException(
         'invalid_search',
         '请输入 1..200 字的关键词',
@@ -852,6 +882,7 @@ class XmlyClient {
       searchOrigin,
       '/revision/search',
       account: false,
+      signed: false,
       query: {
         'kw': query.trim(),
         'core': kind,
@@ -869,6 +900,7 @@ class XmlyClient {
       throw const XmlyException('invalid_catalogue', '搜索结果无效');
     final docs = (values['docs'] as List).take(pageSize);
     final tracks = <Track>[], albums = <Album>[];
+    final users = <AnchorSearchResult>[];
     for (final raw in docs) {
       if (raw is! Map) throw const XmlyException('invalid_catalogue', '搜索结果无效');
       if (kind == 'album') {
@@ -878,6 +910,8 @@ class XmlyClient {
         while (_albums.length > 512) {
           _albums.remove(_albums.keys.first);
         }
+      } else if (kind == 'user') {
+        users.add(AnchorSearchResult.fromApi(xmlyMap(raw)));
       } else {
         final item = Track.fromApi(xmlyMap(raw));
         tracks.add(item);
@@ -887,6 +921,7 @@ class XmlyClient {
     return SearchPage(
       tracks: tracks,
       albums: albums,
+      users: users,
       page: page,
       pageSize: pageSize,
       total: _total(values['numFound'] ?? 0),

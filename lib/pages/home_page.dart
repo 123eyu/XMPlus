@@ -12,6 +12,7 @@ import '../models/xmly_models.dart';
 import '../services/app_log.dart';
 import '../services/app_runtime.dart';
 import 'catalogue_page.dart';
+import 'discovery_browse_page.dart';
 import 'home_album_section.dart';
 
 void _recordHomeError(
@@ -97,6 +98,8 @@ class _HomePageState extends State<HomePage> {
   bool _busy = true;
   String? _error;
   late String _identity;
+  int _section = 0;
+  final Set<int> _visitedSections = {0};
 
   @override
   void initState() {
@@ -429,10 +432,76 @@ class _HomePageState extends State<HomePage> {
     AppLog.instance.trace("lib/pages/home_page.dart::_HomePageState.build");
 
     final tabsCurrent = _tabsPageId == _pageId;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          child: _discoveryHeader(),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: AppTabStrip(
+            children: [
+              for (final (index, label) in const ['推荐', '分类', '排行'].indexed)
+                AppTabButton(
+                  label: label,
+                  selected: _section == index,
+                  onPressed: () {
+                    AppLog.instance.trace(
+                      'lib/pages/home_page.dart::_HomePageState.build.closure#1',
+                    );
+                    setState(() {
+                      AppLog.instance.trace(
+                        'lib/pages/home_page.dart::_HomePageState.build.closure#1.closure#1',
+                      );
+                      _section = index;
+                      _visitedSections.add(index);
+                    });
+                  },
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              for (final index in _visitedSections)
+                Offstage(
+                  key: ValueKey(index),
+                  offstage: _section != index,
+                  child: TickerMode(
+                    enabled: _section == index,
+                    child: switch (index) {
+                      1 => DiscoveryCategoriesView(
+                        runtime: widget.runtime,
+                        onDownload: widget.onDownload,
+                        onPlayAlbum: widget.onPlayAlbum,
+                      ),
+                      2 => DiscoveryRankingView(
+                        runtime: widget.runtime,
+                        onDownload: widget.onDownload,
+                        onPlayAlbum: widget.onPlayAlbum,
+                      ),
+                      _ => _recommendations(tabsCurrent),
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _recommendations(bool tabsCurrent) {
+    AppLog.instance.trace(
+      'lib/pages/home_page.dart::_HomePageState._recommendations',
+    );
     return LayoutBuilder(
       builder: (context, constraints) {
         AppLog.instance.trace(
-          "lib/pages/home_page.dart::_HomePageState.build.closure#1",
+          "lib/pages/home_page.dart::_HomePageState._recommendations.closure#1",
         );
 
         final horizontal = constraints.maxWidth < 360
@@ -451,7 +520,6 @@ class _HomePageState extends State<HomePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _discoveryHeader(),
                       if (_channels.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 16, bottom: 4),
@@ -472,7 +540,7 @@ class _HomePageState extends State<HomePage> {
                                       selected: channel.pageId == _pageId,
                                       onPressed: () {
                                         AppLog.instance.trace(
-                                          "lib/pages/home_page.dart::_HomePageState.build.closure#1.closure#1",
+                                          "lib/pages/home_page.dart::_HomePageState._recommendations.closure#1.closure#1",
                                         );
                                         if (channel.pageId != _pageId) {
                                           _loadHome(channel.pageId);
@@ -521,7 +589,7 @@ class _HomePageState extends State<HomePage> {
                                                   selected: tab.tabId == _tabId,
                                                   onPressed: () {
                                                     AppLog.instance.trace(
-                                                      "lib/pages/home_page.dart::_HomePageState.build.closure#1.closure#2",
+                                                      "lib/pages/home_page.dart::_HomePageState._recommendations.closure#1.closure#2",
                                                     );
                                                     if (tabsCurrent &&
                                                         tab.tabId != _tabId) {
@@ -579,7 +647,7 @@ class _HomePageState extends State<HomePage> {
                       ? _loadChannels
                       : () {
                           AppLog.instance.trace(
-                            "lib/pages/home_page.dart::_HomePageState.build.closure#1.closure#3",
+                            "lib/pages/home_page.dart::_HomePageState._recommendations.closure#1.closure#3",
                           );
                           _loadHome(_pageId!, tabId: _tabId);
                         },
@@ -627,15 +695,16 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 icon: const Icon(Icons.search, size: 20),
-                label: const AdaptiveText('搜索专辑、声音'),
+                label: const AdaptiveText('搜索专辑、声音、主播'),
               ),
             ),
             const SizedBox(width: 8),
-            IconButton(
-              tooltip: '刷新首页',
-              onPressed: _busy ? null : _loadChannels,
-              icon: const Icon(Icons.refresh_rounded),
-            ),
+            if (_section == 0)
+              IconButton(
+                tooltip: '刷新推荐',
+                onPressed: _busy ? null : _loadChannels,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
           ],
         );
         if (constraints.maxWidth <

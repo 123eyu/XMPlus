@@ -13,6 +13,7 @@ import '../common/widgets/adaptive_text.dart';
 import '../common/widgets/app_header.dart';
 import '../services/app_runtime.dart';
 import '../services/app_log.dart';
+import '../storage/app_storage.dart';
 import '../services/update_service.dart';
 import 'account_page.dart';
 import 'backup_page.dart';
@@ -28,6 +29,7 @@ enum _SettingsSection {
   download,
   media,
   playback,
+  discovery,
   appearance,
   backup,
   developer,
@@ -76,6 +78,11 @@ class _SettingsPageState extends State<SettingsPage> {
       section: _SettingsSection.playback,
     ),
     (
+      title: '搜索与发现',
+      icon: Icons.explore_outlined,
+      section: _SettingsSection.discovery,
+    ),
+    (
       title: '外观',
       icon: Icons.palette_outlined,
       section: _SettingsSection.appearance,
@@ -106,6 +113,7 @@ class _SettingsPageState extends State<SettingsPage> {
         runtime: widget.runtime,
         embedded: true,
       ),
+      _SettingsSection.discovery => _DiscoverySettings(runtime: widget.runtime),
       _SettingsSection.account => AccountPage(
         storage: widget.runtime.storage,
         accounts: widget.runtime.accounts,
@@ -217,6 +225,130 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             Expanded(child: _detail(_section)),
           ],
+        );
+      },
+    );
+  }
+}
+
+class _DiscoverySettings extends StatefulWidget {
+  const _DiscoverySettings({required this.runtime});
+
+  final AppRuntime runtime;
+
+  @override
+  State<_DiscoverySettings> createState() {
+    AppLog.instance.trace(
+      'lib/pages/settings_page.dart::_DiscoverySettings.createState',
+    );
+    return _DiscoverySettingsState();
+  }
+}
+
+class _DiscoverySettingsState extends State<_DiscoverySettings> {
+  bool _saving = false;
+  String? _error;
+  bool? _draft;
+
+  Future<void> _save(bool value) {
+    AppLog.instance.trace(
+      'lib/pages/settings_page.dart::_DiscoverySettingsState._save',
+    );
+    return AppLog.instance.runWithErrorScope(() async {
+      AppLog.instance.trace(
+        'lib/pages/settings_page.dart::_DiscoverySettingsState._save.closure#1',
+      );
+      if (_saving) return;
+      setState(() {
+        AppLog.instance.trace(
+          'lib/pages/settings_page.dart::_DiscoverySettingsState._save.closure#1.closure#1',
+        );
+        _saving = true;
+        _draft = value;
+        _error = null;
+      });
+      try {
+        await widget.runtime.setShowHotWords(value);
+      } catch (error, stack) {
+        if (!(error is StorageException &&
+                const {'too_large', 'secret_in_state'}.contains(error.code)) &&
+            !AppLog.instance.errorWasRecorded(error)) {
+          AppLog.instance.write(
+            AppLogLevel.error,
+            'settings',
+            'Saving discovery preference failed',
+            error: error,
+            stackTrace: stack,
+            promptUser: true,
+          );
+        }
+        if (mounted) {
+          setState(() {
+            AppLog.instance.trace(
+              'lib/pages/settings_page.dart::_DiscoverySettingsState._save.closure#1.closure#2',
+            );
+            _error = '设置保存失败，原设置已保留';
+          });
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            AppLog.instance.trace(
+              'lib/pages/settings_page.dart::_DiscoverySettingsState._save.closure#1.closure#3',
+            );
+            _saving = false;
+            _draft = null;
+          });
+        }
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      'lib/pages/settings_page.dart::_DiscoverySettingsState.build',
+    );
+    return ListenableBuilder(
+      listenable: widget.runtime,
+      builder: (context, _) {
+        AppLog.instance.trace(
+          'lib/pages/settings_page.dart::_DiscoverySettingsState.build.closure#1',
+        );
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 960),
+            child: ListView(
+              padding: EdgeInsets.all(
+                MediaQuery.sizeOf(context).width < 700 ? 12 : 24,
+              ),
+              children: [
+                AdaptiveText(
+                  '搜索与发现',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 24),
+                Card(
+                  child: SwitchListTile.adaptive(
+                    key: const ValueKey('showHotWords'),
+                    title: const Text('显示热搜'),
+                    value: _draft ?? widget.runtime.showHotWords,
+                    onChanged: _saving ? null : _save,
+                  ),
+                ),
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         );
       },
     );

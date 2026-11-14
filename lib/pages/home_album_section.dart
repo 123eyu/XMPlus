@@ -12,11 +12,13 @@ class HomeAlbumSection extends StatelessWidget {
   const HomeAlbumSection({
     required this.section,
     required this.onOpenAlbum,
+    this.showHeading = true,
     super.key,
   });
 
   final HomeSection section;
   final ValueChanged<Album>? onOpenAlbum;
+  final bool showHeading;
 
   @override
   Widget build(BuildContext context) {
@@ -29,18 +31,19 @@ class HomeAlbumSection extends StatelessWidget {
     final showCover = MediaQuery.sizeOf(context).width >= 320;
     return SliverMainAxisGroup(
       slivers: [
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 16, bottom: 8),
-            child: Text(
-              section.isRanking ? '排行榜 · ${section.title}' : section.title,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
+        if (showHeading)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 16, bottom: 8),
+              child: Text(
+                section.isRanking ? '排行榜 · ${section.title}' : section.title,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
-        ),
         SliverLayoutBuilder(
           builder: (context, constraints) {
             AppLog.instance.trace(
