@@ -39,7 +39,12 @@ class AlbumIntroduction extends StatelessWidget {
         TextButtonTheme(
           data: TextButtonThemeData(
             style: (TextButtonTheme.of(context).style ?? const ButtonStyle())
-                .merge(TextButton.styleFrom(minimumSize: const Size(48, 48))),
+                .merge(
+                  TextButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                    side: BorderSide.none,
+                  ),
+                ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

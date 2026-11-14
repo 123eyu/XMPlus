@@ -44,6 +44,7 @@ class AlbumReviewsPage extends StatefulWidget {
     required this.runtime,
     required this.albumId,
     this.albumTitle = '',
+    this.accountIdentity,
     this.onDownload,
     this.onPlayAlbum,
     super.key,
@@ -51,6 +52,7 @@ class AlbumReviewsPage extends StatefulWidget {
 
   final AppRuntime runtime;
   final String albumId, albumTitle;
+  final String? accountIdentity;
   final TrackDownload? onDownload;
   final AlbumPlayback? onPlayAlbum;
 
@@ -195,6 +197,7 @@ class _AlbumReviewsPageState extends State<AlbumReviewsPage> {
           return AnchorPage(
             runtime: widget.runtime,
             uid: uid,
+            accountIdentity: widget.accountIdentity,
             onDownload: widget.onDownload,
             onPlayAlbum: widget.onPlayAlbum,
           );

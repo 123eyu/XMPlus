@@ -4,6 +4,7 @@ import '../models/xmly_models.dart';
 import 'xmly_client.dart';
 import '../services/app_log.dart';
 import 'xmly_experience.dart' show HomeAlbumStats;
+import 'xmly_anchor.dart' show AnchorProfile;
 
 const _invalid = XmlyException('invalid_discovery', '喜马拉雅返回的内容格式无效');
 
@@ -161,37 +162,6 @@ DiscoveryPageResult<T> _page<T>(
   );
 }
 
-class AnchorProfile {
-  const AnchorProfile({
-    required this.uid,
-    required this.nickname,
-    this.avatarUrl,
-    this.description = '',
-    this.fansCount,
-    this.albumsCount,
-    this.tracksCount,
-  });
-
-  final String uid, nickname, description;
-  final Uri? avatarUrl;
-  final int? fansCount, albumsCount, tracksCount;
-
-  factory AnchorProfile.fromApi(Map<String, dynamic> data) {
-    AppLog.instance.trace(
-      'lib/api/xmly_discovery.dart::AnchorProfile.factory:fromApi',
-    );
-    return AnchorProfile(
-      uid: _id(data['uid']),
-      nickname: _text(data['nickName']),
-      avatarUrl: _avatar(data['cover']),
-      description: _text(data['personalDescription']),
-      fansCount: _count(data['fansCount']),
-      albumsCount: _count(data['albumsCount']),
-      tracksCount: _count(data['tracksCount']),
-    );
-  }
-}
-
 class HotWord {
   const HotWord({required this.word, required this.displayWord});
   final String word, displayWord;
@@ -264,31 +234,6 @@ class CatalogueLocationHint {
       indexInList: offset,
     );
   }
-}
-
-Album _anchorAlbum(Map<String, dynamic> row) {
-  AppLog.instance.trace('lib/api/xmly_discovery.dart::_anchorAlbum');
-  return Album.fromApi({
-    'id': _id(row['id']),
-    'title': _text(row['title']),
-    'cover_url': _coverPath(row['coverPath']),
-    'nickname': _text(row['anchorNickName']),
-    'tracks': _count(row['trackCount']) ?? 0,
-    'intro': _text(row['description']),
-  });
-}
-
-Track _anchorTrack(Map<String, dynamic> row) {
-  AppLog.instance.trace('lib/api/xmly_discovery.dart::_anchorTrack');
-  return Track.fromApi({
-    'trackId': _id(row['trackId']),
-    'title': _text(row['title']),
-    'albumId': _id(row['albumId']),
-    'albumTitle': _text(row['albumTitle']),
-    'nickname': _text(row['nickname']),
-    'cover_url': _coverPath(row['coverPath']),
-    'duration': row['length'] is num ? row['length'] : 0,
-  });
 }
 
 class CategoryChannel {
@@ -652,11 +597,11 @@ class RankBlock {
             AnchorProfile(
               uid: id,
               nickname: _text(row['anchorName']),
-              avatarUrl: _avatar(row['cover']),
-              description: _text(row['personalDescription']),
-              fansCount: _count(row['fansCount']),
-              albumsCount: _count(row['albumCount']),
-              tracksCount: _count(row['trackCount']),
+              avatar: _avatar(row['cover']),
+              intro: _text(row['personalDescription']),
+              fans: _count(row['fansCount']),
+              albums: _count(row['albumCount']),
+              tracks: _count(row['trackCount']),
             ),
           );
         }
@@ -691,74 +636,6 @@ class XmlyDiscovery {
     AppLog.instance.trace('lib/api/xmly_discovery.dart::XmlyDiscovery.new');
   }
   final XmlyClient client;
-
-  Future<AnchorProfile> anchorProfile(String uid) async {
-    AppLog.instance.trace(
-      'lib/api/xmly_discovery.dart::XmlyDiscovery.anchorProfile',
-    );
-    final id = xmlyIdentifier(uid);
-    final response = await client.request(
-      'GET',
-      XmlyClient.pcOrigin,
-      '/simple-revision-for-pc/user/basic',
-      query: {'uid': id},
-      account: false,
-      signed: false,
-    );
-    final profile = AnchorProfile.fromApi(_object(response['data']));
-    if (profile.uid != id) throw _invalid;
-    return profile;
-  }
-
-  Future<DiscoveryPageResult<Album>> anchorAlbums(
-    String uid, {
-    int page = 1,
-  }) async {
-    AppLog.instance.trace(
-      'lib/api/xmly_discovery.dart::XmlyDiscovery.anchorAlbums',
-    );
-    final id = xmlyIdentifier(uid);
-    _pageInput(page);
-    final response = await client.request(
-      'GET',
-      XmlyClient.pcOrigin,
-      '/simple-revision-for-pc/user/pub',
-      query: {'uid': id, 'page': page, 'pageSize': 10},
-      account: false,
-      signed: false,
-    );
-    return _page(
-      _object(response['data']),
-      listKey: 'albumList',
-      parse: _anchorAlbum,
-      expectedPage: page,
-    );
-  }
-
-  Future<DiscoveryPageResult<Track>> anchorTracks(
-    String uid, {
-    int page = 1,
-  }) async {
-    AppLog.instance.trace(
-      'lib/api/xmly_discovery.dart::XmlyDiscovery.anchorTracks',
-    );
-    final id = xmlyIdentifier(uid);
-    _pageInput(page);
-    final response = await client.request(
-      'GET',
-      XmlyClient.pcOrigin,
-      '/simple-revision-for-pc/user/track',
-      query: {'uid': id, 'page': page, 'pageSize': 15},
-      account: false,
-      signed: false,
-    );
-    return _page(
-      _object(response['data']),
-      listKey: 'trackList',
-      parse: _anchorTrack,
-      expectedPage: page,
-    );
-  }
 
   Future<List<CategoryGroup>> categoryGroups() async {
     AppLog.instance.trace(

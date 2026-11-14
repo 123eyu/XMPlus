@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../api/xmly_anchor.dart' show AnchorProfile;
 import '../api/xmly_discovery.dart';
 import '../api/xmly_experience.dart';
 import '../common/widgets/app_header.dart';
@@ -1102,49 +1103,10 @@ class _DiscoveryRankingViewState extends State<DiscoveryRankingView> {
   }
 }
 
-class RankingPage extends StatelessWidget {
-  const RankingPage({
-    required this.runtime,
-    required this.categories,
-    required this.categoryId,
-    required this.rankingId,
-    this.onDownload,
-    this.onPlayAlbum,
-    super.key,
-  });
-  final AppRuntime runtime;
-  final List<RankCategory> categories;
-  final int categoryId, rankingId;
-  final TrackDownload? onDownload;
-  final AlbumPlayback? onPlayAlbum;
-
-  @override
-  Widget build(BuildContext context) {
-    AppLog.instance.trace(
-      'lib/pages/discovery_browse_page.dart::RankingPage.build',
-    );
-    return Scaffold(
-      appBar: AppHeader(title: const Text('排行榜')),
-      body: _RankBrowser(
-        runtime: runtime,
-        categories: categories,
-        initialCategoryId: categoryId,
-        initialRankingId: rankingId,
-        routed: true,
-        onDownload: onDownload,
-        onPlayAlbum: onPlayAlbum,
-      ),
-    );
-  }
-}
-
 class _RankBrowser extends StatefulWidget {
   const _RankBrowser({
     required this.runtime,
     required this.categories,
-    this.initialCategoryId,
-    this.initialRankingId,
-    this.routed = false,
     this.onDownload,
     this.onPlayAlbum,
     this.tabsBusy = false,
@@ -1153,8 +1115,7 @@ class _RankBrowser extends StatefulWidget {
   });
   final AppRuntime runtime;
   final List<RankCategory> categories;
-  final int? initialCategoryId, initialRankingId;
-  final bool routed, tabsBusy;
+  final bool tabsBusy;
   final String? tabsError;
   final Future<void> Function()? reloadTabs;
   final TrackDownload? onDownload;
@@ -1192,40 +1153,13 @@ class _RankBrowserState extends State<_RankBrowser> {
     AppLog.instance.trace(
       'lib/pages/discovery_browse_page.dart::_RankBrowserState._selectInitial',
     );
-    _category = widget.categories.firstWhere(
-      (category) {
-        AppLog.instance.trace(
-          'lib/pages/discovery_browse_page.dart::_RankBrowserState._selectInitial.closure#1',
-        );
-        return category.id == widget.initialCategoryId &&
-            category.tabs.isNotEmpty;
-      },
-      orElse: () {
-        AppLog.instance.trace(
-          'lib/pages/discovery_browse_page.dart::_RankBrowserState._selectInitial.closure#2',
-        );
-        return widget.categories.firstWhere((category) {
-          AppLog.instance.trace(
-            'lib/pages/discovery_browse_page.dart::_RankBrowserState._selectInitial.closure#2.closure#1',
-          );
-          return category.tabs.isNotEmpty;
-        });
-      },
-    );
-    _tab = _category.tabs.firstWhere(
-      (tab) {
-        AppLog.instance.trace(
-          'lib/pages/discovery_browse_page.dart::_RankBrowserState._selectInitial.closure#3',
-        );
-        return tab.rankingId == widget.initialRankingId;
-      },
-      orElse: () {
-        AppLog.instance.trace(
-          'lib/pages/discovery_browse_page.dart::_RankBrowserState._selectInitial.closure#4',
-        );
-        return _category.tabs.first;
-      },
-    );
+    _category = widget.categories.firstWhere((category) {
+      AppLog.instance.trace(
+        'lib/pages/discovery_browse_page.dart::_RankBrowserState._selectInitial.closure#1',
+      );
+      return category.tabs.isNotEmpty;
+    });
+    _tab = _category.tabs.first;
   }
 
   @override
@@ -1336,29 +1270,6 @@ class _RankBrowserState extends State<_RankBrowser> {
     _load(clear: true);
   }
 
-  void _openRank() {
-    AppLog.instance.trace(
-      'lib/pages/discovery_browse_page.dart::_RankBrowserState._openRank',
-    );
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) {
-          AppLog.instance.trace(
-            'lib/pages/discovery_browse_page.dart::_RankBrowserState._openRank.closure#1',
-          );
-          return RankingPage(
-            runtime: widget.runtime,
-            categories: widget.categories,
-            categoryId: _category.id,
-            rankingId: _tab.rankingId,
-            onDownload: widget.onDownload,
-            onPlayAlbum: widget.onPlayAlbum,
-          );
-        },
-      ),
-    );
-  }
-
   void _openAnchor(AnchorProfile anchor) {
     AppLog.instance.trace(
       'lib/pages/discovery_browse_page.dart::_RankBrowserState._openAnchor',
@@ -1398,9 +1309,7 @@ class _RankBrowserState extends State<_RankBrowser> {
     final blocks = _blocks;
     final firstTitle = blocks?.firstOrNull?.title ?? '';
     return _BrowseScroll(
-      scrollKey: PageStorageKey(
-        widget.routed ? 'rank-detail' : 'discovery-ranks',
-      ),
+      scrollKey: const PageStorageKey('discovery-ranks'),
       onRefresh: () {
         AppLog.instance.trace(
           'lib/pages/discovery_browse_page.dart::_RankBrowserState.build.closure#1',
@@ -1455,24 +1364,18 @@ class _RankBrowserState extends State<_RankBrowser> {
         _heading(
           context,
           firstTitle.isEmpty ? _tab.title : firstTitle,
-          trailing: widget.routed
-              ? IconButton(
-                  tooltip: '刷新榜单',
-                  onPressed: _busy
-                      ? null
-                      : () {
-                          AppLog.instance.trace(
-                            'lib/pages/discovery_browse_page.dart::_RankBrowserState.build.closure#4',
-                          );
-                          _load();
-                        },
-                  icon: const Icon(Icons.refresh_rounded),
-                )
-              : TextButton.icon(
-                  onPressed: _openRank,
-                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                  label: const Text('查看榜单'),
-                ),
+          trailing: IconButton(
+            tooltip: '刷新榜单',
+            onPressed: _busy
+                ? null
+                : () {
+                    AppLog.instance.trace(
+                      'lib/pages/discovery_browse_page.dart::_RankBrowserState.build.closure#4',
+                    );
+                    _load();
+                  },
+            icon: const Icon(Icons.refresh_rounded),
+          ),
         ),
         _loading(_busy || widget.tabsBusy),
         if (widget.tabsError != null)
@@ -1710,7 +1613,7 @@ class _RankAnchorRow extends StatelessWidget {
               children: [
                 _RankPosition(position: position),
                 const SizedBox(width: 12),
-                ClipOval(child: CoverImage(uri: anchor.avatarUrl, size: 48)),
+                ClipOval(child: CoverImage(uri: anchor.avatar, size: 48)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -1725,12 +1628,11 @@ class _RankAnchorRow extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         [
-                          if (anchor.fansCount != null)
-                            '${_count(anchor.fansCount!)}粉丝',
-                          if (anchor.tracksCount != null)
-                            '${_count(anchor.tracksCount!)}声音',
-                          if (anchor.albumsCount != null)
-                            '${_count(anchor.albumsCount!)}专辑',
+                          if (anchor.fans != null) '${_count(anchor.fans!)}粉丝',
+                          if (anchor.tracks != null)
+                            '${_count(anchor.tracks!)}声音',
+                          if (anchor.albums != null)
+                            '${_count(anchor.albums!)}专辑',
                         ].join(' · '),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

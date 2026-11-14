@@ -126,6 +126,7 @@ Future<void> showQuickPlaybackSettings(
   AppRuntime runtime, {
   String? albumId,
   String? albumTitle,
+  bool skipOnly = false,
 }) async {
   AppLog.instance.trace(
     "lib/pages/playback_settings_page.dart::showQuickPlaybackSettings",
@@ -136,7 +137,7 @@ Future<void> showQuickPlaybackSettings(
   var fullSettings = false;
   await showLocalPanel<void>(
     context: context,
-    title: '播放选项',
+    title: skipOnly ? '跳过片头片尾' : '播放选项',
     builder: (context) {
       AppLog.instance.trace(
         "lib/pages/playback_settings_page.dart::showQuickPlaybackSettings.closure#1",
@@ -182,6 +183,7 @@ Future<void> showQuickPlaybackSettings(
                   albumTitle: global ? null : albumTitle,
                   embedded: true,
                   quick: !fullSettings,
+                  skipOnly: skipOnly,
                   onSavingChanged: (value) {
                     AppLog.instance.trace(
                       "lib/pages/playback_settings_page.dart::showQuickPlaybackSettings.closure#1.closure#1.closure#2",
@@ -220,7 +222,7 @@ Future<void> showQuickPlaybackSettings(
                   },
                 ),
               ),
-              if (fullSettings)
+              if (fullSettings && !skipOnly)
                 TextButton.icon(
                   onPressed: saving
                       ? null
@@ -253,6 +255,7 @@ class PlaybackSettingsPage extends StatefulWidget {
     this.albumTitle,
     this.embedded = false,
     this.quick = false,
+    this.skipOnly = false,
     this.onSavingChanged,
     this.onOpenFullSettings,
     this.onOpenGlobalSettings,
@@ -262,6 +265,7 @@ class PlaybackSettingsPage extends StatefulWidget {
   final String? albumId, albumTitle;
   final bool embedded;
   final bool quick;
+  final bool skipOnly;
   final ValueChanged<bool>? onSavingChanged;
   final VoidCallback? onOpenFullSettings;
   final VoidCallback? onOpenGlobalSettings;
@@ -280,6 +284,8 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
   String? _error;
   String? _historyResult;
   final Map<String, double> _drafts = {};
+  final Map<String, String> _integerDrafts = {};
+  int _integerDraftRevision = 0;
   int _recommendationGeneration = 0;
   bool Function()? _recommendationCurrent;
   String? _skipResult;
@@ -306,6 +312,8 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     if (oldWidget.runtime != widget.runtime ||
         oldWidget.albumId != widget.albumId) {
       _recommendationGeneration++;
+      _integerDrafts.clear();
+      _drafts.clear();
       _skipResult = null;
     }
   }
@@ -476,6 +484,8 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
               'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._getSkipRecommendation.closure#1.closure#5',
             );
             _skipResult = '已应用到本专辑';
+            _integerDrafts.remove('skipIntroSeconds');
+            _integerDrafts.remove('skipOutroSeconds');
           });
         }
       } catch (error, stack) {
@@ -566,6 +576,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
           value,
           albumId: widget.albumId,
         );
+        _integerDrafts.remove(key);
       } on FormatException catch (error) {
         if (mounted)
           setState(() {
@@ -786,6 +797,30 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     );
   }
 
+  Future<void> _saveSeconds(
+    String key,
+    String title,
+    String text,
+    int min,
+    int max,
+  ) async {
+    AppLog.instance.trace(
+      "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._saveSeconds",
+    );
+
+    final parsed = int.tryParse(text);
+    if (parsed == null || parsed < min || parsed > max) {
+      setState(() {
+        AppLog.instance.trace(
+          "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._saveSeconds.closure#1",
+        );
+        _error = '$title请输入 $min–$max 秒';
+      });
+      return;
+    }
+    await _save(key, parsed);
+  }
+
   Widget _number(String key, String title, int value, int min, int max) {
     AppLog.instance.trace(
       "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._number",
@@ -818,8 +853,8 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
               ),
               Expanded(
                 child: TextFormField(
-                  key: ValueKey('$key:$value:$_busy'),
-                  initialValue: '$value',
+                  key: ValueKey('$key:$value:$_busy:$_integerDraftRevision'),
+                  initialValue: _integerDrafts[key] ?? '$value',
                   enabled: !_busy,
                   textAlign: TextAlign.center,
                   keyboardType: TextInputType.number,
@@ -827,27 +862,47 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                   decoration: InputDecoration(
                     labelText: title,
                     suffixText: '秒',
+                    suffixIcon: IconButton(
+                      key: ValueKey('saveSeconds:$key'),
+                      tooltip: '保存$title',
+                      onPressed: _busy
+                          ? null
+                          : () {
+                              AppLog.instance.trace(
+                                "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._number.closure#2",
+                              );
+
+                              _saveSeconds(
+                                key,
+                                title,
+                                _integerDrafts[key] ?? '$value',
+                                min,
+                                max,
+                              );
+                            },
+                      icon: const Icon(Icons.check_rounded),
+                    ),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 12,
                       vertical: 12,
                     ),
                   ),
+                  onChanged: (text) {
+                    AppLog.instance.trace(
+                      "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._number.closure#3",
+                    );
+                    setState(() {
+                      AppLog.instance.trace(
+                        'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._number.closure#3.closure#1',
+                      );
+                      _integerDrafts[key] = text;
+                    });
+                  },
                   onFieldSubmitted: (text) {
                     AppLog.instance.trace(
-                      "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._number.closure#2",
+                      "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._number.closure#4",
                     );
-
-                    final parsed = int.tryParse(text);
-                    if (parsed == null || parsed < min || parsed > max) {
-                      setState(() {
-                        AppLog.instance.trace(
-                          "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._number.closure#2.closure#1",
-                        );
-                        _error = '$title请输入 $min–$max 秒';
-                      });
-                      return;
-                    }
-                    _save(key, parsed);
+                    _saveSeconds(key, title, text, min, max);
                   },
                 ),
               ),
@@ -858,13 +913,43 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                     ? null
                     : () {
                         AppLog.instance.trace(
-                          "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._number.closure#3",
+                          "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._number.closure#5",
                         );
                         _save(key, value + 1);
                       },
               ),
             ],
           ),
+          if (key == 'skipIntroSeconds' || key == 'skipOutroSeconds')
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final seconds in const [0, 15, 30, 60, 90, 120])
+                  ChoiceChip(
+                    showCheckmark: false,
+                    label: Text(seconds == 0 ? '不跳过' : '$seconds 秒'),
+                    selected:
+                        (int.tryParse(_integerDrafts[key] ?? '') ?? value) ==
+                        seconds,
+                    onSelected: _busy
+                        ? null
+                        : (_) {
+                            AppLog.instance.trace(
+                              'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._number.closure#6',
+                            );
+                            setState(() {
+                              AppLog.instance.trace(
+                                'lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState._number.closure#6.closure#1',
+                              );
+                              _integerDrafts[key] = '$seconds';
+                              _integerDraftRevision++;
+                            });
+                          },
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
           _inherit(key),
         ],
       ),
@@ -1143,62 +1228,66 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                         ),
                       ),
                     ),
-                  _section('声音', [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '主音量',
-                              style: Theme.of(context).textTheme.titleMedium,
+                  if (!widget.skipOnly)
+                    _section('声音', [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '主音量',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
                             ),
-                          ),
-                          PlaybackVolumeControl(runtime: widget.runtime),
-                        ],
-                      ),
-                    ),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        '所有专辑共用，专辑音量可单独调整。',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            PlaybackVolumeControl(runtime: widget.runtime),
+                          ],
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    _slider('speed', '播放倍速', resolved.speed, 0.5, 3, 25, (
-                      value,
-                    ) {
-                      AppLog.instance.trace(
-                        "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.build.closure#1.closure#1",
-                      );
-                      return '${value.toStringAsFixed(2)}×';
-                    }),
-                    const SizedBox(height: 12),
-                    _slider(
-                      'volume',
-                      widget.albumId == null ? '默认专辑音量' : '专辑音量',
-                      resolved.volume,
-                      0,
-                      100,
-                      100,
-                      (value) {
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          '所有专辑共用，专辑音量可单独调整。',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _slider('speed', '播放倍速', resolved.speed, 0.5, 3, 25, (
+                        value,
+                      ) {
                         AppLog.instance.trace(
-                          "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.build.closure#1.closure#2",
+                          "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.build.closure#1.closure#1",
                         );
-                        return '${value.round()}%';
-                      },
-                    ),
-                  ]),
+                        return '${value.toStringAsFixed(2)}×';
+                      }),
+                      const SizedBox(height: 12),
+                      _slider(
+                        'volume',
+                        widget.albumId == null ? '默认专辑音量' : '专辑音量',
+                        resolved.volume,
+                        0,
+                        100,
+                        100,
+                        (value) {
+                          AppLog.instance.trace(
+                            "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.build.closure#1.closure#2",
+                          );
+                          return '${value.round()}%';
+                        },
+                      ),
+                    ]),
                   _section('跳过与快进', [
                     const Padding(
                       padding: EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 8,
                       ),
-                      child: Text('直接输入秒数后按完成保存，或使用加减按钮。'),
+                      child: Text('输入秒数后点勾保存，设为 0 则不跳过。'),
                     ),
                     _number(
                       'skipIntroSeconds',
@@ -1239,7 +1328,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                           ),
                         ),
                     ],
-                    if (!widget.quick) ...[
+                    if (!widget.quick && !widget.skipOnly) ...[
                       _number(
                         'seekBackwardSeconds',
                         '后退间隔',
@@ -1255,147 +1344,169 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                         300,
                       ),
                     ],
-                  ], expandable: true),
-                  _section('播放方式', [
-                    _toggle('autoNext', '自动播放下一集', resolved.autoNext),
-                    if (!widget.quick)
-                      _toggle(
-                        'listenAndDownload',
-                        '默认边听边下',
-                        resolved.listenAndDownload,
+                    if ((widget.albumId == null ||
+                            widget.runtime.player.current?.albumId ==
+                                widget.albumId) &&
+                        widget.runtime.player.duration > 0 &&
+                        (int.tryParse(
+                                      _integerDrafts['skipIntroSeconds'] ?? '',
+                                    ) ??
+                                    resolved.skipIntroSeconds) +
+                                (int.tryParse(
+                                      _integerDrafts['skipOutroSeconds'] ?? '',
+                                    ) ??
+                                    resolved.skipOutroSeconds) >=
+                            widget.runtime.player.duration)
+                      const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text('本集较短，将完整播放。'),
                       ),
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '循环方式',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _source('loopMode'),
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                          ),
-                          const SizedBox(height: 12),
-                          _PlaybackChoices<String>(
-                            key: const ValueKey('loopModeOptions'),
-                            options: const [
-                              ('off', '顺序播放'),
-                              ('single', '单集循环'),
-                            ],
-                            selected: resolved.loopMode,
-                            onSelected: _busy
-                                ? null
-                                : (value) {
-                                    AppLog.instance.trace(
-                                      "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.build.closure#1.closure#3",
-                                    );
-                                    _save('loopMode', value);
-                                  },
-                          ),
-                          _inherit('loopMode'),
-                        ],
-                      ),
-                    ),
-                  ]),
-                  if (widget.quick)
-                    ListTile(
-                      title: const Text('完整播放设置'),
-                      subtitle: const Text('快进间隔、边听边下及其他偏好'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: _busy ? null : widget.onOpenFullSettings,
-                    )
-                  else if (widget.albumId == null) ...[
-                    _section('历史同步', [
-                      SwitchListTile(
-                        key: const ValueKey('syncHistory'),
-                        title: const Text('上传云端收听进度'),
-                        subtitle: const Text('开播时自动读取云进度，此开关仅控制上传'),
-                        value: _global['syncHistory'] == true,
-                        onChanged: _busy ? null : _sync,
-                      ),
-                      ListTile(
-                        title: const Text('重试进度上传'),
-                        subtitle: _historyResult == null
-                            ? null
-                            : Text(_historyResult!),
-                        trailing: const Icon(Icons.sync),
-                        onTap: _busy ? null : _retryHistory,
+                  ], expandable: !widget.skipOnly),
+                  if (!widget.skipOnly)
+                    _section('播放方式', [
+                      _toggle('autoNext', '自动播放下一集', resolved.autoNext),
+                      if (!widget.quick)
+                        _toggle(
+                          'listenAndDownload',
+                          '默认边听边下',
+                          resolved.listenAndDownload,
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '播放顺序',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _source('loopMode'),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                            ),
+                            const SizedBox(height: 12),
+                            _PlaybackChoices<String>(
+                              key: const ValueKey('loopModeOptions'),
+                              options: const [
+                                ('off', '顺序播放'),
+                                ('single', '单集循环'),
+                                ('all', '列表循环'),
+                                ('shuffle', '随机播放'),
+                              ],
+                              selected: resolved.loopMode,
+                              onSelected: _busy
+                                  ? null
+                                  : (value) {
+                                      AppLog.instance.trace(
+                                        "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.build.closure#1.closure#3",
+                                      );
+                                      _save('loopMode', value);
+                                    },
+                            ),
+                            _inherit('loopMode'),
+                          ],
+                        ),
                       ),
                     ]),
-                    _section('下载与定时', [
-                      SwitchListTile(
-                        title: const Text('暂停播放时也暂停当前下载'),
-                        value: download['pauseDownloadWithPlayback'] == true,
-                        onChanged: _busy
-                            ? null
-                            : (value) {
-                                AppLog.instance.trace(
-                                  "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.build.closure#1.closure#4",
-                                );
-                                _downloadOption(
-                                  'pauseDownloadWithPlayback',
-                                  value,
-                                );
-                              },
-                      ),
-                      SwitchListTile(
-                        title: const Text('定时结束后继续下载'),
-                        value: download['continueDownloadAfterSleep'] == true,
-                        onChanged: _busy
-                            ? null
-                            : (value) {
-                                AppLog.instance.trace(
-                                  "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.build.closure#1.closure#5",
-                                );
-                                _downloadOption(
-                                  'continueDownloadAfterSleep',
-                                  value,
-                                );
-                              },
-                      ),
+                  if (!widget.skipOnly) ...[
+                    if (widget.quick)
                       ListTile(
-                        title: const Text('定时关闭偏好'),
-                        trailing: const Icon(Icons.timer_outlined),
-                        onTap: _busy
-                            ? null
-                            : () {
-                                AppLog.instance.trace(
-                                  "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.build.closure#1.closure#6",
-                                );
-                                showSleepTimerDialog(
-                                  context,
-                                  widget.runtime,
-                                  startTimer: false,
-                                );
-                              },
-                      ),
-                    ]),
-                  ] else
-                    ListTile(
-                      title: const Text('全局播放设置'),
-                      subtitle: const Text('历史同步、下载与定时偏好'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: _busy
-                          ? null
-                          : widget.onOpenGlobalSettings ??
-                                () {
+                        title: const Text('完整播放设置'),
+                        subtitle: const Text('快进间隔、边听边下及其他偏好'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: _busy ? null : widget.onOpenFullSettings,
+                      )
+                    else if (widget.albumId == null) ...[
+                      _section('历史同步', [
+                        SwitchListTile(
+                          key: const ValueKey('syncHistory'),
+                          title: const Text('上传云端收听进度'),
+                          subtitle: const Text('开播时自动读取云进度，此开关仅控制上传'),
+                          value: _global['syncHistory'] == true,
+                          onChanged: _busy ? null : _sync,
+                        ),
+                        ListTile(
+                          title: const Text('重试进度上传'),
+                          subtitle: _historyResult == null
+                              ? null
+                              : Text(_historyResult!),
+                          trailing: const Icon(Icons.sync),
+                          onTap: _busy ? null : _retryHistory,
+                        ),
+                      ]),
+                      _section('下载与定时', [
+                        SwitchListTile(
+                          title: const Text('暂停播放时也暂停当前下载'),
+                          value: download['pauseDownloadWithPlayback'] == true,
+                          onChanged: _busy
+                              ? null
+                              : (value) {
                                   AppLog.instance.trace(
-                                    "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.build.closure#1.closure#7",
+                                    "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.build.closure#1.closure#4",
                                   );
-                                  showQuickPlaybackSettings(
-                                    context,
-                                    widget.runtime,
+                                  _downloadOption(
+                                    'pauseDownloadWithPlayback',
+                                    value,
                                   );
                                 },
-                    ),
+                        ),
+                        SwitchListTile(
+                          title: const Text('定时结束后继续下载'),
+                          value: download['continueDownloadAfterSleep'] == true,
+                          onChanged: _busy
+                              ? null
+                              : (value) {
+                                  AppLog.instance.trace(
+                                    "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.build.closure#1.closure#5",
+                                  );
+                                  _downloadOption(
+                                    'continueDownloadAfterSleep',
+                                    value,
+                                  );
+                                },
+                        ),
+                        ListTile(
+                          title: const Text('定时关闭偏好'),
+                          trailing: const Icon(Icons.timer_outlined),
+                          onTap: _busy
+                              ? null
+                              : () {
+                                  AppLog.instance.trace(
+                                    "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.build.closure#1.closure#6",
+                                  );
+                                  showSleepTimerDialog(
+                                    context,
+                                    widget.runtime,
+                                    startTimer: false,
+                                  );
+                                },
+                        ),
+                      ]),
+                    ] else
+                      ListTile(
+                        title: const Text('全局播放设置'),
+                        subtitle: const Text('历史同步、下载与定时偏好'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: _busy
+                            ? null
+                            : widget.onOpenGlobalSettings ??
+                                  () {
+                                    AppLog.instance.trace(
+                                      "lib/pages/playback_settings_page.dart::_PlaybackSettingsPageState.build.closure#1.closure#7",
+                                    );
+                                    showQuickPlaybackSettings(
+                                      context,
+                                      widget.runtime,
+                                    );
+                                  },
+                      ),
+                  ],
                 ],
               ),
             ),

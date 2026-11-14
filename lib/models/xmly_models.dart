@@ -108,6 +108,8 @@ Map<String, dynamic> _publicRaw(Map<String, dynamic> raw) {
     'totalCount',
     'isRecordDesc',
     'likes',
+    'play',
+    'vipType',
     'total',
     'year',
     'date',
@@ -495,7 +497,9 @@ class PlaybackQueue {
     this.albumPage,
     this.albumTotal,
     int? albumPageSize,
+    Map<String, String> accountIdentities = const {},
   }) : source = source ?? (sourceAlbumId.isEmpty ? 'custom' : 'album'),
+       accountIdentities = Map.unmodifiable(accountIdentities),
        albumPageSize = albumPage == null
            ? albumPageSize
            : albumPageSize ?? xmlyAlbumPageSize,
@@ -536,9 +540,17 @@ class PlaybackQueue {
         throw const FormatException('播放队列损坏');
       }
     }
+    for (final entry in accountIdentities.entries) {
+      if (!ids.contains(entry.key) ||
+          (entry.value != 'anonymous' &&
+              !RegExp(r'^[a-f0-9]{64}$').hasMatch(entry.value))) {
+        throw const FormatException('播放队列账号无效');
+      }
+    }
   }
   PlaybackQueue._empty({this.needsRepair = false})
     : tracks = const [],
+      accountIdentities = const {},
       cursor = -1,
       sourceAlbumId = '',
       source = 'custom',
@@ -549,6 +561,7 @@ class PlaybackQueue {
   }
 
   final List<Track> tracks;
+  final Map<String, String> accountIdentities;
   final int cursor;
 
   /// Last loaded natural ascending page at albumPageSize; total 0 is unknown.
@@ -606,6 +619,9 @@ class PlaybackQueue {
       albumPage: page as int?,
       albumTotal: total as int?,
       albumPageSize: size as int?,
+      accountIdentities: value['accountIdentities'] == null
+          ? const {}
+          : Map<String, String>.from(value['accountIdentities'] as Map),
     );
   }
 
@@ -623,6 +639,8 @@ class PlaybackQueue {
             'cursor': cursor,
             'sourceAlbumId': sourceAlbumId,
             'source': source,
+            if (accountIdentities.isNotEmpty)
+              'accountIdentities': accountIdentities,
             if (albumPage != null) 'albumPage': albumPage,
             if (albumTotal != null) 'albumTotal': albumTotal,
             if (albumPageSize != null) 'albumPageSize': albumPageSize,
@@ -730,12 +748,14 @@ class AnchorSearchResult {
     this.avatarUrl,
     this.tracksCount,
     this.followersCount,
+    this.albumsCount,
+    this.description = '',
     this.isVerified = false,
   });
 
-  final String uid, nickname;
+  final String uid, nickname, description;
   final Uri? avatarUrl;
-  final int? tracksCount, followersCount;
+  final int? tracksCount, followersCount, albumsCount;
   final bool isVerified;
 
   factory AnchorSearchResult.fromApi(Map<String, dynamic> value) {
@@ -755,6 +775,8 @@ class AnchorSearchResult {
       avatarUrl: _cover({'coverSmall': value['smallPic']}),
       tracksCount: count(value['tracks_counts']),
       followersCount: count(value['followers_counts']),
+      albumsCount: count(value['album_counts']),
+      description: _text(value['description'] ?? value['personDescribe']),
       isVerified: value['isVerified'] == true,
     );
   }
@@ -763,13 +785,15 @@ class AnchorSearchResult {
 class SearchPage {
   final List<Track> tracks;
   final List<Album> albums;
-  final List<AnchorSearchResult> users;
+  final List<AnchorSearchResult> anchors;
+  final Map<String, int> totals;
   final int page, pageSize, total;
   final String kind;
   SearchPage({
     this.tracks = const [],
     this.albums = const [],
-    this.users = const [],
+    this.anchors = const [],
+    this.totals = const {},
     required this.page,
     required this.pageSize,
     required this.total,
