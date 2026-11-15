@@ -864,22 +864,13 @@ class XmlyExperience {
     }
   }
 
-  static void _mutationSuccess(Map<String, dynamic> response) {
-    AppLog.instance.trace(
-      "lib/api/xmly_experience.dart::XmlyExperience._mutationSuccess",
-    );
-
-    // Mutations require explicit success, not merely an accepted response.
-    if (_integer(response['ret']) != 0) throw _invalid;
-  }
-
   Future<void> setLiked(Track track, {required bool liked}) async {
     AppLog.instance.trace(
       'lib/api/xmly_experience.dart::XmlyExperience.setLiked',
     );
 
     _requireAccount();
-    final response = await client.request(
+    await client.request(
       'POST',
       XmlyClient.mobile,
       '/favourite-business/favorite/track',
@@ -890,8 +881,6 @@ class XmlyExperience {
       },
       form: true,
     );
-    if (liked && _integer(response['ret']) == 111) return;
-    _mutationSuccess(response);
   }
 
   Future<({int? likes, int? favorites})> trackCounts(String trackId) async {
@@ -943,14 +932,13 @@ class XmlyExperience {
     }
     final albumId = xmlyIdentifier(album);
     try {
-      final response = await client.request(
+      await client.request(
         'POST',
         XmlyClient.mobile,
         favorite ? '/lite-mobile/like/v1/like' : '/lite-mobile/like/v1/dislike',
         data: {'resourceId': trackId, 'albumId': albumId, 'resourceType': '1'},
         form: true,
       );
-      _mutationSuccess(response);
     } finally {
       _favoriteMembership[client] = null;
     }
@@ -964,7 +952,7 @@ class XmlyExperience {
     _requireAccount();
     final id = xmlyIdentifier(albumId);
     try {
-      final response = await client.request(
+      await client.request(
         'POST',
         XmlyClient.mobile,
         subscribed
@@ -973,7 +961,6 @@ class XmlyExperience {
         data: {'albumId': id},
         form: true,
       );
-      _mutationSuccess(response);
     } finally {
       _subscriptionMembership[client] = null;
     }

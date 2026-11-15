@@ -800,18 +800,49 @@ class XmlyClient {
         AppLog.instance.linkError(failure, error);
         throw failure;
       }
-      final code = '${payload['ret'] ?? 0}';
-      diagnostic.apiCode = int.tryParse(code);
-      final alreadyLiked =
-          code == '111' &&
+      final libraryMutation =
           method == 'POST' &&
           origin == mobile &&
-          path == '/favourite-business/favorite/track' &&
-          data?['favorite'] == 'true';
+          const {
+            '/favourite-business/favorite/track',
+            '/lite-mobile/like/v1/like',
+            '/lite-mobile/like/v1/dislike',
+            '/subscribe/album-subscribe/and/ask-anchor-info',
+            '/subscribe/album/subscribe/delete',
+          }.contains(path);
+      // These mutations require an explicit server result. Preserve the raw ret
+      // even when it confirms the requested state was already applied.
+      final code = '${payload['ret'] ?? (libraryMutation ? null : 0)}';
+      diagnostic.apiCode = int.tryParse(code);
+      final alreadyApplied =
+          (libraryMutation &&
+              switch (path) {
+                '/favourite-business/favorite/track' =>
+                  (code == '111' && data?['favorite'] == 'true') ||
+                      (code == '-1' && data?['favorite'] == 'false'),
+                '/subscribe/album-subscribe/and/ask-anchor-info' =>
+                  code == '791',
+                _ => false,
+              }) ||
+          (method == 'POST' &&
+              origin == searchOrigin &&
+              path == '/revision/follow/setFollow' &&
+              code == '500' &&
+              payload['msg'] == '已关注过该用户');
+      if (alreadyApplied) {
+        AppLog.instance.write(
+          AppLogLevel.info,
+          'api',
+          'Requested state already applied',
+          requestId: diagnostic.requestId,
+          localOnly: true,
+          data: {'path': path, 'apiCode': code, 'message': payload['msg']},
+        );
+      }
       final successCode = origin == searchOrigin || origin == pcOrigin
           ? '200'
           : '0';
-      if (code != successCode && !alreadyLiked) {
+      if (code != successCode && !alreadyApplied) {
         diagnostic.apiRejected = true;
         try {
           if (code == '429') _rateLimit(origin, const Duration(seconds: 30));

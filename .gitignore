@@ -12,6 +12,7 @@
 /coverage/
 /test/
 /ephemeral/
+/Temp/
 
 # Local development and private application data
 .omp/

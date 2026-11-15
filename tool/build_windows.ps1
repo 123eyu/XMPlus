@@ -375,6 +375,9 @@ try {
         $value = [Environment]::GetEnvironmentVariable($name, 'Process')
         if (-not [string]::IsNullOrWhiteSpace($value)) { $buildArguments += "--dart-define=$name=$value" }
     }
+    # The SDK omits app.dill from asset inputs; refresh icon subsets with each release build.
+    $assetStamps = Join-Path $source '.dart_tool\flutter_build\*\release_bundle_windows-x64_assets.stamp'
+    if (Test-Path -Path $assetStamps) { Remove-Item -Path $assetStamps }
     Invoke-Flutter -Arguments $buildArguments
     Assert-Hash (Join-Path $source 'pubspec.lock') $lockHash
 
