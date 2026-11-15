@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../services/app_log.dart';
+
 /// The same account-owned actions remain visible on album detail surfaces.
 class AlbumActionBar extends StatelessWidget {
   const AlbumActionBar({
@@ -21,6 +23,9 @@ class AlbumActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      "lib/pages/album_action_bar.dart::AlbumActionBar.build",
+    );
     const red = Color(0xffff414a);
     return Material(
       color: Theme.of(context).colorScheme.surface,

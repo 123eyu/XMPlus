@@ -26,7 +26,12 @@ class AlbumSearchPage extends StatefulWidget {
   final TrackDownload? onDownload;
 
   @override
-  State<AlbumSearchPage> createState() => _AlbumSearchPageState();
+  State<AlbumSearchPage> createState() {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::AlbumSearchPage.createState",
+    );
+    return _AlbumSearchPageState();
+  }
 }
 
 class _AlbumSearchPageState extends State<AlbumSearchPage> {
@@ -45,6 +50,9 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
   int _generation = 0, _page = 0, _failedPage = 1;
 
   XmlyClient get _client {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._client.get",
+    );
     final identity = widget.accountIdentity;
     if (identity == null) return widget.runtime.client;
     return widget.runtime.accounts.accountIds.contains(identity)
@@ -54,6 +62,9 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
 
   @override
   void initState() {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState.initState",
+    );
     super.initState();
     _observedClient = _client;
     _observedKey = _client.cacheIdentity;
@@ -64,6 +75,9 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
 
   @override
   void didUpdateWidget(covariant AlbumSearchPage oldWidget) {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState.didUpdateWidget",
+    );
     super.didUpdateWidget(oldWidget);
     if (oldWidget.runtime != widget.runtime) {
       oldWidget.runtime.removeListener(_runtimeChanged);
@@ -80,6 +94,9 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
   }
 
   void _cancel() {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._cancel",
+    );
     _debounce?.cancel();
     _debounce = null;
     _cancelled?.complete();
@@ -88,6 +105,9 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
 
   @override
   void dispose() {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState.dispose",
+    );
     _generation++;
     _cancel();
     widget.runtime.removeListener(_runtimeChanged);
@@ -99,6 +119,9 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
   }
 
   void _runtimeChanged() {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._runtimeChanged",
+    );
     if (!mounted) return;
     final client = _client;
     if (identical(client, _observedClient) &&
@@ -110,6 +133,9 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
   }
 
   void _queryChanged({bool force = false}) {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._queryChanged",
+    );
     if (!mounted) return;
     final value = _query.value;
     final composing = value.composing.isValid && !value.composing.isCollapsed;
@@ -119,6 +145,9 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
     _generation++;
     _cancel();
     setState(() {
+      AppLog.instance.trace(
+        "lib/pages/album_search_page.dart::_AlbumSearchPageState._queryChanged.closure#1",
+      );
       _tracks.clear();
       _submitted = '';
       _page = 0;
@@ -133,6 +162,9 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
   }
 
   void _submit() {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._submit",
+    );
     _debounce?.cancel();
     _debounce = null;
     final value = _query.value;
@@ -141,6 +173,9 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
     if (query.isEmpty || _loading || (_submitted == query && _page > 0)) return;
     if (value.text.length > 200) {
       setState(() {
+        AppLog.instance.trace(
+          "lib/pages/album_search_page.dart::_AlbumSearchPageState._submit.closure#1",
+        );
         _error = '搜索词请控制在200字以内';
       });
       return;
@@ -149,35 +184,69 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
     unawaited(_load(1));
   }
 
-  bool _active(XmlyClient client, String key, int generation, String albumId) =>
-      mounted &&
-      generation == _generation &&
-      widget.album.id == albumId &&
-      identical(client, _client) &&
-      key == _client.cacheIdentity;
+  bool _active(XmlyClient client, String key, int generation, String albumId) {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._active",
+    );
+    return mounted &&
+        generation == _generation &&
+        widget.album.id == albumId &&
+        identical(client, _client) &&
+        key == _client.cacheIdentity;
+  }
 
   Future<void> _load(int page) async {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._load",
+    );
     if (_loading || _submitted.isEmpty || _composing) return;
     final generation = _generation, albumId = widget.album.id;
     final client = _client, key = client.cacheIdentity, query = _submitted;
     final cancelled = _cancelled = Completer<void>();
     setState(() {
+      AppLog.instance.trace(
+        "lib/pages/album_search_page.dart::_AlbumSearchPageState._load.closure#1",
+      );
       _loading = true;
       _error = null;
       _failedPage = page;
     });
     try {
       final result = await client.withReadPolicy(
-        () =>
-            client.searchAlbum(albumId, query, page: page, pageSize: _pageSize),
+        () {
+          AppLog.instance.trace(
+            "lib/pages/album_search_page.dart::_AlbumSearchPageState._load.closure#2",
+          );
+          return client.searchAlbum(
+            albumId,
+            query,
+            page: page,
+            pageSize: _pageSize,
+          );
+        },
         rateLimitRetries: 0,
         cancelled: cancelled.future,
       );
       if (!_active(client, key, generation, albumId)) return;
-      final known = _tracks.map((track) => track.id).toSet();
+      final known = _tracks.map((track) {
+        AppLog.instance.trace(
+          "lib/pages/album_search_page.dart::_AlbumSearchPageState._load.closure#3",
+        );
+        return track.id;
+      }).toSet();
       final totalPages = result.totalPages;
       setState(() {
-        _tracks.addAll(result.tracks.where((track) => known.add(track.id)));
+        AppLog.instance.trace(
+          "lib/pages/album_search_page.dart::_AlbumSearchPageState._load.closure#4",
+        );
+        _tracks.addAll(
+          result.tracks.where((track) {
+            AppLog.instance.trace(
+              "lib/pages/album_search_page.dart::_AlbumSearchPageState._load.closure#4.closure#1",
+            );
+            return known.add(track.id);
+          }),
+        );
         _page = result.page;
         _hasMore =
             result.tracks.isNotEmpty &&
@@ -198,15 +267,24 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
         );
       }
       setState(() {
+        AppLog.instance.trace(
+          "lib/pages/album_search_page.dart::_AlbumSearchPageState._load.closure#5",
+        );
         _error = error is XmlyException ? error.message : '搜索暂时不可用，请重试';
       });
     } finally {
       if (identical(_cancelled, cancelled)) _cancelled = null;
       if (_active(client, key, generation, albumId)) {
         setState(() {
+          AppLog.instance.trace(
+            "lib/pages/album_search_page.dart::_AlbumSearchPageState._load.closure#6",
+          );
           _loading = false;
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
+          AppLog.instance.trace(
+            "lib/pages/album_search_page.dart::_AlbumSearchPageState._load.closure#7",
+          );
           if (_active(client, key, generation, albumId)) _maybeLoadMore();
         });
       }
@@ -214,6 +292,9 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
   }
 
   void _maybeLoadMore() {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._maybeLoadMore",
+    );
     if (!_scroll.hasClients ||
         _loading ||
         !_hasMore ||
@@ -224,10 +305,16 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
   }
 
   Future<void> _act(Track track, String action) async {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._act",
+    );
     if (_workingTrack != null) return;
     final client = _client, key = client.cacheIdentity;
     final generation = _generation, albumId = widget.album.id;
     setState(() {
+      AppLog.instance.trace(
+        "lib/pages/album_search_page.dart::_AlbumSearchPageState._act.closure#1",
+      );
       _workingTrack = track.id;
     });
     try {
@@ -286,23 +373,35 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
     } finally {
       if (mounted)
         setState(() {
+          AppLog.instance.trace(
+            "lib/pages/album_search_page.dart::_AlbumSearchPageState._act.closure#2",
+          );
           _workingTrack = null;
         });
     }
   }
 
   String _count(Object? value) {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._count",
+    );
     if (value is! int || value < 0) return '';
     return value >= 10000 ? '${(value / 10000).toStringAsFixed(1)}万' : '$value';
   }
 
   String _duration(double value) {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._duration",
+    );
     final seconds = value.toInt();
     final minutes = seconds ~/ 60;
     return '${minutes.toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}';
   }
 
   String _date(Object? value) {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._date",
+    );
     if (value is! int || value <= 0 || value > 8640000000000000) return '';
     final date = DateTime.fromMillisecondsSinceEpoch(value);
     final elapsed = DateTime.now().difference(date);
@@ -315,21 +414,36 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
     return '${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
-  Widget _metric(IconData icon, String value) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Icon(icon, size: 13, color: Colors.grey),
-      const SizedBox(width: 3),
-      Text(value, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-    ],
-  );
+  Widget _metric(IconData icon, String value) {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._metric",
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: Colors.grey),
+        const SizedBox(width: 3),
+        Text(value, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      ],
+    );
+  }
 
   Widget _tile(Track track) {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._tile",
+    );
     final date = _date(track.raw['date']);
     final plays = _count(track.raw['play']);
     final comments = _count(track.raw['count_comment']);
     return InkWell(
-      onTap: _workingTrack == null ? () => _act(track, 'play') : null,
+      onTap: _workingTrack == null
+          ? () {
+              AppLog.instance.trace(
+                "lib/pages/album_search_page.dart::_AlbumSearchPageState._tile.closure#1",
+              );
+              _act(track, 'play');
+            }
+          : null,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 8, 0),
         child: Row(
@@ -437,21 +551,31 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
                           PopupMenuButton<String>(
                             tooltip: '声音操作',
                             enabled: _workingTrack == null,
-                            onSelected: (action) => _act(track, action),
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(
-                                value: 'download',
-                                child: Text('下载声音'),
-                              ),
-                              PopupMenuItem(
-                                value: 'next',
-                                child: Text('下一首播放'),
-                              ),
-                              PopupMenuItem(
-                                value: 'queue',
-                                child: Text('加入播放队列'),
-                              ),
-                            ],
+                            onSelected: (action) {
+                              AppLog.instance.trace(
+                                "lib/pages/album_search_page.dart::_AlbumSearchPageState._tile.closure#2",
+                              );
+                              _act(track, action);
+                            },
+                            itemBuilder: (_) {
+                              AppLog.instance.trace(
+                                "lib/pages/album_search_page.dart::_AlbumSearchPageState._tile.closure#3",
+                              );
+                              return const [
+                                PopupMenuItem(
+                                  value: 'download',
+                                  child: Text('下载声音'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'next',
+                                  child: Text('下一首播放'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'queue',
+                                  child: Text('加入播放队列'),
+                                ),
+                              ];
+                            },
                           ),
                       ],
                     ),
@@ -466,6 +590,9 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
   }
 
   Widget _tail() {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState._tail",
+    );
     if (_loading)
       return const Padding(
         padding: EdgeInsets.all(24),
@@ -479,7 +606,12 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
             Text(_error!, textAlign: TextAlign.center),
             if (_submitted.isNotEmpty)
               TextButton(
-                onPressed: () => _load(_failedPage),
+                onPressed: () {
+                  AppLog.instance.trace(
+                    "lib/pages/album_search_page.dart::_AlbumSearchPageState._tail.closure#1",
+                  );
+                  _load(_failedPage);
+                },
                 child: const Text('重试'),
               ),
           ],
@@ -492,79 +624,106 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
       );
     if (_hasMore)
       return TextButton(
-        onPressed: () => _load(_page + 1),
+        onPressed: () {
+          AppLog.instance.trace(
+            "lib/pages/album_search_page.dart::_AlbumSearchPageState._tail.closure#2",
+          );
+          _load(_page + 1);
+        },
         child: const Text('加载更多'),
       );
     return const SizedBox(height: 24);
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppHeader(
-      toolbarHeight: 64,
-      title: TextField(
-        controller: _query,
-        focusNode: _focus,
-        autofocus: true,
-        textInputAction: TextInputAction.search,
-        maxLength: 200,
-        style: const TextStyle(fontSize: 16),
-        decoration: InputDecoration(
-          hintText: '搜索该专辑内的声音',
-          counterText: '',
-          filled: true,
-          fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 10,
+  Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      "lib/pages/album_search_page.dart::_AlbumSearchPageState.build",
+    );
+    return Scaffold(
+      appBar: AppHeader(
+        toolbarHeight: 64,
+        title: TextField(
+          controller: _query,
+          focusNode: _focus,
+          autofocus: true,
+          textInputAction: TextInputAction.search,
+          maxLength: 200,
+          style: const TextStyle(fontSize: 16),
+          decoration: InputDecoration(
+            hintText: '搜索该专辑内的声音',
+            counterText: '',
+            filled: true,
+            fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 10,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(30),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(30),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(30),
+              borderSide: BorderSide.none,
+            ),
+            suffixIcon: _query.text.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: '清除搜索',
+                    onPressed: _query.clear,
+                    icon: const Icon(Icons.close, size: 18),
+                  ),
           ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(30),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(30),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(30),
-            borderSide: BorderSide.none,
-          ),
-          suffixIcon: _query.text.isEmpty
-              ? null
-              : IconButton(
-                  tooltip: '清除搜索',
-                  onPressed: _query.clear,
-                  icon: const Icon(Icons.close, size: 18),
-                ),
+          onSubmitted: (_) {
+            AppLog.instance.trace(
+              "lib/pages/album_search_page.dart::_AlbumSearchPageState.build.closure#1",
+            );
+            return _submit();
+          },
         ),
-        onSubmitted: (_) => _submit(),
+        actions: [
+          TextButton(
+            onPressed: () {
+              AppLog.instance.trace(
+                "lib/pages/album_search_page.dart::_AlbumSearchPageState.build.closure#2",
+              );
+              Navigator.of(context).maybePop();
+            },
+            child: const Text('取消'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).maybePop(),
-          child: const Text('取消'),
-        ),
-      ],
-    ),
-    body: SafeArea(
-      top: false,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 960),
-          child: AppScrollbar(
-            controller: _scroll,
-            child: ListView.builder(
+      body: SafeArea(
+        top: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 960),
+            child: AppScrollbar(
               controller: _scroll,
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              itemCount: _tracks.length + 1,
-              itemBuilder: (_, index) =>
-                  index == _tracks.length ? _tail() : _tile(_tracks[index]),
+              child: ListView.builder(
+                controller: _scroll,
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                itemCount: _tracks.length + 1,
+                itemBuilder: (_, index) {
+                  AppLog.instance.trace(
+                    "lib/pages/album_search_page.dart::_AlbumSearchPageState.build.closure#3",
+                  );
+                  return index == _tracks.length
+                      ? _tail()
+                      : _tile(_tracks[index]);
+                },
+              ),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }

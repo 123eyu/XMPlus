@@ -1377,6 +1377,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   String? _unavailablePoster;
 
   void _actionsChanged() {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._actionsChanged",
+    );
     if (mounted) _actionChanges.value++;
   }
 
@@ -1411,12 +1414,18 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     _loadSubscription();
     _loadOverview();
     _playerChanges = widget.runtime.player.changes.listen((_) {
+      AppLog.instance.trace(
+        "lib/pages/catalogue_page.dart::_AlbumPageViewState.initState.closure#1",
+      );
       if (mounted) setState(_actionsChanged);
     });
   }
 
   @override
   void didUpdateWidget(covariant AlbumPageView oldWidget) {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState.didUpdateWidget",
+    );
     super.didUpdateWidget(oldWidget);
     if (oldWidget.runtime == widget.runtime &&
         oldWidget.albumId == widget.albumId &&
@@ -1426,6 +1435,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     widget.runtime.addListener(_runtimeChanged);
     _playerChanges?.cancel();
     _playerChanges = widget.runtime.player.changes.listen((_) {
+      AppLog.instance.trace(
+        "lib/pages/catalogue_page.dart::_AlbumPageViewState.didUpdateWidget.closure#1",
+      );
       if (mounted) setState(_actionsChanged);
     });
     _accountEpoch++;
@@ -1522,11 +1534,24 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     _actionsChanged();
   }
 
-  Map<String, dynamic> get _albumData => xmlyMap(_overview?['albumData']);
-  Map<String, dynamic> get _anchorData =>
-      xmlyMap(xmlyMap(_overview?['anchor'])['baseAnchor']);
+  Map<String, dynamic> get _albumData {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumData.get",
+    );
+    return xmlyMap(_overview?['albumData']);
+  }
+
+  Map<String, dynamic> get _anchorData {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._anchorData.get",
+    );
+    return xmlyMap(xmlyMap(_overview?['anchor'])['baseAnchor']);
+  }
 
   int get _catalogueTotal {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._catalogueTotal.get",
+    );
     if (!_cachedView) return _total;
     var total = _album?.total ?? 0;
     if (total > 0) return total;
@@ -1538,14 +1563,25 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   }
 
   Future<void> _loadOverview() async {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadOverview",
+    );
     final client = _client, key = _client.cacheIdentity;
     final albumId = widget.albumId, request = ++_overviewRequest;
     if (!client.accountAvailable) return;
-    bool active() =>
-        _sameAccount(client, key) &&
-        widget.albumId == albumId &&
-        request == _overviewRequest;
+    bool active() {
+      AppLog.instance.trace(
+        "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadOverview.active",
+      );
+      return _sameAccount(client, key) &&
+          widget.albumId == albumId &&
+          request == _overviewRequest;
+    }
+
     final cloud = _historyRead = () async {
+      AppLog.instance.trace(
+        "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadOverview.closure#1",
+      );
       try {
         final progress = await XmlyHistory(client).progress(
           albumId: albumId,
@@ -1554,6 +1590,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         );
         if (active())
           setState(() {
+            AppLog.instance.trace(
+              "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadOverview.closure#1.closure#1",
+            );
             _cloudProgress = progress;
             _actionsChanged();
           });
@@ -1570,6 +1609,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       final overview = await client.albumOverview(albumId);
       if (!active()) return;
       setState(() {
+        AppLog.instance.trace(
+          "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadOverview.closure#2",
+        );
         _overview = overview;
         _unavailablePoster = null;
         final follow = _anchorData['follow'];
@@ -1591,17 +1633,25 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     await cloud;
   }
 
-  Map<String, Track> get _knownAlbumTracks => {
-    for (final track in [
-      ..._cachedTracks(),
-      ..._visible,
-      ...?_complete,
-      ...widget.runtime.player.queue,
-    ])
-      if (track.albumId == widget.albumId) track.id: track,
-  };
+  Map<String, Track> get _knownAlbumTracks {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._knownAlbumTracks.get",
+    );
+    return {
+      for (final track in [
+        ..._cachedTracks(),
+        ..._visible,
+        ...?_complete,
+        ...widget.runtime.player.queue,
+      ])
+        if (track.albumId == widget.albumId) track.id: track,
+    };
+  }
 
   ({double position, int updatedAt})? _savedProgress(String trackId) {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._savedProgress",
+    );
     final library =
         (widget.runtime.storage.state['library'] as Map)[_client.identity];
     final entries = library is Map ? library['playbackProgress'] : null;
@@ -1619,6 +1669,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   }
 
   ({Track track, double position, int updatedAt})? get _continueRecord {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._continueRecord.get",
+    );
     final player = widget.runtime.player;
     final current = player.current;
     if (current != null &&
@@ -1665,6 +1718,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   }
 
   String? get _suggestedTrackId {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._suggestedTrackId.get",
+    );
     final tabs = _overview?['tabs'];
     if (tabs is! List || tabs.isEmpty) return null;
     final id = xmlyPositive(
@@ -1674,16 +1730,27 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   }
 
   Future<void> _continuePlayback() async {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._continuePlayback",
+    );
     if (_continueBusy) return;
     final client = _client,
         key = _client.cacheIdentity,
         albumId = widget.albumId;
     final epoch = _accountEpoch;
-    bool active() =>
-        _sameAccount(client, key) &&
-        epoch == _accountEpoch &&
-        widget.albumId == albumId;
+    bool active() {
+      AppLog.instance.trace(
+        "lib/pages/catalogue_page.dart::_AlbumPageViewState._continuePlayback.active",
+      );
+      return _sameAccount(client, key) &&
+          epoch == _accountEpoch &&
+          widget.albumId == albumId;
+    }
+
     setState(() {
+      AppLog.instance.trace(
+        "lib/pages/catalogue_page.dart::_AlbumPageViewState._continuePlayback.closure#1",
+      );
       _continueBusy = true;
       _actionsChanged();
     });
@@ -1751,6 +1818,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       _recordCatalogueError('Continue album playback failed', error, stack);
       if (active()) {
         setState(() {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._continuePlayback.closure#2",
+          );
           _error = _safeError(error);
         });
         ScaffoldMessenger.of(context)
@@ -1759,6 +1829,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     } finally {
       if (mounted && epoch == _accountEpoch) {
         setState(() {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._continuePlayback.closure#3",
+          );
           _continueBusy = false;
           _actionsChanged();
         });
@@ -1766,74 +1839,114 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     }
   }
 
-  Widget _footer() => ListenableBuilder(
-    listenable: _actionChanges,
-    builder: (context, _) {
-      final record = _continueRecord;
-      final title = record?.track.title ?? '';
-      return AlbumActionBar(
-        subscribed: _subscribed,
-        subscriptionBusy: _subscriptionBusy,
-        subscriptionError: _subscriptionError,
-        onSubscribe: _changeSubscription,
-        playBusy: _continueBusy,
-        playLabel: record == null
-            ? _suggestedTrackId == null
-                  ? '开始播放'
-                  : '播放'
-            : title.isEmpty
-            ? '续播'
-            : '续播 · $title',
-        onPlay: _album == null ? null : _continuePlayback,
-      );
-    },
-  );
+  Widget _footer() {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._footer",
+    );
+    return ListenableBuilder(
+      listenable: _actionChanges,
+      builder: (context, _) {
+        AppLog.instance.trace(
+          "lib/pages/catalogue_page.dart::_AlbumPageViewState._footer.closure#1",
+        );
+        final record = _continueRecord;
+        final title = record?.track.title ?? '';
+        return AlbumActionBar(
+          subscribed: _subscribed,
+          subscriptionBusy: _subscriptionBusy,
+          subscriptionError: _subscriptionError,
+          onSubscribe: _changeSubscription,
+          playBusy: _continueBusy,
+          playLabel: record == null
+              ? _suggestedTrackId == null
+                    ? '开始播放'
+                    : '播放'
+              : title.isEmpty
+              ? '续播'
+              : '续播 · $title',
+          onPlay: _album == null ? null : _continuePlayback,
+        );
+      },
+    );
+  }
 
   void _openAlbum(String id) {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._openAlbum",
+    );
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => AlbumPageView(
-          runtime: widget.runtime,
-          albumId: id,
-          accountIdentity: widget.accountIdentity,
-          onDownload: widget.onDownload,
-          onPlayAlbum: widget.onPlayAlbum,
-        ),
+        builder: (_) {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._openAlbum.closure#1",
+          );
+          return AlbumPageView(
+            runtime: widget.runtime,
+            albumId: id,
+            accountIdentity: widget.accountIdentity,
+            onDownload: widget.onDownload,
+            onPlayAlbum: widget.onPlayAlbum,
+          );
+        },
       ),
     );
   }
 
   void _openAnchor() {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._openAnchor",
+    );
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         settings: const RouteSettings(name: AnchorPage.routeName),
-        builder: (_) => AnchorPage(
-          runtime: widget.runtime,
-          uid:
-              xmlyPositive(_anchorData['uid'])?.toString() ?? _album?.anchorUid,
-          albumId: widget.albumId,
-          initialName: '${_anchorData['nickName'] ?? _album?.artist ?? ''}',
-          accountIdentity: widget.accountIdentity,
-          onDownload: widget.onDownload,
-          onPlayAlbum: widget.onPlayAlbum,
-        ),
+        builder: (_) {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._openAnchor.closure#1",
+          );
+          return AnchorPage(
+            runtime: widget.runtime,
+            uid:
+                xmlyPositive(_anchorData['uid'])?.toString() ??
+                _album?.anchorUid,
+            albumId: widget.albumId,
+            initialName: '${_anchorData['nickName'] ?? _album?.artist ?? ''}',
+            accountIdentity: widget.accountIdentity,
+            onDownload: widget.onDownload,
+            onPlayAlbum: widget.onPlayAlbum,
+          );
+        },
       ),
     );
   }
 
   Future<void> _followAnchor() async {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._followAnchor",
+    );
     final uid =
         xmlyPositive(_anchorData['uid'])?.toString() ?? _album?.anchorUid;
     if (uid == null || _followBusy) return;
     final client = _client, key = _client.cacheIdentity, epoch = _accountEpoch;
-    bool active() => _sameAccount(client, key) && epoch == _accountEpoch;
+    bool active() {
+      AppLog.instance.trace(
+        "lib/pages/catalogue_page.dart::_AlbumPageViewState._followAnchor.active",
+      );
+      return _sameAccount(client, key) && epoch == _accountEpoch;
+    }
+
     setState(() {
+      AppLog.instance.trace(
+        "lib/pages/catalogue_page.dart::_AlbumPageViewState._followAnchor.closure#1",
+      );
       _followBusy = true;
     });
     try {
       await widget.runtime.accounts.runWithAccount(client.identity, (
         admitted,
       ) async {
+        AppLog.instance.trace(
+          "lib/pages/catalogue_page.dart::_AlbumPageViewState._followAnchor.closure#2",
+        );
         if (!active() || !identical(client, admitted))
           throw const XmlyException('account_changed', '账号已变更，请重试');
         final api = XmlyAnchor(client);
@@ -1842,6 +1955,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         await api.setFollowing(uid, following: !previous);
         if (active())
           setState(() {
+            AppLog.instance.trace(
+              "lib/pages/catalogue_page.dart::_AlbumPageViewState._followAnchor.closure#2.closure#1",
+            );
             _following = !previous;
           });
       });
@@ -1850,130 +1966,179 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       _recordCatalogueError('Album anchor follow failed', error, stack);
       if (active())
         setState(() {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._followAnchor.closure#3",
+          );
           _error = _safeError(error);
         });
     } finally {
       if (mounted && epoch == _accountEpoch)
         setState(() {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._followAnchor.closure#4",
+          );
           _followBusy = false;
         });
     }
   }
 
   void _openBulkDownload() {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._openBulkDownload",
+    );
     final album = _album;
     if (album == null) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => AlbumBulkDownloadPage(
-          runtime: widget.runtime,
-          album: album,
-          accountIdentity: widget.accountIdentity,
-        ),
+        builder: (_) {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._openBulkDownload.closure#1",
+          );
+          return AlbumBulkDownloadPage(
+            runtime: widget.runtime,
+            album: album,
+            accountIdentity: widget.accountIdentity,
+          );
+        },
       ),
     );
   }
 
   void _openSearch() {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._openSearch",
+    );
     final album = _album;
     if (album == null) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => AlbumSearchPage(
-          runtime: widget.runtime,
-          album: album,
-          accountIdentity: widget.accountIdentity,
-          onDownload: widget.onDownload,
-        ),
+        builder: (_) {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._openSearch.closure#1",
+          );
+          return AlbumSearchPage(
+            runtime: widget.runtime,
+            album: album,
+            accountIdentity: widget.accountIdentity,
+            onDownload: widget.onDownload,
+          );
+        },
       ),
     );
   }
 
   Future<void> _chooseRange() async {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._chooseRange",
+    );
     if (_catalogueTotal < 1 || _busy) return;
     final epoch = _accountEpoch, total = _catalogueTotal;
     final start = await showDialog<int>(
       context: context,
       barrierLabel: '关闭集数选择',
-      builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 80),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 700),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Text(
-                      '共$total集',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  IconButton(
-                    autofocus: true,
-                    tooltip: '关闭集数选择',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              Flexible(
-                child: GridView.builder(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.all(12),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 10,
-                    mainAxisExtent:
-                        MediaQuery.textScalerOf(context).scale(16) + 30,
-                  ),
-                  itemCount: (total + _pageSize - 1) ~/ _pageSize,
-                  itemBuilder: (context, index) {
-                    final first = index * _pageSize + 1,
-                        last = ((index + 1) * _pageSize).clamp(1, total);
-                    final position =
-                        _rangeStart ??
-                        (_visible.isEmpty
-                            ? 1
-                            : _trackOrdinal(_visible.first) ?? 1);
-                    final selected = position >= first && position <= last;
-                    return Semantics(
-                      selected: selected,
-                      child: TextButton(
-                        style: TextButton.styleFrom(
-                          foregroundColor: selected
-                              ? const Color(0xffff414a)
-                              : Theme.of(context).colorScheme.onSurface,
-                          backgroundColor: selected
-                              ? const Color(0xffffeeee)
-                              : Theme.of(context)
-                                    .colorScheme
-                                    .surfaceContainerLow,
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                        ),
-                        onPressed: () => Navigator.pop(context, first),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text('$first–$last'),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
+      builder: (context) {
+        AppLog.instance.trace(
+          "lib/pages/catalogue_page.dart::_AlbumPageViewState._chooseRange.closure#1",
+        );
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 80,
           ),
-        ),
-      ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 700),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(
+                        '共$total集',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      autofocus: true,
+                      tooltip: '关闭集数选择',
+                      onPressed: () {
+                        AppLog.instance.trace(
+                          "lib/pages/catalogue_page.dart::_AlbumPageViewState._chooseRange.closure#1.closure#1",
+                        );
+                        return Navigator.pop(context);
+                      },
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                Flexible(
+                  child: GridView.builder(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.all(12),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 10,
+                      mainAxisExtent:
+                          MediaQuery.textScalerOf(context).scale(16) + 30,
+                    ),
+                    itemCount: (total + _pageSize - 1) ~/ _pageSize,
+                    itemBuilder: (context, index) {
+                      AppLog.instance.trace(
+                        "lib/pages/catalogue_page.dart::_AlbumPageViewState._chooseRange.closure#1.closure#2",
+                      );
+                      final first = index * _pageSize + 1,
+                          last = ((index + 1) * _pageSize).clamp(1, total);
+                      final position =
+                          _rangeStart ??
+                          (_visible.isEmpty
+                              ? 1
+                              : _trackOrdinal(_visible.first) ?? 1);
+                      final selected = position >= first && position <= last;
+                      return Semantics(
+                        selected: selected,
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            foregroundColor: selected
+                                ? const Color(0xffff414a)
+                                : Theme.of(context).colorScheme.onSurface,
+                            backgroundColor: selected
+                                ? const Color(0xffffeeee)
+                                : Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerLow,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                          ),
+                          onPressed: () {
+                            AppLog.instance.trace(
+                              "lib/pages/catalogue_page.dart::_AlbumPageViewState._chooseRange.closure#1.closure#2.closure#1",
+                            );
+                            return Navigator.pop(context, first);
+                          },
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('$first–$last'),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
     if (start != null && mounted && epoch == _accountEpoch)
       await _loadRange(start);
   }
 
   Future<void> _loadRange(int start) async {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadRange",
+    );
     final total = _catalogueTotal,
         end = (start + _pageSize - 1).clamp(start, _catalogueTotal);
     final firstPage = (_ascending ? start - 1 : total - end) ~/ _pageSize + 1;
@@ -1984,6 +2149,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     final generation = ++_generation;
     _cancelCatalogue();
     setState(() {
+      AppLog.instance.trace(
+        "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadRange.closure#1",
+      );
       _busy = true;
       _rangeStart = start;
       _error = null;
@@ -1994,6 +2162,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         tracks = _orderedForDisplay(_cachedTracks());
       } else {
         tracks = await _readCatalogue(client, () async {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadRange.closure#2",
+          );
           final result = <Track>[];
           for (var page = firstPage; page <= lastPage; page++) {
             if (!_sameAccount(client, key) || generation != _generation)
@@ -2014,13 +2185,22 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       }
       if (!_sameAccount(client, key) || generation != _generation) return;
       setState(() {
+        AppLog.instance.trace(
+          "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadRange.closure#3",
+        );
         _page = firstPage;
         _visible = tracks.where((track) {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadRange.closure#3.closure#1",
+          );
           final position = track.officialPosition;
           return position != null && position >= start && position <= end;
         }).toList();
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        AppLog.instance.trace(
+          "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadRange.closure#4",
+        );
         if (!mounted || generation != _generation || !_albumScroll.hasClients)
           return;
         final header = _headerKey.currentContext?.findRenderObject();
@@ -2037,12 +2217,18 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       _recordCatalogueError('Album range load failed', error, stack);
       if (_sameAccount(client, key) && generation == _generation)
         setState(() {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadRange.closure#5",
+          );
           _error = _safeError(error);
           _rangeStart = null;
         });
     } finally {
       if (mounted && generation == _generation)
         setState(() {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadRange.closure#6",
+          );
           _busy = false;
         });
     }
@@ -2522,14 +2708,14 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           final tracks = available;
           final index = tracks.indexWhere((track) {
             AppLog.instance.trace(
-              'lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#2',
+              "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#1",
             );
             return track.id == target.id && track.albumId == widget.albumId;
           });
           if (index >= 0) {
             setState(() {
               AppLog.instance.trace(
-                'lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#3',
+                "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#2",
               );
               _page = index ~/ _pageSize + 1;
               _total = tracks.length;
@@ -2550,7 +2736,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         if (target != null) {
           final index = tracks.indexWhere((track) {
             AppLog.instance.trace(
-              "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#4",
+              "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#3",
             );
             return track.id == target.id && track.albumId == widget.albumId;
           });
@@ -2558,7 +2744,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         }
         setState(() {
           AppLog.instance.trace(
-            "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#5",
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#4",
           );
           _showCached(page, orderedTracks: tracks);
         });
@@ -2568,7 +2754,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       final client = _client, key = _client.cacheIdentity;
       setState(() {
         AppLog.instance.trace(
-          "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#6",
+          "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#5",
         );
 
         _busy = true;
@@ -2577,7 +2763,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       try {
         final result = await _readCatalogue(client, () {
           AppLog.instance.trace(
-            'lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#9',
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#6",
           );
           if (target != null)
             return locateCatalogueTarget(
@@ -2587,7 +2773,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
               ascending: _ascending,
               isCurrent: () {
                 AppLog.instance.trace(
-                  'lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#9.closure#1',
+                  "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#6.closure#1",
                 );
                 return _sameAccount(client, key) && generation == _generation;
               },
@@ -2603,7 +2789,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         if (_sameAccount(client, key) && generation == _generation) {
           setState(() {
             AppLog.instance.trace(
-              "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#10",
+              "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#7",
             );
 
             _offline = false;
@@ -2622,7 +2808,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         if (_sameAccount(client, key) && generation == _generation) {
           setState(() {
             AppLog.instance.trace(
-              "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#11",
+              "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#8",
             );
 
             if (target == null || _album == null) {
@@ -2637,14 +2823,14 @@ class _AlbumPageViewState extends State<AlbumPageView> {
               track,
             ) {
               AppLog.instance.trace(
-                "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#12",
+                "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#9",
               );
               return track.id == target.id && track.albumId == widget.albumId;
             });
             if (index >= 0) {
               setState(() {
                 AppLog.instance.trace(
-                  "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#13",
+                  "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#10",
                 );
                 _showCached(index ~/ _pageSize + 1);
               });
@@ -2656,7 +2842,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         if (mounted && generation == _generation)
           setState(() {
             AppLog.instance.trace(
-              "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#14",
+              "lib/pages/catalogue_page.dart::_AlbumPageViewState._loadPage.closure#1.closure#11",
             );
             _busy = false;
           });
@@ -2755,60 +2941,72 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     });
   }
 
-  Widget _orderControl() => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-    child: Row(
-      children: [
-        Expanded(
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              key: const ValueKey('albumOrderToggle'),
-              onPressed: _busy ? null : () => _setOrder(!_ascending),
-              icon: const Icon(Icons.sort_rounded, size: 20),
-              label: Text(
-                _ascending ? '从旧到新' : '从新到旧',
+  Widget _orderControl() {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._orderControl",
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const ValueKey('albumOrderToggle'),
+                onPressed: _busy
+                    ? null
+                    : () {
+                        AppLog.instance.trace(
+                          "lib/pages/catalogue_page.dart::_AlbumPageViewState._orderControl.closure#1",
+                        );
+                        _setOrder(!_ascending);
+                      },
+                icon: const Icon(Icons.sort_rounded, size: 20),
+                label: Text(
+                  _ascending ? '从旧到新' : '从新到旧',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.grey,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: '搜索本专辑',
+            onPressed: _album == null ? null : _openSearch,
+            icon: const Icon(Icons.search, color: Colors.grey),
+          ),
+          IconButton(
+            tooltip: '批量下载',
+            onPressed: _album == null ? null : _openBulkDownload,
+            icon: const Icon(Icons.download_outlined, color: Colors.grey),
+          ),
+          Expanded(
+            child: TextButton(
+              onPressed: _busy ? null : _chooseRange,
+              style: TextButton.styleFrom(
+                foregroundColor: _rangeStart == null
+                    ? Colors.grey
+                    : const Color(0xffff414a),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                alignment: Alignment.centerRight,
+              ),
+              child: Text(
+                '共$_catalogueTotal集⌄',
+                textAlign: TextAlign.right,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.grey,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-              ),
             ),
           ),
-        ),
-        IconButton(
-          tooltip: '搜索本专辑',
-          onPressed: _album == null ? null : _openSearch,
-          icon: const Icon(Icons.search, color: Colors.grey),
-        ),
-        IconButton(
-          tooltip: '批量下载',
-          onPressed: _album == null ? null : _openBulkDownload,
-          icon: const Icon(Icons.download_outlined, color: Colors.grey),
-        ),
-        Expanded(
-          child: TextButton(
-            onPressed: _busy ? null : _chooseRange,
-            style: TextButton.styleFrom(
-              foregroundColor: _rangeStart == null
-                  ? Colors.grey
-                  : const Color(0xffff414a),
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              alignment: Alignment.centerRight,
-            ),
-            child: Text(
-              '共$_catalogueTotal集⌄',
-              textAlign: TextAlign.right,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 
   Future<List<Track>> _all() async {
     AppLog.instance.trace(
@@ -3183,6 +3381,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   }
 
   String _count(Object? value) {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._count",
+    );
     final number = value is num ? value : num.tryParse('$value');
     if (number == null || !number.isFinite || number < 0) return '';
     if (number >= 100000000)
@@ -3192,6 +3393,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   }
 
   String _trackDate(Object? value) {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._trackDate",
+    );
     DateTime? date;
     if (value is int && value > 0 && value <= 8640000000000000) {
       date = DateTime.fromMillisecondsSinceEpoch(value);
@@ -3204,6 +3408,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   }
 
   Uri? _albumImage(Object? value) {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumImage",
+    );
     final uri = Uri.tryParse('$value');
     return uri != null &&
             uri.host.isNotEmpty &&
@@ -3213,6 +3420,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   }
 
   Uri? get _posterUrl {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._posterUrl.get",
+    );
     final poster = _albumImage(
       xmlyMap(xmlyMap(_overview?['album'])['ocMap'])['coverBigPath'],
     );
@@ -3224,6 +3434,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     required bool compact,
     bool sidePanel = false,
   }) {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumHero",
+    );
     final base = Theme.of(context);
     final colors = base.colorScheme;
     final publicAlbum = xmlyMap(xmlyMap(_overview?['album'])['baseAlbum']);
@@ -3237,10 +3450,12 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     final rank = xmlyMap(_albumData['rankInfo']);
     final grass = _overview?['plantGrass'];
     final introduction = grass is List
-        ? grass
-              .whereType<Map>()
-              .where((card) => card['cardType'] == 'albumIntro')
-              .firstOrNull
+        ? grass.whereType<Map>().where((card) {
+            AppLog.instance.trace(
+              "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumHero.closure#1",
+            );
+            return card['cardType'] == 'albumIntro';
+          }).firstOrNull
         : null;
     final summary = xmlyMap(introduction?['footer'])['summary'];
     final intro = summary is String && summary.trim().isNotEmpty
@@ -3250,8 +3465,18 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     final tags = body is List
         ? body
               .whereType<Map>()
-              .map((tag) => '${tag['title'] ?? ''}')
-              .where((text) => text.isNotEmpty)
+              .map((tag) {
+                AppLog.instance.trace(
+                  "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumHero.closure#2",
+                );
+                return '${tag['title'] ?? ''}';
+              })
+              .where((text) {
+                AppLog.instance.trace(
+                  "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumHero.closure#3",
+                );
+                return text.isNotEmpty;
+              })
               .toList()
         : <String>[];
     final finished = publicAlbum['isFinished'];
@@ -3285,56 +3510,62 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     final foreground = compact ? colors.onSurface : Colors.white;
     final secondary = compact ? colors.onSurfaceVariant : Colors.white70;
     final author = LayoutBuilder(
-      builder: (context, constraints) => Wrap(
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 4,
-        children: [
-          ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: (constraints.maxWidth - 72).clamp(
-                64.0,
-                double.infinity,
-              ),
-            ),
-            child: TextButton.icon(
-              key: const ValueKey('albumAnchorLink'),
-              onPressed: _openAnchor,
-              style: TextButton.styleFrom(
-                foregroundColor: secondary,
-                padding: EdgeInsets.zero,
-                alignment: Alignment.centerLeft,
-              ),
-              icon: ClipOval(
-                child: CoverImage(
-                  uri:
-                      _albumImage(anchor['smallLogo']) ?? album.anchorAvatarUrl,
-                  size: 24,
+      builder: (context, constraints) {
+        AppLog.instance.trace(
+          "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumHero.closure#4",
+        );
+        return Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 4,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: (constraints.maxWidth - 72).clamp(
+                  64.0,
+                  double.infinity,
                 ),
               ),
-              label: Text(
-                '${anchor['nickName'] ?? album.artist}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              child: TextButton.icon(
+                key: const ValueKey('albumAnchorLink'),
+                onPressed: _openAnchor,
+                style: TextButton.styleFrom(
+                  foregroundColor: secondary,
+                  padding: EdgeInsets.zero,
+                  alignment: Alignment.centerLeft,
+                ),
+                icon: ClipOval(
+                  child: CoverImage(
+                    uri:
+                        _albumImage(anchor['smallLogo']) ??
+                        album.anchorAvatarUrl,
+                    size: 24,
+                  ),
+                ),
+                label: Text(
+                  '${anchor['nickName'] ?? album.artist}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
-          ),
-          if (xmlyPositive(anchor['uid']) != null || album.anchorUid != null)
-            TextButton(
-              onPressed: _followBusy ? null : _followAnchor,
-              style: TextButton.styleFrom(
-                foregroundColor: secondary,
-                padding: const EdgeInsets.symmetric(horizontal: 6),
+            if (xmlyPositive(anchor['uid']) != null || album.anchorUid != null)
+              TextButton(
+                onPressed: _followBusy ? null : _followAnchor,
+                style: TextButton.styleFrom(
+                  foregroundColor: secondary,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+                child: Text(
+                  _followBusy
+                      ? '处理中'
+                      : _following == true
+                      ? '已关注'
+                      : '+ 关注',
+                ),
               ),
-              child: Text(
-                _followBusy
-                    ? '处理中'
-                    : _following == true
-                    ? '已关注'
-                    : '+ 关注',
-              ),
-            ),
-        ],
-      ),
+          ],
+        );
+      },
     );
     final title = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3364,6 +3595,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         ? const SizedBox.shrink()
         : LayoutBuilder(
             builder: (context, constraints) {
+              AppLog.instance.trace(
+                "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumHero.closure#5",
+              );
               final columns =
                   constraints.maxWidth >= 340 &&
                       MediaQuery.textScalerOf(context).scale(12) <= 16
@@ -3478,7 +3712,12 @@ class _AlbumPageViewState extends State<AlbumPageView> {
               client: _client,
               albumId: album.id,
               album: album,
-              onOpenAlbum: (recommended) => _openAlbum(recommended.id),
+              onOpenAlbum: (recommended) {
+                AppLog.instance.trace(
+                  "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumHero.closure#6",
+                );
+                return _openAlbum(recommended.id);
+              },
             ),
           ),
         ],
@@ -3486,6 +3725,9 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
+        AppLog.instance.trace(
+          "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumHero.closure#7",
+        );
         final coverWidget = CoverImage(
           uri: cover,
           localPath: widget.runtime.albumCache[widget.albumId]?.coverPath,
@@ -3555,9 +3797,18 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                     alignment: Alignment.topCenter,
                     excludeFromSemantics: true,
                     errorBuilder: (_, _, _) {
+                      AppLog.instance.trace(
+                        "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumHero.closure#7.closure#1",
+                      );
                       WidgetsBinding.instance.addPostFrameCallback((_) {
+                        AppLog.instance.trace(
+                          "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumHero.closure#7.closure#1.closure#1",
+                        );
                         if (mounted && _posterUrl == poster)
                           setState(() {
+                            AppLog.instance.trace(
+                              "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumHero.closure#7.closure#1.closure#1.closure#1",
+                            );
                             _unavailablePoster = poster.toString();
                           });
                       });
@@ -3592,97 +3843,136 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     );
   }
 
-  Widget _albumTabs() => Material(
-    color: Theme.of(context).colorScheme.surface,
-    child: Row(
-      children: [
-        for (var index = 0; index < 3; index++)
-          Expanded(
-            child: Semantics(
-              selected: _tab == index,
-              button: true,
-              child: InkWell(
-                onTap: () => setState(() {
-                  _tab = index;
-                }),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 16, 4, 0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        const ['节目列表', '评价', '找相似'][index],
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: _tab == index
-                              ? FontWeight.w700
-                              : FontWeight.w400,
+  Widget _albumTabs() {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumTabs",
+    );
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      child: Row(
+        children: [
+          for (var index = 0; index < 3; index++)
+            Expanded(
+              child: Semantics(
+                selected: _tab == index,
+                button: true,
+                child: InkWell(
+                  onTap: () {
+                    AppLog.instance.trace(
+                      "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumTabs.closure#1",
+                    );
+                    return setState(() {
+                      AppLog.instance.trace(
+                        "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumTabs.closure#1.closure#1",
+                      );
+                      _tab = index;
+                    });
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 16, 4, 0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          const ['节目列表', '评价', '找相似'][index],
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: _tab == index
+                                ? FontWeight.w700
+                                : FontWeight.w400,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 9),
-                      Container(
-                        height: 3,
-                        width: 22,
-                        decoration: BoxDecoration(
-                          color: _tab == index
-                              ? const Color(0xffff414a)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(2),
+                        const SizedBox(height: 9),
+                        Container(
+                          height: 3,
+                          width: 22,
+                          decoration: BoxDecoration(
+                            color: _tab == index
+                                ? const Color(0xffff414a)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 
-  Widget _selectionControls() => Padding(
-    padding: const EdgeInsets.all(12),
-    child: Column(
-      children: [
-        TextField(
-          controller: _range,
-          decoration: const InputDecoration(
-            labelText: '下载集数范围',
-            hintText: '1–100 或 1,3,5-8',
+  Widget _selectionControls() {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._selectionControls",
+    );
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          TextField(
+            controller: _range,
+            decoration: const InputDecoration(
+              labelText: '下载集数范围',
+              hintText: '1–100 或 1,3,5-8',
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          children: [
-            FilledButton(
-              onPressed: _busy || widget.runtime.accounts.admissionPaused
-                  ? null
-                  : () => _download(),
-              child: Text('下载所选 (${_selected.length})'),
-            ),
-            TextButton(
-              onPressed: () => setState(() {
-                for (final track in _visible) {
-                  _select(track, true);
-                }
-              }),
-              child: const Text('选择当前列表'),
-            ),
-            TextButton(
-              onPressed: () => setState(_clearSelection),
-              child: const Text('退出多选'),
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              FilledButton(
+                onPressed: _busy || widget.runtime.accounts.admissionPaused
+                    ? null
+                    : () {
+                        AppLog.instance.trace(
+                          "lib/pages/catalogue_page.dart::_AlbumPageViewState._selectionControls.closure#1",
+                        );
+                        _download();
+                      },
+                child: Text('下载所选 (${_selected.length})'),
+              ),
+              TextButton(
+                onPressed: () {
+                  AppLog.instance.trace(
+                    "lib/pages/catalogue_page.dart::_AlbumPageViewState._selectionControls.closure#2",
+                  );
+                  return setState(() {
+                    AppLog.instance.trace(
+                      "lib/pages/catalogue_page.dart::_AlbumPageViewState._selectionControls.closure#2.closure#1",
+                    );
+                    for (final track in _visible) {
+                      _select(track, true);
+                    }
+                  });
+                },
+                child: const Text('选择当前列表'),
+              ),
+              TextButton(
+                onPressed: () {
+                  AppLog.instance.trace(
+                    "lib/pages/catalogue_page.dart::_AlbumPageViewState._selectionControls.closure#3",
+                  );
+                  return setState(_clearSelection);
+                },
+                child: const Text('退出多选'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _playSafely(Track track) async {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._playSafely",
+    );
     final epoch = _accountEpoch;
     try {
       await _play(track);
@@ -3690,12 +3980,18 @@ class _AlbumPageViewState extends State<AlbumPageView> {
       _recordCatalogueError('Playback failed', error, stack);
       if (mounted && epoch == _accountEpoch)
         setState(() {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._playSafely.closure#1",
+          );
           _error = _safeError(error);
         });
     }
   }
 
   Widget _programTile(Track track) {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._programTile",
+    );
     final downloaded = _downloaded.contains(track.id);
     final player = widget.runtime.player;
     final current =
@@ -3741,9 +4037,17 @@ class _AlbumPageViewState extends State<AlbumPageView> {
               value: _selected.containsKey(track.id),
               onChanged: downloaded
                   ? null
-                  : (value) => setState(() {
-                      _select(track, value == true);
-                    }),
+                  : (value) {
+                      AppLog.instance.trace(
+                        "lib/pages/catalogue_page.dart::_AlbumPageViewState._programTile.closure#1",
+                      );
+                      return setState(() {
+                        AppLog.instance.trace(
+                          "lib/pages/catalogue_page.dart::_AlbumPageViewState._programTile.closure#1.closure#1",
+                        );
+                        _select(track, value == true);
+                      });
+                    },
             )
           : SizedBox(
               width: 32,
@@ -3775,21 +4079,45 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         ),
       ),
       trailing: _menu(track),
-      onLongPress: () => setState(() {
-        _selectionMode = true;
-        _select(track, true);
-      }),
+      onLongPress: () {
+        AppLog.instance.trace(
+          "lib/pages/catalogue_page.dart::_AlbumPageViewState._programTile.closure#2",
+        );
+        return setState(() {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._programTile.closure#2.closure#1",
+          );
+          _selectionMode = true;
+          _select(track, true);
+        });
+      },
       onTap: _selectionMode
           ? downloaded
                 ? null
-                : () => setState(() {
-                    _select(track, !_selected.containsKey(track.id));
-                  })
-          : () => _playSafely(track),
+                : () {
+                    AppLog.instance.trace(
+                      "lib/pages/catalogue_page.dart::_AlbumPageViewState._programTile.closure#3",
+                    );
+                    return setState(() {
+                      AppLog.instance.trace(
+                        "lib/pages/catalogue_page.dart::_AlbumPageViewState._programTile.closure#3.closure#1",
+                      );
+                      _select(track, !_selected.containsKey(track.id));
+                    });
+                  }
+          : () {
+              AppLog.instance.trace(
+                "lib/pages/catalogue_page.dart::_AlbumPageViewState._programTile.closure#4",
+              );
+              _playSafely(track);
+            },
     );
   }
 
   Widget _overflow({bool dark = false}) {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._overflow",
+    );
     final identity = widget.runtime.accounts.primaryAccountId;
     final baseTheme = Theme.of(context);
     return Theme(
@@ -3802,28 +4130,39 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         ),
         color: baseTheme.colorScheme.surface,
         onSelected: _albumAction,
-        itemBuilder: (_) => [
-          CheckedPopupMenuItem(
-            value: 'auto',
-            enabled: identity != null && !_autoBusy,
-            checked:
-                identity != null &&
-                widget.runtime.autoDownloads.enabled(identity, widget.albumId),
-            child: Text(identity == null ? '自动下载新节目（需登录）' : '自动下载新节目（主账号）'),
-          ),
-          const PopupMenuItem(value: 'tags', child: Text('专辑标签')),
-          const PopupMenuItem(value: 'settings', child: Text('播放设置')),
-          PopupMenuItem(
-            value: 'refresh',
-            enabled: !_busy,
-            child: const Text('刷新专辑'),
-          ),
-        ],
+        itemBuilder: (_) {
+          AppLog.instance.trace(
+            "lib/pages/catalogue_page.dart::_AlbumPageViewState._overflow.closure#1",
+          );
+          return [
+            CheckedPopupMenuItem(
+              value: 'auto',
+              enabled: identity != null && !_autoBusy,
+              checked:
+                  identity != null &&
+                  widget.runtime.autoDownloads.enabled(
+                    identity,
+                    widget.albumId,
+                  ),
+              child: Text(identity == null ? '自动下载新节目（需登录）' : '自动下载新节目（主账号）'),
+            ),
+            const PopupMenuItem(value: 'tags', child: Text('专辑标签')),
+            const PopupMenuItem(value: 'settings', child: Text('播放设置')),
+            PopupMenuItem(
+              value: 'refresh',
+              enabled: !_busy,
+              child: const Text('刷新专辑'),
+            ),
+          ];
+        },
       ),
     );
   }
 
   Widget _albumContent({required bool wide, required bool poster}) {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumContent",
+    );
     final album = _album;
     if (_tab != 0)
       return Column(
@@ -3884,7 +4223,12 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                     trailing: TextButton(
                       onPressed: _busy
                           ? null
-                          : () => _loadPage(1, target: target),
+                          : () {
+                              AppLog.instance.trace(
+                                "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumContent.closure#1",
+                              );
+                              _loadPage(1, target: target);
+                            },
                       child: const Text('重新定位'),
                     ),
                   ),
@@ -3924,7 +4268,14 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                           ),
                         ),
                         TextButton(
-                          onPressed: _busy ? null : () => _loadPage(_page),
+                          onPressed: _busy
+                              ? null
+                              : () {
+                                  AppLog.instance.trace(
+                                    "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumContent.closure#2",
+                                  );
+                                  _loadPage(_page);
+                                },
                           child: const Text('重新加载'),
                         ),
                       ],
@@ -3946,7 +4297,12 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           SliverFixedExtentList.builder(
             itemExtent: _trackExtent,
             itemCount: _visible.length,
-            itemBuilder: (_, index) => _programTile(_visible[index]),
+            itemBuilder: (_, index) {
+              AppLog.instance.trace(
+                "lib/pages/catalogue_page.dart::_AlbumPageViewState._albumContent.closure#3",
+              );
+              return _programTile(_visible[index]);
+            },
           ),
           if (!_busy && _visible.isEmpty && album != null)
             const SliverToBoxAdapter(
@@ -3971,98 +4327,111 @@ class _AlbumPageViewState extends State<AlbumPageView> {
   }
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final landscape =
-          MediaQuery.orientationOf(context) == Orientation.landscape;
-      final wide = constraints.maxWidth >= 720 && landscape;
-      final poster = !landscape && _posterUrl != null;
-      final base = Theme.of(context);
-      final toolbarTheme = poster
-          ? base.copyWith(
-              colorScheme: base.colorScheme.copyWith(
-                surface: const Color(0xff302319),
-                onSurface: Colors.white,
+  Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState.build",
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        AppLog.instance.trace(
+          "lib/pages/catalogue_page.dart::_AlbumPageViewState.build.closure#1",
+        );
+        final landscape =
+            MediaQuery.orientationOf(context) == Orientation.landscape;
+        final wide = constraints.maxWidth >= 720 && landscape;
+        final poster = !landscape && _posterUrl != null;
+        final base = Theme.of(context);
+        final toolbarTheme = poster
+            ? base.copyWith(
+                colorScheme: base.colorScheme.copyWith(
+                  surface: const Color(0xff302319),
+                  onSurface: Colors.white,
+                ),
+                textTheme: base.textTheme.apply(
+                  bodyColor: Colors.white,
+                  displayColor: Colors.white,
+                ),
+                iconTheme: const IconThemeData(color: Colors.white),
+                appBarTheme: const AppBarTheme(
+                  backgroundColor: Color(0xff302319),
+                  foregroundColor: Colors.white,
+                  surfaceTintColor: Colors.transparent,
+                ),
+              )
+            : base;
+        final album = _album;
+        return Scaffold(
+          appBar: PreferredSize(
+            preferredSize: const Size.fromHeight(kToolbarHeight),
+            child: Theme(
+              data: toolbarTheme,
+              child: AppHeader(
+                windowControls: !widget.inPanel,
+                leading: widget.inPanel
+                    ? IconButton(
+                        tooltip: '收起专辑',
+                        onPressed: () {
+                          AppLog.instance.trace(
+                            "lib/pages/catalogue_page.dart::_AlbumPageViewState.build.closure#1.closure#1",
+                          );
+                          Navigator.of(context).maybePop();
+                        },
+                        icon: const Icon(Icons.keyboard_arrow_down),
+                      )
+                    : null,
+                title: Text(
+                  album?.title ?? '专辑',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                actions: [_overflow(dark: poster)],
               ),
-              textTheme: base.textTheme.apply(
-                bodyColor: Colors.white,
-                displayColor: Colors.white,
-              ),
-              iconTheme: const IconThemeData(color: Colors.white),
-              appBarTheme: const AppBarTheme(
-                backgroundColor: Color(0xff302319),
-                foregroundColor: Colors.white,
-                surfaceTintColor: Colors.transparent,
-              ),
-            )
-          : base;
-      final album = _album;
-      return Scaffold(
-        appBar: PreferredSize(
-          preferredSize: const Size.fromHeight(kToolbarHeight),
-          child: Theme(
-            data: toolbarTheme,
-            child: AppHeader(
-              windowControls: !widget.inPanel,
-              leading: widget.inPanel
-                  ? IconButton(
-                      tooltip: '收起专辑',
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      icon: const Icon(Icons.keyboard_arrow_down),
-                    )
-                  : null,
-              title: Text(
-                album?.title ?? '专辑',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              actions: [_overflow(dark: poster)],
             ),
           ),
-        ),
-        bottomNavigationBar: _footer(),
-        body: SafeArea(
-          top: false,
-          bottom: false,
-          child: Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: wide ? 1280 : 960),
-              child: wide
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          SizedBox(
-                            width: constraints.maxWidth < 1000 ? 260 : 300,
-                            child: AppScrollbar(
-                              controller: _informationScroll,
-                              child: SingleChildScrollView(
+          bottomNavigationBar: _footer(),
+          body: SafeArea(
+            top: false,
+            bottom: false,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: wide ? 1280 : 960),
+                child: wide
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(
+                              width: constraints.maxWidth < 1000 ? 260 : 300,
+                              child: AppScrollbar(
                                 controller: _informationScroll,
-                                child: album == null
-                                    ? const SizedBox.shrink()
-                                    : _albumHero(
-                                        album,
-                                        compact: true,
-                                        sidePanel: true,
-                                      ),
+                                child: SingleChildScrollView(
+                                  controller: _informationScroll,
+                                  child: album == null
+                                      ? const SizedBox.shrink()
+                                      : _albumHero(
+                                          album,
+                                          compact: true,
+                                          sidePanel: true,
+                                        ),
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 24),
-                          Expanded(
-                            child: _albumContent(wide: true, poster: false),
-                          ),
-                        ],
-                      ),
-                    )
-                  : _albumContent(wide: false, poster: poster),
+                            const SizedBox(width: 24),
+                            Expanded(
+                              child: _albumContent(wide: true, poster: false),
+                            ),
+                          ],
+                        ),
+                      )
+                    : _albumContent(wide: false, poster: poster),
+              ),
             ),
           ),
-        ),
-      );
-    },
-  );
+        );
+      },
+    );
+  }
 }
 
 class _AlbumProgramHeader extends SliverPersistentHeaderDelegate {
@@ -4070,18 +4439,40 @@ class _AlbumProgramHeader extends SliverPersistentHeaderDelegate {
   final double extent;
   final Widget child;
   @override
-  double get minExtent => extent;
+  double get minExtent {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumProgramHeader.minExtent.get",
+    );
+    return extent;
+  }
+
   @override
-  double get maxExtent => extent;
+  double get maxExtent {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumProgramHeader.maxExtent.get",
+    );
+    return extent;
+  }
+
   @override
   Widget build(
     BuildContext context,
     double shrinkOffset,
     bool overlapsContent,
-  ) => child;
+  ) {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumProgramHeader.build",
+    );
+    return child;
+  }
+
   @override
-  bool shouldRebuild(covariant _AlbumProgramHeader oldDelegate) =>
-      oldDelegate.extent != extent || oldDelegate.child != child;
+  bool shouldRebuild(covariant _AlbumProgramHeader oldDelegate) {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumProgramHeader.shouldRebuild",
+    );
+    return oldDelegate.extent != extent || oldDelegate.child != child;
+  }
 }
 
 class _FavoriteMenuItem extends PopupMenuEntry<String> {

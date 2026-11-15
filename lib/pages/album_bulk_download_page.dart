@@ -29,7 +29,12 @@ class AlbumBulkDownloadPage extends StatefulWidget {
   final String? accountIdentity;
 
   @override
-  State<AlbumBulkDownloadPage> createState() => _AlbumBulkDownloadPageState();
+  State<AlbumBulkDownloadPage> createState() {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::AlbumBulkDownloadPage.createState",
+    );
+    return _AlbumBulkDownloadPageState();
+  }
 }
 
 class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
@@ -64,16 +69,23 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   bool _initialPagePending = true;
   String? _error;
 
-  bool get _blocked =>
-      _submitting ||
-      _loading ||
-      _client == null ||
-      widget.runtime.accounts.admissionPaused ||
-      widget.runtime.closing ||
-      widget.runtime.restoringBackup ||
-      widget.runtime.restoreNeedsReload;
+  bool get _blocked {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._blocked.get",
+    );
+    return _submitting ||
+        _loading ||
+        _client == null ||
+        widget.runtime.accounts.admissionPaused ||
+        widget.runtime.closing ||
+        widget.runtime.restoringBackup ||
+        widget.runtime.restoreNeedsReload;
+  }
 
   XmlyClient _resolveClient() {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._resolveClient",
+    );
     final identity = widget.accountIdentity;
     if (identity == null) return widget.runtime.client;
     return identity == 'anonymous'
@@ -83,6 +95,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
 
   @override
   void initState() {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState.initState",
+    );
     super.initState();
     widget.runtime.addListener(_runtimeChanged);
     _bind();
@@ -90,6 +105,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
 
   @override
   void didUpdateWidget(covariant AlbumBulkDownloadPage oldWidget) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState.didUpdateWidget",
+    );
     super.didUpdateWidget(oldWidget);
     if (oldWidget.runtime != widget.runtime ||
         oldWidget.album.id != widget.album.id ||
@@ -102,6 +120,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
 
   @override
   void dispose() {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState.dispose",
+    );
     widget.runtime.removeListener(_runtimeChanged);
     _epoch++;
     _scroll.dispose();
@@ -109,6 +130,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   void _bind({bool accountChanged = false}) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._bind",
+    );
     _epoch++;
     _viewRequest++;
     _pages.clear();
@@ -148,6 +172,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   void _refreshTasks() {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._refreshTasks",
+    );
     _tasks = {
       for (final task in widget.runtime.downloads.tasks)
         if (task.accountIdentity == _identity &&
@@ -170,6 +197,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Future<void> _readFileSizes(Map<String, String> paths) async {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._readFileSizes",
+    );
     final scan = ++_fileScan, epoch = _epoch;
     final sizes = <String, int>{};
     for (final entry in paths.entries) {
@@ -183,32 +213,63 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
       }
     }
     if (mounted && epoch == _epoch && scan == _fileScan) {
-      setState(() => _fileSizes = sizes);
+      setState(() {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._readFileSizes.closure#1",
+        );
+        _fileSizes = sizes;
+      });
     }
   }
 
   void _runtimeChanged() {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._runtimeChanged",
+    );
     if (!mounted) return;
     try {
       final client = _resolveClient();
       if (!identical(client, _client) || client.cacheIdentity != _clientKey) {
-        setState(() => _bind(accountChanged: true));
+        setState(() {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._runtimeChanged.closure#1",
+          );
+          return _bind(accountChanged: true);
+        });
       } else {
         setState(_refreshTasks);
       }
     } catch (error, stack) {
       if (_client != null) {
-        setState(() => _bind(accountChanged: true));
+        setState(() {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._runtimeChanged.closure#2",
+          );
+          return _bind(accountChanged: true);
+        });
       } else if (_error == null) {
         _record(error, stack);
-        setState(() => _error = _message(error));
+        setState(() {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._runtimeChanged.closure#3",
+          );
+          _error = _message(error);
+        });
       }
     }
   }
 
-  int _position(Track track) => track.officialPosition ?? 0;
+  int _position(Track track) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._position",
+    );
+    return track.officialPosition ?? 0;
+  }
 
   Future<AlbumPage> _readPage(XmlyClient client, int page) async {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._readPage",
+    );
     final result = await client.album(
       widget.album.id,
       page: page,
@@ -245,6 +306,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Future<AlbumPage> _fetchPage(int page) async {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._fetchPage",
+    );
     final cached = _pages[page];
     if (cached != null) return cached;
     final client = _client;
@@ -252,24 +316,46 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
       throw const XmlyException('account_changed', '账号已变更，请重试');
     }
     final epoch = _epoch;
-    final pending = _requests.putIfAbsent(page, () => _readPage(client, page));
+    final pending = _requests.putIfAbsent(page, () {
+      AppLog.instance.trace(
+        "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._fetchPage.closure#1",
+      );
+      return _readPage(client, page);
+    });
     try {
       final result = await pending;
       if (!mounted || epoch != _epoch) {
         throw const XmlyException('account_changed', '账号已变更，请重试');
       }
       if (!_pages.containsKey(page)) {
-        final ids = result.tracks.map((track) => track.id).toSet();
-        if (_pages.values.any(
-          (loaded) =>
-              loaded.total != result.total ||
-              loaded.tracks.any((track) => ids.contains(track.id)),
-        )) {
+        final ids = result.tracks.map((track) {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._fetchPage.closure#2",
+          );
+          return track.id;
+        }).toSet();
+        if (_pages.values.any((loaded) {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._fetchPage.closure#3",
+          );
+          return loaded.total != result.total ||
+              loaded.tracks.any((track) {
+                AppLog.instance.trace(
+                  "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._fetchPage.closure#3.closure#1",
+                );
+                return ids.contains(track.id);
+              });
+        })) {
           throw const XmlyException('catalogue_changed', '专辑声音已变更，请重新选择');
         }
         _pages[page] = result;
         final tracks = result.tracks.toList()
-          ..sort((a, b) => _position(a).compareTo(_position(b)));
+          ..sort((a, b) {
+            AppLog.instance.trace(
+              "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._fetchPage.closure#4",
+            );
+            return _position(a).compareTo(_position(b));
+          });
         _groups[(page - 1) * _groupSize + 1] = tracks;
         for (final track in tracks) {
           if (_selected.containsKey(track.id)) _selected[track.id] = track;
@@ -285,9 +371,15 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Future<void> _loadPage(int page, {bool keepError = false}) async {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._loadPage",
+    );
     if (_client == null) return;
     final epoch = _epoch, request = ++_viewRequest;
     setState(() {
+      AppLog.instance.trace(
+        "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._loadPage.closure#1",
+      );
       _page = _firstPage = _lastPage = page;
       _pickerOpen = false;
       _loading = true;
@@ -300,11 +392,19 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
     try {
       await _fetchPage(page);
       if (!mounted || epoch != _epoch || request != _viewRequest) return;
-      setState(() => _loading = false);
+      setState(() {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._loadPage.closure#2",
+        );
+        _loading = false;
+      });
     } catch (error, stack) {
       if (!mounted || epoch != _epoch || request != _viewRequest) return;
       _record(error, stack);
       setState(() {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._loadPage.closure#3",
+        );
         _loading = false;
         _error = _message(error);
       });
@@ -312,6 +412,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Future<void> _loadAdjacent(bool before, {bool retry = false}) async {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._loadAdjacent",
+    );
     if (_blocked || (before ? _loadingBefore : _loadingAfter)) return;
     final page = before ? _firstPage - 1 : _lastPage + 1;
     if (page < 1 ||
@@ -320,6 +423,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
       return;
     final epoch = _epoch, view = _viewRequest;
     setState(() {
+      AppLog.instance.trace(
+        "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._loadAdjacent.closure#1",
+      );
       if (before) {
         _loadingBefore = true;
       } else {
@@ -335,6 +441,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
       await _fetchPage(page);
       if (!mounted || epoch != _epoch || view != _viewRequest) return;
       setState(() {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._loadAdjacent.closure#2",
+        );
         if (before) {
           _firstPage = page;
         } else {
@@ -345,6 +454,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
       if (!mounted || epoch != _epoch || view != _viewRequest) return;
       _record(error, stack);
       setState(() {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._loadAdjacent.closure#3",
+        );
         _failedEdges.add(page);
         _retryBefore = before;
         _error = _message(error);
@@ -352,6 +464,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
     } finally {
       if (mounted && epoch == _epoch && view == _viewRequest) {
         setState(() {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._loadAdjacent.closure#4",
+          );
           if (before) {
             _loadingBefore = false;
           } else {
@@ -363,6 +478,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   bool _onScroll(ScrollNotification notification) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._onScroll",
+    );
     if (notification.depth != 0 || _blocked || _adjustingScroll) return false;
     final delta = switch (notification) {
       ScrollUpdateNotification() => notification.scrollDelta ?? 0,
@@ -378,6 +496,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Widget _catalogueList({bool wide = false}) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._catalogueList",
+    );
     return NotificationListener<ScrollNotification>(
       onNotification: wide ? null : _onScroll,
       child: AppScrollbar(
@@ -392,18 +513,27 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
               // Earlier pages grow upwards without shifting the anchor page.
               SliverList.builder(
                 itemCount: _page - _firstPage,
-                itemBuilder: (context, index) =>
-                    _group((_page - index - 2) * _groupSize + 1),
+                itemBuilder: (context, index) {
+                  AppLog.instance.trace(
+                    "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._catalogueList.closure#1",
+                  );
+                  return _group((_page - index - 2) * _groupSize + 1);
+                },
               ),
             SliverList.builder(
               key: wide ? null : _centerKey,
               itemCount: wide
                   ? (_total + _groupSize - 1) ~/ _groupSize
                   : _lastPage - _page + 1,
-              itemBuilder: (context, index) => _group(
-                (wide ? index : _page + index - 1) * _groupSize + 1,
-                wide: wide,
-              ),
+              itemBuilder: (context, index) {
+                AppLog.instance.trace(
+                  "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._catalogueList.closure#2",
+                );
+                return _group(
+                  (wide ? index : _page + index - 1) * _groupSize + 1,
+                  wide: wide,
+                );
+              },
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 12)),
           ],
@@ -412,54 +542,88 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
     );
   }
 
-  int _groupStart(int position) =>
-      (position - 1) ~/ _groupSize * _groupSize + 1;
+  int _groupStart(int position) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._groupStart",
+    );
+    return (position - 1) ~/ _groupSize * _groupSize + 1;
+  }
 
-  int _groupCount(int start) =>
-      _groups[start]?.length ??
-      math.max(0, math.min(_groupSize, _total - start + 1));
+  int _groupCount(int start) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._groupCount",
+    );
+    return _groups[start]?.length ??
+        math.max(0, math.min(_groupSize, _total - start + 1));
+  }
 
-  bool _isSelected(Track track) =>
-      _selectedGroups.contains(_groupStart(_position(track)))
-      ? !_excludedPositions.contains(_position(track))
-      : _selected.containsKey(track.id);
+  bool _isSelected(Track track) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._isSelected",
+    );
+    return _selectedGroups.contains(_groupStart(_position(track)))
+        ? !_excludedPositions.contains(_position(track))
+        : _selected.containsKey(track.id);
+  }
 
   int _selectedInGroup(int start) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._selectedInGroup",
+    );
     if (!_selectedGroups.contains(start)) {
-      return _selected.values
-          .where((track) => _groupStart(_position(track)) == start)
-          .length;
+      return _selected.values.where((track) {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._selectedInGroup.closure#1",
+        );
+        return _groupStart(_position(track)) == start;
+      }).length;
     }
     final tracks = _groups[start];
     if (tracks != null) {
-      return tracks
-          .where((track) => !_excludedPositions.contains(_position(track)))
-          .length;
+      return tracks.where((track) {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._selectedInGroup.closure#2",
+        );
+        return !_excludedPositions.contains(_position(track));
+      }).length;
     }
     return _groupCount(start) -
-        _excludedPositions
-            .where(
-              (position) =>
-                  position >= start && position < start + _groupCount(start),
-            )
-            .length;
+        _excludedPositions.where((position) {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._selectedInGroup.closure#3",
+          );
+          return position >= start && position < start + _groupCount(start);
+        }).length;
   }
 
-  int get _selectedCount =>
-      _selectedGroups.fold<int>(
-        0,
-        (sum, start) => sum + _selectedInGroup(start),
-      ) +
-      _selected.values
-          .where(
-            (track) => !_selectedGroups.contains(_groupStart(_position(track))),
-          )
-          .length;
+  int get _selectedCount {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._selectedCount.get",
+    );
+    return _selectedGroups.fold<int>(0, (sum, start) {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._selectedCount.get.closure#1",
+          );
+          return sum + _selectedInGroup(start);
+        }) +
+        _selected.values.where((track) {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._selectedCount.get.closure#2",
+          );
+          return !_selectedGroups.contains(_groupStart(_position(track)));
+        }).length;
+  }
 
   void _toggleTrack(Track track) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._toggleTrack",
+    );
     if (_blocked) return;
     final position = _position(track);
     setState(() {
+      AppLog.instance.trace(
+        "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._toggleTrack.closure#1",
+      );
       if (_selectedGroups.contains(_groupStart(position))) {
         if (!_excludedPositions.add(position))
           _excludedPositions.remove(position);
@@ -470,16 +634,28 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   void _toggleGroup(int start) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._toggleGroup",
+    );
     final count = _groupCount(start);
     if (_blocked || (count == 0 && !_selectedGroups.contains(start))) return;
     final selected = count == 0 || _selectedInGroup(start) == count;
     setState(() {
-      _selected.removeWhere(
-        (_, track) => _groupStart(_position(track)) == start,
+      AppLog.instance.trace(
+        "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._toggleGroup.closure#1",
       );
-      _excludedPositions.removeWhere(
-        (position) => _groupStart(position) == start,
-      );
+      _selected.removeWhere((_, track) {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._toggleGroup.closure#1.closure#1",
+        );
+        return _groupStart(_position(track)) == start;
+      });
+      _excludedPositions.removeWhere((position) {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._toggleGroup.closure#1.closure#2",
+        );
+        return _groupStart(position) == start;
+      });
       if (selected) {
         _selectedGroups.remove(start);
       } else {
@@ -489,6 +665,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Future<void> _loadGroup(int start) async {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._loadGroup",
+    );
     final page = (start - 1) ~/ _pageSize + 1;
     if (_pages.containsKey(page) ||
         _loadingGroups.contains(start) ||
@@ -496,6 +675,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
       return;
     final epoch = _epoch;
     setState(() {
+      AppLog.instance.trace(
+        "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._loadGroup.closure#1",
+      );
       _loadingGroups.add(start);
       _groupErrors.remove(start);
     });
@@ -504,15 +686,28 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
     } catch (error, stack) {
       if (!mounted || epoch != _epoch) return;
       _record(error, stack);
-      setState(() => _groupErrors[start] = _message(error));
+      setState(() {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._loadGroup.closure#2",
+        );
+        _groupErrors[start] = _message(error);
+      });
     } finally {
       if (mounted && epoch == _epoch) {
-        setState(() => _loadingGroups.remove(start));
+        setState(() {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._loadGroup.closure#3",
+          );
+          _loadingGroups.remove(start);
+        });
       }
     }
   }
 
   void _toggleExpanded(int start, {bool wide = false}) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._toggleExpanded",
+    );
     final header = _groupHeaders[(wide, start)];
     final render = header?.currentContext?.findRenderObject();
     final top = render is RenderBox
@@ -523,12 +718,18 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
         ? _scroll.position.viewportDimension
         : null;
     setState(() {
+      AppLog.instance.trace(
+        "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._toggleExpanded.closure#1",
+      );
       if (!_expanded.add(start)) _expanded.remove(start);
     });
     if (_expanded.contains(start)) unawaited(_loadGroup(start));
     if (top == null) return;
     // Keep the tapped header anchored when either sliver direction changes size.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppLog.instance.trace(
+        "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._toggleExpanded.closure#2",
+      );
       if (!mounted ||
           epoch != _epoch ||
           view != _viewRequest ||
@@ -554,6 +755,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Future<void> _chooseRange() async {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._chooseRange",
+    );
     if (_blocked || _total == 0) return;
     if (_selectedGroups.isNotEmpty || _selected.isNotEmpty) return _download();
     final epoch = _epoch;
@@ -564,63 +768,82 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
     final form = GlobalKey<FormState>();
     final range = await showDialog<({int start, int end})>(
       context: context,
-      builder: (context) => AlertDialog(
-        scrollable: true,
-        title: const Text('下载选定范围声音'),
-        content: Form(
-          key: form,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('按官方声音序号选择，包含起止集。也可返回列表勾选200集分段或单集。'),
-              TextFormField(
-                controller: start,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '起始集'),
-                validator: (value) {
-                  final number = int.tryParse(value?.trim() ?? '');
-                  return number == null || number < 1 || number > _total
-                      ? '请输入1到$_total之间的序号'
-                      : null;
-                },
-              ),
-              TextFormField(
-                controller: end,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '结束集'),
-                validator: (value) {
-                  final first = int.tryParse(start.text.trim());
-                  final last = int.tryParse(value?.trim() ?? '');
-                  if (first == null ||
-                      last == null ||
-                      last < first ||
-                      last > _total) {
-                    return '结束集须不小于起始集且不超过$_total';
-                  }
-                  return last - first + 1 > 5000 ? '每批最多下载5000集' : null;
-                },
-              ),
-            ],
+      builder: (context) {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._chooseRange.closure#1",
+        );
+        return AlertDialog(
+          scrollable: true,
+          title: const Text('下载选定范围声音'),
+          content: Form(
+            key: form,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('按官方声音序号选择，包含起止集。也可返回列表勾选200集分段或单集。'),
+                TextFormField(
+                  controller: start,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: '起始集'),
+                  validator: (value) {
+                    AppLog.instance.trace(
+                      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._chooseRange.closure#1.closure#1",
+                    );
+                    final number = int.tryParse(value?.trim() ?? '');
+                    return number == null || number < 1 || number > _total
+                        ? '请输入1到$_total之间的序号'
+                        : null;
+                  },
+                ),
+                TextFormField(
+                  controller: end,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: '结束集'),
+                  validator: (value) {
+                    AppLog.instance.trace(
+                      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._chooseRange.closure#1.closure#2",
+                    );
+                    final first = int.tryParse(start.text.trim());
+                    final last = int.tryParse(value?.trim() ?? '');
+                    if (first == null ||
+                        last == null ||
+                        last < first ||
+                        last > _total) {
+                      return '结束集须不小于起始集且不超过$_total';
+                    }
+                    return last - first + 1 > 5000 ? '每批最多下载5000集' : null;
+                  },
+                ),
+              ],
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (form.currentState!.validate()) {
-                Navigator.pop(context, (
-                  start: int.parse(start.text.trim()),
-                  end: int.parse(end.text.trim()),
-                ));
-              }
-            },
-            child: const Text('下载此范围'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                AppLog.instance.trace(
+                  "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._chooseRange.closure#1.closure#3",
+                );
+                return Navigator.pop(context);
+              },
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                AppLog.instance.trace(
+                  "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._chooseRange.closure#1.closure#4",
+                );
+                if (form.currentState!.validate()) {
+                  Navigator.pop(context, (
+                    start: int.parse(start.text.trim()),
+                    end: int.parse(end.text.trim()),
+                  ));
+                }
+              },
+              child: const Text('下载此范围'),
+            ),
+          ],
+        );
+      },
     );
     start.dispose();
     end.dispose();
@@ -633,6 +856,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
     bool wholeAlbum = false,
     ({int start, int end})? range,
   }) async {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._download",
+    );
     if (_blocked ||
         (!wholeAlbum &&
             range == null &&
@@ -645,6 +871,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
     final individuals = Map<String, Track>.of(_selected);
     final tracks = <Track>[];
     setState(() {
+      AppLog.instance.trace(
+        "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._download.closure#1",
+      );
       _submitting = true;
       _error = null;
     });
@@ -680,6 +909,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
           }
           tracks.addAll(
             result.tracks.where((track) {
+              AppLog.instance.trace(
+                "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._download.closure#2",
+              );
               final position = _position(track);
               if (range != null) {
                 return position >= range.start && position <= range.end;
@@ -691,15 +923,30 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
             }),
           );
         }
-        final ids = tracks.map((track) => track.id).toSet();
+        final ids = tracks.map((track) {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._download.closure#3",
+          );
+          return track.id;
+        }).toSet();
         if (ids.length != tracks.length ||
             tracks.map(_position).toSet().length != tracks.length ||
             (range == null &&
-                individuals.values.any((track) => !ids.contains(track.id)))) {
+                individuals.values.any((track) {
+                  AppLog.instance.trace(
+                    "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._download.closure#4",
+                  );
+                  return !ids.contains(track.id);
+                }))) {
           throw const XmlyException('range_not_found', '部分声音序号不存在，请刷新后重试');
         }
         if (!mounted || epoch != _epoch) return;
-        tracks.sort((a, b) => _position(a).compareTo(_position(b)));
+        tracks.sort((a, b) {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._download.closure#5",
+          );
+          return _position(a).compareTo(_position(b));
+        });
         // Keep entitlement, quota, confirmation and deduplication in the
         // existing admission flow; catalogue flags are not authority.
         await requestDownloads(
@@ -711,6 +958,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
       }
       if (!mounted || epoch != _epoch) return;
       setState(() {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._download.closure#6",
+        );
         if (wholeAlbum || range == null) {
           _selected.clear();
           _selectedGroups.clear();
@@ -725,24 +975,46 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
     } catch (error, stack) {
       if (!mounted || epoch != _epoch) return;
       _record(error, stack);
-      setState(() => _error = _message(error));
+      setState(() {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._download.closure#7",
+        );
+        _error = _message(error);
+      });
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      if (mounted)
+        setState(() {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._download.closure#8",
+          );
+          _submitting = false;
+        });
     }
   }
 
   void _openDownloads() {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._openDownloads",
+    );
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => Scaffold(
-          appBar: const AppHeader(title: Text('我的下载'), centerTitle: true),
-          body: SafeArea(child: DownloadPage(runtime: widget.runtime)),
-        ),
+        builder: (_) {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._openDownloads.closure#1",
+          );
+          return Scaffold(
+            appBar: const AppHeader(title: Text('我的下载'), centerTitle: true),
+            body: SafeArea(child: DownloadPage(runtime: widget.runtime)),
+          );
+        },
       ),
     );
   }
 
   int? _cachedBytes(Track track) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._cachedBytes",
+    );
     final task = _tasks[track.id];
     if (task == null || task.outputMissing || task.outputDeleted) return null;
     if (task.state == DownloadState.completed) return _fileSizes[track.id];
@@ -752,6 +1024,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Widget _cacheLabel(int bytes) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._cacheLabel",
+    );
     final value = bytes < 1024
         ? '${bytes}B'
         : bytes < 1024 * 1024
@@ -777,6 +1052,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
     bool partial = false,
     required VoidCallback? onPressed,
   }) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._selection",
+    );
     return Semantics(
       label: label,
       checked: selected,
@@ -800,6 +1078,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Widget _trackRow(Track track) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._trackRow",
+    );
     final selected = _isSelected(track);
     final cached = _cachedBytes(track);
     final task = _tasks[track.id];
@@ -813,7 +1094,14 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
         ? '已在下载列表中'
         : null;
     return InkWell(
-      onTap: _blocked ? null : () => _toggleTrack(track),
+      onTap: _blocked
+          ? null
+          : () {
+              AppLog.instance.trace(
+                "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._trackRow.closure#1",
+              );
+              return _toggleTrack(track);
+            },
       child: Padding(
         padding: const EdgeInsets.only(left: 24, right: 8, top: 8, bottom: 8),
         child: ConstrainedBox(
@@ -860,7 +1148,14 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
               _selection(
                 label: '${selected ? '取消选择' : '选择'}第${_position(track)}集',
                 selected: selected,
-                onPressed: _blocked ? null : () => _toggleTrack(track),
+                onPressed: _blocked
+                    ? null
+                    : () {
+                        AppLog.instance.trace(
+                          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._trackRow.closure#2",
+                        );
+                        return _toggleTrack(track);
+                      },
               ),
             ],
           ),
@@ -870,6 +1165,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Widget _group(int start, {bool wide = false}) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._group",
+    );
     final tracks = _groups[start] ?? const <Track>[];
     final end = math.min(start + _groupSize - 1, _total);
     final expanded = _expanded.contains(start);
@@ -877,10 +1175,12 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
     final selected =
         count == _groupCount(start) &&
         (count > 0 || _selectedGroups.contains(start));
-    final cached = tracks.fold<int>(
-      0,
-      (sum, track) => sum + (_cachedBytes(track) ?? 0),
-    );
+    final cached = tracks.fold<int>(0, (sum, track) {
+      AppLog.instance.trace(
+        "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._group.closure#1",
+      );
+      return sum + (_cachedBytes(track) ?? 0);
+    });
     final title = '第${start}集 – 第${end}集';
     final inlineCache =
         MediaQuery.sizeOf(context).width >= 400 &&
@@ -897,7 +1197,12 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
                 child: InkWell(
                   onTap: _blocked
                       ? null
-                      : () => _toggleExpanded(start, wide: wide),
+                      : () {
+                          AppLog.instance.trace(
+                            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._group.closure#2",
+                          );
+                          return _toggleExpanded(start, wide: wide);
+                        },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -951,7 +1256,14 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
                   label: '${selected ? '取消选择' : '选择'}$title',
                   selected: selected,
                   partial: count > 0 && !selected,
-                  onPressed: _blocked ? null : () => _toggleGroup(start),
+                  onPressed: _blocked
+                      ? null
+                      : () {
+                          AppLog.instance.trace(
+                            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._group.closure#3",
+                          );
+                          return _toggleGroup(start);
+                        },
                 ),
               ),
             ],
@@ -975,7 +1287,14 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
                 children: [
                   Expanded(child: Text(error)),
                   TextButton(
-                    onPressed: _blocked ? null : () => _loadGroup(start),
+                    onPressed: _blocked
+                        ? null
+                        : () {
+                            AppLog.instance.trace(
+                              "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._group.closure#4",
+                            );
+                            _loadGroup(start);
+                          },
                     child: const Text('重试'),
                   ),
                 ],
@@ -989,8 +1308,14 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Widget _rangeGrid() {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._rangeGrid",
+    );
     return LayoutBuilder(
       builder: (context, constraints) {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._rangeGrid.closure#1",
+        );
         final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
         final columns = (constraints.maxWidth / (90 * scale)).floor().clamp(
           1,
@@ -1009,10 +1334,20 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
             ),
             itemCount: (_total + _pageSize - 1) ~/ _pageSize,
             itemBuilder: (context, index) {
+              AppLog.instance.trace(
+                "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._rangeGrid.closure#1.closure#1",
+              );
               final page = index + 1;
               final active = page == _page;
               return TextButton(
-                onPressed: _blocked ? null : () => _loadPage(page),
+                onPressed: _blocked
+                    ? null
+                    : () {
+                        AppLog.instance.trace(
+                          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._rangeGrid.closure#1.closure#1.closure#1",
+                        );
+                        _loadPage(page);
+                      },
                 style: TextButton.styleFrom(
                   foregroundColor: active
                       ? _red
@@ -1039,6 +1374,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Widget _rangePicker(double availableHeight) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._rangePicker",
+    );
     return Align(
       alignment: Alignment.topCenter,
       child: Material(
@@ -1052,6 +1390,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Widget _footer({bool wide = false}) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._footer",
+    );
     return SafeArea(
       top: false,
       child: Padding(
@@ -1064,7 +1405,12 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
               OutlinedButton(
                 onPressed: _blocked || _total == 0
                     ? null
-                    : () => _download(wholeAlbum: true),
+                    : () {
+                        AppLog.instance.trace(
+                          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._footer.closure#1",
+                        );
+                        _download(wholeAlbum: true);
+                      },
                 child: const Text('下载整个专辑', textAlign: TextAlign.center),
               )
             else
@@ -1081,7 +1427,12 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
                   TextButton(
                     onPressed: _blocked || _total == 0
                         ? null
-                        : () => _download(wholeAlbum: true),
+                        : () {
+                            AppLog.instance.trace(
+                              "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._footer.closure#2",
+                            );
+                            _download(wholeAlbum: true);
+                          },
                     child: const Text('下载整个专辑'),
                   ),
                 ],
@@ -1124,12 +1475,25 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Widget _rangeButton() {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._rangeButton",
+    );
     final first = (_firstPage - 1) * _pageSize + 1;
     final end = math.min(_lastPage * _pageSize, _total);
     return TextButton(
       onPressed: _blocked || _total == 0
           ? null
-          : () => setState(() => _pickerOpen = !_pickerOpen),
+          : () {
+              AppLog.instance.trace(
+                "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._rangeButton.closure#1",
+              );
+              return setState(() {
+                AppLog.instance.trace(
+                  "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._rangeButton.closure#1.closure#1",
+                );
+                _pickerOpen = !_pickerOpen;
+              });
+            },
       style: TextButton.styleFrom(
         foregroundColor: Theme.of(context).colorScheme.outline,
       ),
@@ -1144,6 +1508,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Widget _errorBanner() {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._errorBanner",
+    );
     if (_error == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -1162,8 +1529,16 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
                     widget.runtime.accounts.admissionPaused
                 ? null
                 : () {
+                    AppLog.instance.trace(
+                      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._errorBanner.closure#1",
+                    );
                     if (_client == null) {
-                      setState(() => _bind());
+                      setState(() {
+                        AppLog.instance.trace(
+                          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._errorBanner.closure#1.closure#1",
+                        );
+                        return _bind();
+                      });
                     } else if (_retryBefore != null) {
                       _loadAdjacent(_retryBefore!, retry: true);
                     } else {
@@ -1178,6 +1553,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Widget _catalogueBody({bool wide = false}) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._catalogueBody",
+    );
     return Column(
       children: [
         SizedBox(
@@ -1203,58 +1581,72 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
   }
 
   Widget _wideRail() {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._wideRail",
+    );
     return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        primary: false,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: constraints.maxHeight),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 4),
-                    child: Text(
-                      '共$_total集',
-                      style: Theme.of(context).textTheme.titleMedium,
+      builder: (context, constraints) {
+        AppLog.instance.trace(
+          "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._wideRail.closure#1",
+        );
+        return SingleChildScrollView(
+          primary: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 18, 16, 4),
+                      child: Text(
+                        '共$_total集',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: Text(
+                        '已选择 $_selectedCount 集',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
                     ),
-                    child: Text(
-                      '已选择 $_selectedCount 集',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    TextButton.icon(
+                      onPressed: _openDownloads,
+                      icon: const Icon(Icons.download_outlined),
+                      label: const Text('我的下载'),
                     ),
-                  ),
-                  TextButton.icon(
-                    onPressed: _openDownloads,
-                    icon: const Icon(Icons.download_outlined),
-                    label: const Text('我的下载'),
-                  ),
-                  _errorBanner(),
-                ],
-              ),
-              _footer(wide: true),
-            ],
+                    _errorBanner(),
+                  ],
+                ),
+                _footer(wide: true),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState.build",
+    );
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: const AppHeader(title: Text('批量下载'), centerTitle: true),
       body: LayoutBuilder(
         builder: (context, constraints) {
+          AppLog.instance.trace(
+            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState.build.closure#1",
+          );
           final wide =
               constraints.maxWidth >= 720 &&
               MediaQuery.orientationOf(context) == Orientation.landscape;
@@ -1263,6 +1655,9 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
             if (!_pages.containsKey(_page)) {
               final epoch = _epoch;
               WidgetsBinding.instance.addPostFrameCallback((_) {
+                AppLog.instance.trace(
+                  "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState.build.closure#1.closure#1",
+                );
                 if (mounted && epoch == _epoch) {
                   unawaited(_loadPage(_page, keepError: _error != null));
                 }
@@ -1312,25 +1707,39 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
                         _errorBanner(),
                         Expanded(
                           child: LayoutBuilder(
-                            builder: (context, constraints) => Stack(
-                              children: [
-                                _catalogueBody(),
-                                if (_pickerOpen) ...[
-                                  Positioned.fill(
-                                    child: ModalBarrier(
-                                      color: Colors.black.withValues(
-                                        alpha: .68,
+                            builder: (context, constraints) {
+                              AppLog.instance.trace(
+                                "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState.build.closure#1.closure#2",
+                              );
+                              return Stack(
+                                children: [
+                                  _catalogueBody(),
+                                  if (_pickerOpen) ...[
+                                    Positioned.fill(
+                                      child: ModalBarrier(
+                                        color: Colors.black.withValues(
+                                          alpha: .68,
+                                        ),
+                                        dismissible: true,
+                                        onDismiss: () {
+                                          AppLog.instance.trace(
+                                            "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState.build.closure#1.closure#2.closure#1",
+                                          );
+                                          return setState(() {
+                                            AppLog.instance.trace(
+                                              "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState.build.closure#1.closure#2.closure#1.closure#1",
+                                            );
+                                            _pickerOpen = false;
+                                          });
+                                        },
+                                        semanticsLabel: '关闭选集范围',
                                       ),
-                                      dismissible: true,
-                                      onDismiss: () =>
-                                          setState(() => _pickerOpen = false),
-                                      semanticsLabel: '关闭选集范围',
                                     ),
-                                  ),
-                                  _rangePicker(constraints.maxHeight),
+                                    _rangePicker(constraints.maxHeight),
+                                  ],
                                 ],
-                              ],
-                            ),
+                              );
+                            },
                           ),
                         ),
                       ],
@@ -1342,13 +1751,21 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
     );
   }
 
-  String _message(Object error) => switch (error) {
-    XmlyException() => error.message,
-    AccountException() => error.message,
-    _ => '请求未完成，请稍后重试',
-  };
+  String _message(Object error) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._message",
+    );
+    return switch (error) {
+      XmlyException() => error.message,
+      AccountException() => error.message,
+      _ => '请求未完成，请稍后重试',
+    };
+  }
 
   void _record(Object error, StackTrace stack) {
+    AppLog.instance.trace(
+      "lib/pages/album_bulk_download_page.dart::_AlbumBulkDownloadPageState._record",
+    );
     if (AppLog.instance.errorWasRecorded(error)) return;
     AppLog.instance.write(
       error is XmlyException || error is AccountException

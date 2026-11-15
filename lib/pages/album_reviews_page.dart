@@ -335,7 +335,13 @@ class _AlbumReviewsPageState extends State<AlbumReviewsPage> {
                                         onPressed: _busy || _newest == newest
                                             ? null
                                             : () {
+                                                AppLog.instance.trace(
+                                                  "lib/pages/album_reviews_page.dart::_AlbumReviewsPageState.build.closure#2.closure#1",
+                                                );
                                                 setState(() {
+                                                  AppLog.instance.trace(
+                                                    "lib/pages/album_reviews_page.dart::_AlbumReviewsPageState.build.closure#2.closure#1.closure#1",
+                                                  );
                                                   _newest = newest;
                                                   _result = null;
                                                 });
@@ -368,7 +374,7 @@ class _AlbumReviewsPageState extends State<AlbumReviewsPage> {
                             _ReviewFailure(
                               onRetry: () {
                                 AppLog.instance.trace(
-                                  'lib/pages/album_reviews_page.dart::_AlbumReviewsPageState.build.closure#2.closure#1',
+                                  "lib/pages/album_reviews_page.dart::_AlbumReviewsPageState.build.closure#2.closure#2",
                                 );
                                 return _load(_failedPage);
                               },
@@ -390,7 +396,7 @@ class _AlbumReviewsPageState extends State<AlbumReviewsPage> {
                           itemCount: result.comments.length,
                           itemBuilder: (context, index) {
                             AppLog.instance.trace(
-                              'lib/pages/album_reviews_page.dart::_AlbumReviewsPageState.build.closure#2.closure#2',
+                              "lib/pages/album_reviews_page.dart::_AlbumReviewsPageState.build.closure#2.closure#3",
                             );
                             final review = result.comments[index];
                             return _ReviewContent(
@@ -409,7 +415,7 @@ class _AlbumReviewsPageState extends State<AlbumReviewsPage> {
                               action: TextButton.icon(
                                 onPressed: () {
                                   AppLog.instance.trace(
-                                    'lib/pages/album_reviews_page.dart::_AlbumReviewsPageState.build.closure#2.closure#2.closure#1',
+                                    "lib/pages/album_reviews_page.dart::_AlbumReviewsPageState.build.closure#2.closure#3.closure#1",
                                   );
                                   unawaited(_openReplies(review));
                                 },
@@ -459,6 +465,9 @@ class _ReviewOverview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      "lib/pages/album_reviews_page.dart::_ReviewOverview.build",
+    );
     final theme = Theme.of(context);
     final score = result.recommendationScore;
     final hasSummary =
@@ -545,6 +554,9 @@ class _ReviewOverview extends StatelessWidget {
         ],
         LayoutBuilder(
           builder: (context, constraints) {
+            AppLog.instance.trace(
+              "lib/pages/album_reviews_page.dart::_ReviewOverview.build.closure#1",
+            );
             if (constraints.maxWidth < 340 ||
                 MediaQuery.textScalerOf(context).scale(16) > 22) {
               return Column(
@@ -567,7 +579,13 @@ class _ReviewOverview extends StatelessWidget {
             );
           },
         ),
-        if (!hasSummary && ratios.every((entry) => entry.$2 == null))
+        if (!hasSummary &&
+            ratios.every((entry) {
+              AppLog.instance.trace(
+                "lib/pages/album_reviews_page.dart::_ReviewOverview.build.closure#2",
+              );
+              return entry.$2 == null;
+            }))
           Wrap(
             spacing: 16,
             runSpacing: 8,
@@ -952,6 +970,9 @@ class _ReviewContentState extends State<_ReviewContent> {
 
   @override
   Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      "lib/pages/album_reviews_page.dart::_ReviewContentState.build",
+    );
     final theme = Theme.of(context);
     final long = widget.content.runes.length > 360;
     final content = long && !_expanded
@@ -967,6 +988,9 @@ class _ReviewContentState extends State<_ReviewContent> {
         .clamp(16.0, 24.0)
         .toDouble();
     void openAuthor() {
+      AppLog.instance.trace(
+        "lib/pages/album_reviews_page.dart::_ReviewContentState.build.openAuthor",
+      );
       unawaited(widget.onAuthor(widget.uid));
     }
 
@@ -1000,11 +1024,16 @@ class _ReviewContentState extends State<_ReviewContent> {
                               ),
                               fit: BoxFit.cover,
                               excludeFromSemantics: true,
-                              errorBuilder: (context, error, stack) => Icon(
-                                Icons.account_circle_outlined,
-                                size: avatarSize,
-                                color: muted,
-                              ),
+                              errorBuilder: (context, error, stack) {
+                                AppLog.instance.trace(
+                                  "lib/pages/album_reviews_page.dart::_ReviewContentState.build.closure#1",
+                                );
+                                return Icon(
+                                  Icons.account_circle_outlined,
+                                  size: avatarSize,
+                                  color: muted,
+                                );
+                              },
                             ),
                     ),
                   ),
@@ -1047,8 +1076,12 @@ class _ReviewContentState extends State<_ReviewContent> {
                               height: badgeHeight,
                               fit: BoxFit.contain,
                               semanticLabel: badge.label,
-                              errorBuilder: (context, error, stack) =>
-                                  const SizedBox.shrink(),
+                              errorBuilder: (context, error, stack) {
+                                AppLog.instance.trace(
+                                  "lib/pages/album_reviews_page.dart::_ReviewContentState.build.closure#2",
+                                );
+                                return const SizedBox.shrink();
+                              },
                             ),
                         ],
                       ),
@@ -1095,8 +1128,17 @@ class _ReviewContentState extends State<_ReviewContent> {
                       ),
                       if (long)
                         TextButton(
-                          onPressed: () =>
-                              setState(() => _expanded = !_expanded),
+                          onPressed: () {
+                            AppLog.instance.trace(
+                              "lib/pages/album_reviews_page.dart::_ReviewContentState.build.closure#3",
+                            );
+                            return setState(() {
+                              AppLog.instance.trace(
+                                "lib/pages/album_reviews_page.dart::_ReviewContentState.build.closure#3.closure#1",
+                              );
+                              _expanded = !_expanded;
+                            });
+                          },
                           style: TextButton.styleFrom(
                             minimumSize: const Size(48, 48),
                           ),

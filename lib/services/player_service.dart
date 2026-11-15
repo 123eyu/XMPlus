@@ -1486,6 +1486,9 @@ class PlayerService {
 
             return client.withReadPolicy(
               () async {
+                AppLog.instance.trace(
+                  "lib/services/player_service.dart::PlayerService._advanceOrder.closure#1.closure#1.closure#1",
+                );
                 final first = await _albumPage(client, album, 1);
                 final values = <Track>[...first.tracks];
                 final ids = {for (final track in values) track.id};
@@ -1498,7 +1501,12 @@ class PlayerService {
                   if (!active()) throw const DownloadStopped();
                   final result = await _albumPage(client, album, page);
                   if (result.total != first.total ||
-                      result.tracks.any((track) => !ids.add(track.id))) {
+                      result.tracks.any((track) {
+                        AppLog.instance.trace(
+                          "lib/services/player_service.dart::PlayerService._advanceOrder.closure#1.closure#1.closure#1.closure#1",
+                        );
+                        return !ids.add(track.id);
+                      })) {
                     throw const XmlyException(
                       'catalogue_changed',
                       '专辑内容已变化，请刷新重试',
@@ -3137,7 +3145,7 @@ class PlayerService {
           final nextPage = loadedPage + 1;
           final following = await _admission(request, () {
             AppLog.instance.trace(
-              "lib/services/player_service.dart::PlayerService.refreshAlbumTail.closure#1.closure#4",
+              "lib/services/player_service.dart::PlayerService.refreshAlbumTail.closure#1.closure#3",
             );
             return _albumPage(client, album, nextPage);
           });
@@ -3149,7 +3157,7 @@ class PlayerService {
         }
         await _commands.synchronized(() async {
           AppLog.instance.trace(
-            "lib/services/player_service.dart::PlayerService.refreshAlbumTail.closure#1.closure#5",
+            "lib/services/player_service.dart::PlayerService.refreshAlbumTail.closure#1.closure#4",
           );
 
           if (!active()) return;
@@ -3188,7 +3196,7 @@ class PlayerService {
             }
             await _run(() {
               AppLog.instance.trace(
-                "lib/services/player_service.dart::PlayerService.refreshAlbumTail.closure#1.closure#5.closure#1",
+                "lib/services/player_service.dart::PlayerService.refreshAlbumTail.closure#1.closure#4.closure#1",
               );
               return _select(cursor + 1, _newRequest());
             });

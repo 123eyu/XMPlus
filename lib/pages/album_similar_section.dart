@@ -23,7 +23,12 @@ class AlbumSimilarSection extends StatefulWidget {
   final VoidCallback? onOpenAnchor;
 
   @override
-  State<AlbumSimilarSection> createState() => _AlbumSimilarSectionState();
+  State<AlbumSimilarSection> createState() {
+    AppLog.instance.trace(
+      "lib/pages/album_similar_section.dart::AlbumSimilarSection.createState",
+    );
+    return _AlbumSimilarSectionState();
+  }
 }
 
 class _AlbumSimilarSectionState extends State<AlbumSimilarSection> {
@@ -35,12 +40,18 @@ class _AlbumSimilarSectionState extends State<AlbumSimilarSection> {
 
   @override
   void initState() {
+    AppLog.instance.trace(
+      "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState.initState",
+    );
     super.initState();
     _load();
   }
 
   @override
   void didUpdateWidget(covariant AlbumSimilarSection oldWidget) {
+    AppLog.instance.trace(
+      "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState.didUpdateWidget",
+    );
     super.didUpdateWidget(oldWidget);
     if (oldWidget.albumId != widget.albumId ||
         oldWidget.client != widget.client) {
@@ -50,13 +61,22 @@ class _AlbumSimilarSectionState extends State<AlbumSimilarSection> {
 
   @override
   void dispose() {
+    AppLog.instance.trace(
+      "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState.dispose",
+    );
     _anchorScroll.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
+    AppLog.instance.trace(
+      "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState._load",
+    );
     final request = ++_request;
     setState(() {
+      AppLog.instance.trace(
+        "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState._load.closure#1",
+      );
       _busy = true;
       _content = null;
       _error = null;
@@ -66,6 +86,9 @@ class _AlbumSimilarSectionState extends State<AlbumSimilarSection> {
           .albumSimilar(widget.albumId);
       if (!mounted || request != _request) return;
       setState(() {
+        AppLog.instance.trace(
+          "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState._load.closure#2",
+        );
         _content = content;
         _busy = false;
       });
@@ -84,6 +107,9 @@ class _AlbumSimilarSectionState extends State<AlbumSimilarSection> {
         );
       }
       setState(() {
+        AppLog.instance.trace(
+          "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState._load.closure#3",
+        );
         _error = error is XmlyException ? error.message : '相似专辑加载失败，请重试';
         _busy = false;
       });
@@ -91,6 +117,9 @@ class _AlbumSimilarSectionState extends State<AlbumSimilarSection> {
   }
 
   Widget _heading(String title, {VoidCallback? onMore}) {
+    AppLog.instance.trace(
+      "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState._heading",
+    );
     return Padding(
       padding: const EdgeInsets.only(top: 20, bottom: 14),
       child: Row(
@@ -110,12 +139,20 @@ class _AlbumSimilarSectionState extends State<AlbumSimilarSection> {
   }
 
   Widget _album(Album album, double width) {
+    AppLog.instance.trace(
+      "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState._album",
+    );
     return Material(
       color: Colors.transparent,
       clipBehavior: Clip.antiAlias,
       borderRadius: BorderRadius.circular(6),
       child: InkWell(
-        onTap: () => widget.onOpenAlbum(album.id),
+        onTap: () {
+          AppLog.instance.trace(
+            "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState._album.closure#1",
+          );
+          return widget.onOpenAlbum(album.id);
+        },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -136,6 +173,9 @@ class _AlbumSimilarSectionState extends State<AlbumSimilarSection> {
 
   @override
   Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState.build",
+    );
     if (_busy) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
@@ -162,6 +202,9 @@ class _AlbumSimilarSectionState extends State<AlbumSimilarSection> {
         constraints: const BoxConstraints(maxWidth: 960),
         child: LayoutBuilder(
           builder: (context, constraints) {
+            AppLog.instance.trace(
+              "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState.build.closure#1",
+            );
             const gap = 24.0;
             final width = math.max(0.0, constraints.maxWidth - 32);
             final scaler = MediaQuery.textScalerOf(context);
@@ -198,15 +241,24 @@ class _AlbumSimilarSectionState extends State<AlbumSimilarSection> {
                                 controller: _anchorScroll,
                                 scrollDirection: Axis.horizontal,
                                 itemCount: content.anchorAlbums.albums.length,
-                                separatorBuilder: (_, _) =>
-                                    const SizedBox(width: gap),
-                                itemBuilder: (context, index) => SizedBox(
-                                  width: coverWidth,
-                                  child: _album(
-                                    content.anchorAlbums.albums[index],
-                                    coverWidth,
-                                  ),
-                                ),
+                                separatorBuilder: (_, _) {
+                                  AppLog.instance.trace(
+                                    "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState.build.closure#1.closure#1",
+                                  );
+                                  return const SizedBox(width: gap);
+                                },
+                                itemBuilder: (context, index) {
+                                  AppLog.instance.trace(
+                                    "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState.build.closure#1.closure#2",
+                                  );
+                                  return SizedBox(
+                                    width: coverWidth,
+                                    child: _album(
+                                      content.anchorAlbums.albums[index],
+                                      coverWidth,
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                           ),
@@ -225,10 +277,15 @@ class _AlbumSimilarSectionState extends State<AlbumSimilarSection> {
                                 mainAxisExtent: extent,
                               ),
                           itemCount: content.recommendations.albums.length,
-                          itemBuilder: (context, index) => _album(
-                            content.recommendations.albums[index],
-                            coverWidth,
-                          ),
+                          itemBuilder: (context, index) {
+                            AppLog.instance.trace(
+                              "lib/pages/album_similar_section.dart::_AlbumSimilarSectionState.build.closure#1.closure#3",
+                            );
+                            return _album(
+                              content.recommendations.albums[index],
+                              coverWidth,
+                            );
+                          },
                         ),
                       ],
                     ],

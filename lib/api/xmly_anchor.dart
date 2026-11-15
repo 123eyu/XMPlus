@@ -155,6 +155,9 @@ class XmlyAnchor {
   }
 
   Future<Map<String, dynamic>> _mobileAnchorInfo(String uid) async {
+    AppLog.instance.trace(
+      "lib/api/xmly_anchor.dart::XmlyAnchor._mobileAnchorInfo",
+    );
     final response = await client.request(
       'GET',
       XmlyClient.mobile,

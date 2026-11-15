@@ -343,6 +343,9 @@ class XmlyExperience {
     String albumId, {
     bool includeRecommendations = true,
   }) async {
+    AppLog.instance.trace(
+      "lib/api/xmly_experience.dart::XmlyExperience.albumIntroduction",
+    );
     final number = xmlyIdentifier(albumId);
     // plant/detail requires the selected account's Cookie despite being
     // unsigned. Anonymous browsing keeps the verified public detail endpoint;
@@ -407,6 +410,9 @@ class XmlyExperience {
   }
 
   Future<AlbumSimilarData> albumSimilar(String albumId) async {
+    AppLog.instance.trace(
+      "lib/api/xmly_experience.dart::XmlyExperience.albumSimilar",
+    );
     final number = xmlyIdentifier(albumId);
     final response = await client.request(
       'GET',
@@ -428,6 +434,9 @@ class XmlyExperience {
       );
     }
     List<Album> albums(Object? value) {
+      AppLog.instance.trace(
+        "lib/api/xmly_experience.dart::XmlyExperience.albumSimilar.albums",
+      );
       if (value == null) return const [];
       final rows = value is Map ? value['list'] : value;
       final result = <Album>[];

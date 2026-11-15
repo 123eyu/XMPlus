@@ -29,8 +29,20 @@ class AlbumIntroduction extends StatelessWidget {
   final Album? album;
 
   void _open(BuildContext context) {
-    Widget reader(BuildContext context) =>
-        _CompleteIntroduction(client: client, albumId: albumId, album: album);
+    AppLog.instance.trace(
+      "lib/pages/album_introduction.dart::AlbumIntroduction._open",
+    );
+    Widget reader(BuildContext context) {
+      AppLog.instance.trace(
+        "lib/pages/album_introduction.dart::AlbumIntroduction._open.reader",
+      );
+      return _CompleteIntroduction(
+        client: client,
+        albumId: albumId,
+        album: album,
+      );
+    }
+
     if (MediaQuery.sizeOf(context).width >= 700) {
       showLocalPanel<void>(
         context: context,
@@ -47,6 +59,9 @@ class AlbumIntroduction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      "lib/pages/album_introduction.dart::AlbumIntroduction.build",
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -56,7 +71,12 @@ class AlbumIntroduction extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             TextButton.icon(
-              onPressed: () => _open(context),
+              onPressed: () {
+                AppLog.instance.trace(
+                  "lib/pages/album_introduction.dart::AlbumIntroduction.build.closure#1",
+                );
+                return _open(context);
+              },
               icon: const Icon(Icons.notes_rounded, size: 18),
               label: const Text('查看完整简介'),
             ),
@@ -79,7 +99,12 @@ class _CompleteIntroduction extends StatefulWidget {
   final Album? album;
 
   @override
-  State<_CompleteIntroduction> createState() => _CompleteIntroductionState();
+  State<_CompleteIntroduction> createState() {
+    AppLog.instance.trace(
+      "lib/pages/album_introduction.dart::_CompleteIntroduction.createState",
+    );
+    return _CompleteIntroductionState();
+  }
 }
 
 class _CompleteIntroductionState extends State<_CompleteIntroduction> {
@@ -90,12 +115,18 @@ class _CompleteIntroductionState extends State<_CompleteIntroduction> {
 
   @override
   void initState() {
+    AppLog.instance.trace(
+      "lib/pages/album_introduction.dart::_CompleteIntroductionState.initState",
+    );
     super.initState();
     _load();
   }
 
   @override
   void didUpdateWidget(covariant _CompleteIntroduction oldWidget) {
+    AppLog.instance.trace(
+      "lib/pages/album_introduction.dart::_CompleteIntroductionState.didUpdateWidget",
+    );
     super.didUpdateWidget(oldWidget);
     if (oldWidget.client != widget.client ||
         oldWidget.albumId != widget.albumId) {
@@ -104,8 +135,14 @@ class _CompleteIntroductionState extends State<_CompleteIntroduction> {
   }
 
   Future<void> _load() async {
+    AppLog.instance.trace(
+      "lib/pages/album_introduction.dart::_CompleteIntroductionState._load",
+    );
     final request = ++_request;
     setState(() {
+      AppLog.instance.trace(
+        "lib/pages/album_introduction.dart::_CompleteIntroductionState._load.closure#1",
+      );
       _busy = true;
       _content = null;
       _error = null;
@@ -115,6 +152,9 @@ class _CompleteIntroductionState extends State<_CompleteIntroduction> {
           .albumIntroduction(widget.albumId, includeRecommendations: false);
       if (!mounted || request != _request) return;
       setState(() {
+        AppLog.instance.trace(
+          "lib/pages/album_introduction.dart::_CompleteIntroductionState._load.closure#2",
+        );
         _content = content;
         _busy = false;
       });
@@ -132,6 +172,9 @@ class _CompleteIntroductionState extends State<_CompleteIntroduction> {
         );
       }
       setState(() {
+        AppLog.instance.trace(
+          "lib/pages/album_introduction.dart::_CompleteIntroductionState._load.closure#3",
+        );
         _error = error is XmlyException ? error.message : '完整简介加载失败，请重试';
         _busy = false;
       });
@@ -139,6 +182,9 @@ class _CompleteIntroductionState extends State<_CompleteIntroduction> {
   }
 
   String _document(AlbumIntroductionData content) {
+    AppLog.instance.trace(
+      "lib/pages/album_introduction.dart::_CompleteIntroductionState._document",
+    );
     const escape = HtmlEscape();
     final album = content.album ?? widget.album;
     final cover = album?.coverUrl?.replace(scheme: 'https');
@@ -146,7 +192,12 @@ class _CompleteIntroductionState extends State<_CompleteIntroduction> {
     // isolated reader allows only HTTPS Ximalaya images and disables scripts.
     final rich = content.richText.replaceAllMapped(
       RegExp(r'''(src\s*=\s*["'])http://''', caseSensitive: false),
-      (match) => '${match[1]}https://',
+      (match) {
+        AppLog.instance.trace(
+          "lib/pages/album_introduction.dart::_CompleteIntroductionState._document.closure#1",
+        );
+        return '${match[1]}https://';
+      },
     );
     // The reader converts newlines to <br>; keep template formatting out of
     // the HTML while preserving the publisher's own paragraphs and images.
@@ -159,6 +210,9 @@ class _CompleteIntroductionState extends State<_CompleteIntroduction> {
 
   @override
   Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      "lib/pages/album_introduction.dart::_CompleteIntroductionState.build",
+    );
     final content = _content;
     return Scaffold(
       appBar: AppBar(
@@ -166,7 +220,12 @@ class _CompleteIntroductionState extends State<_CompleteIntroduction> {
         centerTitle: true,
         leading: IconButton(
           tooltip: '返回',
-          onPressed: () => Navigator.of(context).maybePop(),
+          onPressed: () {
+            AppLog.instance.trace(
+              "lib/pages/album_introduction.dart::_CompleteIntroductionState.build.closure#1",
+            );
+            Navigator.of(context).maybePop();
+          },
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
         ),
       ),

@@ -356,6 +356,7 @@ class XmlyComments {
   }
 
   static double? _ratio(Object? value) {
+    AppLog.instance.trace("lib/api/xmly_comments.dart::XmlyComments._ratio");
     if (value == null) return null;
     if (value is! num || !value.isFinite || value < 0 || value > 1) {
       throw _invalid;
@@ -364,6 +365,9 @@ class XmlyComments {
   }
 
   static List<AlbumReviewBadge> _reviewBadges(Object? value) {
+    AppLog.instance.trace(
+      "lib/api/xmly_comments.dart::XmlyComments._reviewBadges",
+    );
     if (value is! List) return const [];
     final badges = <AlbumReviewBadge>[];
     for (final raw in value) {
