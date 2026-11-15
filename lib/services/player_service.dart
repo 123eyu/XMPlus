@@ -380,9 +380,9 @@ class PlayerService {
         : accounts.clientFor(identity);
   }
 
-  String get _progressIdentity {
+  String get playbackIdentity {
     AppLog.instance.trace(
-      "lib/services/player_service.dart::PlayerService._progressIdentity.get",
+      "lib/services/player_service.dart::PlayerService.playbackIdentity.get",
     );
     return _source?.identity ?? libraryIdentity;
   }
@@ -750,41 +750,27 @@ class PlayerService {
       throw const XmlyException('catalogue_limit', '专辑播放队列最多 5000 集');
     }
     final tracks = result.tracks, offset = (page - 1) * xmlyAlbumPageSize;
+    final end = (offset + xmlyAlbumPageSize).clamp(0, result.total);
     if (result.page != page ||
         result.pageSize != xmlyAlbumPageSize ||
         result.album.id != album ||
-        tracks.length > xmlyAlbumPageSize ||
-        tracks.any((track) {
-          AppLog.instance.trace(
-            "lib/services/player_service.dart::PlayerService._albumPage.closure#1",
-          );
-          return track.albumId != album;
-        }) ||
-        tracks
-                .map((track) {
-                  AppLog.instance.trace(
-                    "lib/services/player_service.dart::PlayerService._albumPage.closure#2",
-                  );
-                  return track.id;
-                })
-                .toSet()
-                .length !=
-            tracks.length ||
-        (tracks.isNotEmpty &&
-            result.total > 0 &&
-            result.total < offset + tracks.length) ||
-        (tracks.length < xmlyAlbumPageSize &&
-            result.total > offset + tracks.length)) {
-      throw const XmlyException('invalid_album', '专辑分页不完整，请刷新重试');
+        tracks.length > (end - offset).clamp(0, xmlyAlbumPageSize)) {
+      throw const XmlyException('invalid_album', '专辑分页无效，请刷新重试');
     }
-    int? previousOrder;
-    for (var index = 0; index < tracks.length; index++) {
-      final track = tracks[index], order = xmlyPositive(tracks[index].orderNo);
-      if (track.officialPosition != offset + index + 1 ||
-          (previousOrder != null && order != null && order <= previousOrder)) {
+    final ids = <String>{};
+    var previousPosition = offset;
+    for (final track in tracks) {
+      xmlyIdentifier(track.id);
+      final position = track.officialPosition;
+      if (track.albumId != album ||
+          !ids.add(track.id) ||
+          position == null ||
+          position <= previousPosition ||
+          position > end ||
+          track.orderNo != position) {
         throw const XmlyException('invalid_album', '专辑分页顺序无效，请刷新重试');
       }
-      previousOrder = order ?? previousOrder;
+      previousPosition = position;
     }
     return result;
   }
@@ -1274,15 +1260,17 @@ class PlayerService {
         }
       }
       var added = anchorPage.tracks.take(anchor).toList();
-      if (added.isEmpty && page > 1) {
-        final preceding = await loadPage(page - 1);
+      for (
+        var precedingPage = page - 1;
+        added.isEmpty && precedingPage >= 1;
+        precedingPage--
+      ) {
+        final preceding = await loadPage(precedingPage);
         if (!active()) return;
-        added = preceding.tracks;
-        if (added.isEmpty ||
-            added.last.officialPosition !=
-                anchorPage.tracks.first.officialPosition! - 1) {
-          throw const XmlyException('invalid_album', '专辑前页不完整，请刷新后重试');
+        if (preceding.total != anchorPage.total) {
+          throw const XmlyException('catalogue_changed', '专辑总集数已变化，请刷新后重试');
         }
+        added = preceding.tracks;
       }
       if (added.isEmpty) {
         await replay();
@@ -1290,9 +1278,11 @@ class PlayerService {
       }
       final previousOrder = xmlyPositive(added.last.orderNo);
       final firstOrder = xmlyPositive(first.orderNo);
-      if (previousOrder != null &&
-          firstOrder != null &&
-          previousOrder >= firstOrder) {
+      if (added.last.officialPosition! >=
+              anchorPage.tracks[anchor].officialPosition! ||
+          (previousOrder != null &&
+              firstOrder != null &&
+              previousOrder >= firstOrder)) {
         throw const XmlyException('duplicate_page', '专辑分页重复或倒退，请刷新后重试');
       }
       await _commands.synchronized(() async {
@@ -1406,11 +1396,25 @@ class PlayerService {
     );
 
     if (queueSource != 'album') return true;
-    if (_queue.isEmpty || albumTotal != _queue.length) return false;
-    for (var index = 0; index < _queue.length; index++) {
-      if (_queue[index].officialPosition != index + 1 ||
-          _queue[index].albumId != sourceAlbumId)
+    final total = albumTotal, page = albumPage, size = albumPageSize;
+    if (_queue.isEmpty ||
+        total == null ||
+        page == null ||
+        size == null ||
+        page * size < total ||
+        (_queue.first.officialPosition ?? size + 1) > size) {
+      return false;
+    }
+    var previous = 0;
+    for (final track in _queue) {
+      final position = track.officialPosition;
+      if (position == null ||
+          position <= previous ||
+          position > total ||
+          track.orderNo != position ||
+          track.albumId != sourceAlbumId)
         return false;
+      previous = position;
     }
     return true;
   }
@@ -1467,6 +1471,7 @@ class PlayerService {
       var tracks = _queue;
       var complete = _completeAlbumQueue;
       var fetched = false;
+      var total = albumTotal;
       if (!complete &&
           (mode == 'shuffle' ||
               (previous ? cursor == 0 : cursor + 1 >= _queue.length))) {
@@ -1480,11 +1485,28 @@ class PlayerService {
             );
 
             return client.withReadPolicy(
-              () {
-                AppLog.instance.trace(
-                  "lib/services/player_service.dart::PlayerService._advanceOrder.closure#1.closure#1.closure#1",
-                );
-                return XmlyCatalogue(client).album(album);
+              () async {
+                final first = await _albumPage(client, album, 1);
+                final values = <Track>[...first.tracks];
+                final ids = {for (final track in values) track.id};
+                total = first.total;
+                for (
+                  var page = 2;
+                  (page - 1) * xmlyAlbumPageSize < first.total;
+                  page++
+                ) {
+                  if (!active()) throw const DownloadStopped();
+                  final result = await _albumPage(client, album, page);
+                  if (result.total != first.total ||
+                      result.tracks.any((track) => !ids.add(track.id))) {
+                    throw const XmlyException(
+                      'catalogue_changed',
+                      '专辑内容已变化，请刷新重试',
+                    );
+                  }
+                  values.addAll(result.tracks);
+                }
+                return values;
               },
               rateLimitRetries: 1,
               cancelled: _requestChanged.future,
@@ -1533,6 +1555,7 @@ class PlayerService {
         if (!fetched) {
           tracks = _queue;
           complete = _completeAlbumQueue;
+          total = albumTotal;
         } else {
           final last = _queue.last;
           if (!tracks.any((track) {
@@ -1582,12 +1605,12 @@ class PlayerService {
           page: album.isEmpty
               ? null
               : complete
-              ? (tracks.length / xmlyAlbumPageSize).ceil()
+              ? (total! + xmlyAlbumPageSize - 1) ~/ xmlyAlbumPageSize
               : albumPage,
           total: album.isEmpty
               ? null
               : complete
-              ? tracks.length
+              ? total
               : albumTotal,
           pageSize: complete
               ? xmlyAlbumPageSize
@@ -1724,7 +1747,7 @@ class PlayerService {
     );
 
     final library =
-        (storage.state['library'] as Map)[identity ?? _progressIdentity];
+        (storage.state['library'] as Map)[identity ?? playbackIdentity];
     final progress = library is Map ? library['playbackProgress'] : null;
     final entry = progress is Map ? progress[track.id] : null;
     if (entry is! Map) return null;
@@ -2500,7 +2523,7 @@ class PlayerService {
           );
           return;
         }
-        _official.start('player', current!, _progressIdentity);
+        _official.start('player', current!, playbackIdentity);
         _sleepStopped = false;
         _manualPaused = false;
         await _driver.play();
@@ -3005,9 +3028,7 @@ class PlayerService {
           );
 
           if ((savedPage != null &&
-                  (savedSize == null ||
-                      position <= (savedPage - 1) * savedSize ||
-                      position > savedPage * savedSize)) ||
+                  (savedSize == null || position > savedPage * savedSize)) ||
               snapshot.any((track) {
                 AppLog.instance.trace(
                   "lib/services/player_service.dart::PlayerService.refreshAlbumTail.closure#1.validateBoundary.closure#1",
@@ -3024,7 +3045,7 @@ class PlayerService {
         // A persisted 50-row page number is never a 200-row page number.
         if (officialPosition != null) validateBoundary(officialPosition);
         var loadedPage = (candidate - 1) ~/ xmlyAlbumPageSize + 1;
-        var loadedCount = (candidate - 1) % xmlyAlbumPageSize + 1;
+        final withinPage = (candidate - 1) % xmlyAlbumPageSize + 1;
         var total = savedTotal ?? 0;
         final known = snapshot.map((track) {
               AppLog.instance.trace(
@@ -3034,6 +3055,7 @@ class PlayerService {
             }).toSet(),
             added = <Track>[];
         var previousOrder = xmlyPositive(last.orderNo);
+        var previousPosition = candidate;
         void append(AlbumPage result, {required bool samePage}) {
           AppLog.instance.trace(
             "lib/services/player_service.dart::PlayerService.refreshAlbumTail.closure#1.append",
@@ -3047,15 +3069,23 @@ class PlayerService {
               );
               return track.id == last.id;
             });
-            if (anchor != loadedCount - 1) {
+            if (anchor < 0 ||
+                (officialPosition != null &&
+                    result.tracks[anchor].officialPosition !=
+                        officialPosition)) {
               throw const XmlyException('catalogue_changed', '专辑末页发生变化，请刷新后重试');
             }
-            final retained = snapshot.length < loadedCount
+            previousPosition = result.tracks[anchor].officialPosition!;
+            validateBoundary(previousPosition);
+            final retained = snapshot.length < anchor + 1
                 ? snapshot.length
-                : loadedCount;
+                : anchor + 1;
             for (var index = 0; index < retained; index++) {
-              if (snapshot[snapshot.length - retained + index].id !=
-                  result.tracks[loadedCount - retained + index].id) {
+              final old = snapshot[snapshot.length - retained + index];
+              final fresh = result.tracks[anchor + 1 - retained + index];
+              if (old.id != fresh.id ||
+                  (old.officialPosition != null &&
+                      old.officialPosition != fresh.officialPosition)) {
                 throw const XmlyException(
                   'catalogue_changed',
                   '专辑末页发生变化，请刷新后重试',
@@ -3064,9 +3094,13 @@ class PlayerService {
             }
             start = anchor + 1;
           }
+          if (result.total < previousPosition) {
+            throw const XmlyException('catalogue_changed', '专辑总集数已变化，请刷新重试');
+          }
           for (final track in result.tracks.skip(start)) {
             final order = xmlyPositive(track.orderNo);
             if (!known.add(track.id) ||
+                track.officialPosition! <= previousPosition ||
                 (previousOrder != null &&
                     order != null &&
                     order <= previousOrder!)) {
@@ -3074,9 +3108,10 @@ class PlayerService {
             }
             added.add(track);
             previousOrder = order ?? previousOrder;
+            previousPosition = track.officialPosition!;
           }
-          if (result.tracks.length > start) loadedPage = result.page;
-          if (result.total > 0) total = result.total;
+          loadedPage = result.page;
+          total = result.total;
           if (snapshot.length + added.length > 5000) {
             throw const XmlyException('catalogue_limit', '专辑播放队列最多 5000 集');
           }
@@ -3086,7 +3121,7 @@ class PlayerService {
         // Without an official position, orderNo selects only a candidate page.
         final samePage =
             officialPosition == null ||
-            loadedCount < xmlyAlbumPageSize ||
+            withinPage < xmlyAlbumPageSize ||
             loadedPage == 5000 ~/ xmlyAlbumPageSize;
         final page = samePage ? loadedPage : loadedPage + 1;
         final result = await _admission(request, () {
@@ -3096,35 +3131,19 @@ class PlayerService {
           return _albumPage(client, album, page);
         });
         if (!active()) return;
-        if (officialPosition == null) {
-          final anchor = result.tracks.indexWhere((track) {
-            AppLog.instance.trace(
-              "lib/services/player_service.dart::PlayerService.refreshAlbumTail.closure#1.closure#3",
-            );
-            return track.id == last.id;
-          });
-          if (anchor < 0) {
-            throw const XmlyException(
-              'catalogue_changed',
-              '此页没有找到队列末集，请从专辑页重新选择声音',
-            );
-          }
-          loadedCount = anchor + 1;
-          validateBoundary((page - 1) * xmlyAlbumPageSize + loadedCount);
-        }
         append(result, samePage: samePage);
-        if (samePage &&
-            result.tracks.length == xmlyAlbumPageSize &&
-            result.total > page * xmlyAlbumPageSize) {
+        while (loadedPage * xmlyAlbumPageSize < total &&
+            (added.isEmpty || samePage && loadedPage == page)) {
+          final nextPage = loadedPage + 1;
           final following = await _admission(request, () {
             AppLog.instance.trace(
               "lib/services/player_service.dart::PlayerService.refreshAlbumTail.closure#1.closure#4",
             );
-            return _albumPage(client, album, page + 1);
+            return _albumPage(client, album, nextPage);
           });
           if (!active()) return;
-          if (following.tracks.isEmpty && following.total == 0) {
-            throw const XmlyException('invalid_album', '专辑分页未能继续，请刷新后重试');
+          if (following.total != total) {
+            throw const XmlyException('catalogue_changed', '专辑总集数已变化，请刷新重试');
           }
           append(following, samePage: false);
         }
@@ -3292,7 +3311,7 @@ class PlayerService {
     final track = current;
     if (track == null || _source == null || !_actual) return;
     final actualPosition = _observedPosition;
-    final identity = _progressIdentity;
+    final identity = playbackIdentity;
     final observedAt = _observedAt;
     final previous = _localProgress(track);
     if (actualPosition.isFinite &&

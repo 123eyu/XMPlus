@@ -121,9 +121,22 @@ class AlbumIntroductionData {
   const AlbumIntroductionData({
     required this.richText,
     required this.recommendations,
+    this.album,
   });
   final String richText;
   final HomeSection recommendations;
+  final Album? album;
+}
+
+class AlbumSimilarData {
+  const AlbumSimilarData({
+    required this.anchorAlbums,
+    required this.recommendations,
+    required this.showAnchorMore,
+  });
+  final HomeSection anchorAlbums;
+  final HomeSection recommendations;
+  final bool showAnchorMore;
 }
 
 class AlbumSkipRecommendation {
@@ -326,45 +339,120 @@ class XmlyExperience {
     return AlbumSkipRecommendation.fromApi(xmlyMap(recommendation));
   }
 
-  Future<AlbumIntroductionData> albumIntroduction(String albumId) async {
-    AppLog.instance.trace(
-      'lib/api/xmly_experience.dart::XmlyExperience.albumIntroduction',
+  Future<AlbumIntroductionData> albumIntroduction(
+    String albumId, {
+    bool includeRecommendations = true,
+  }) async {
+    final number = xmlyIdentifier(albumId);
+    // plant/detail requires the selected account's Cookie despite being
+    // unsigned. Anonymous browsing keeps the verified public detail endpoint;
+    // account failures must never downgrade to an anonymous request.
+    final account = client.credentials != null;
+    final response = await client.request(
+      'GET',
+      XmlyClient.mobile,
+      account
+          ? '/mobile-album/album/plant/detail'
+          : '/fmobile-album/album/rec/detail/ts-$_stamp',
+      query: {
+        'albumId': number,
+        if (account) 'identity': 'podcast',
+        'supportWebp': 'true',
+      },
+      account: account,
+      signed: false,
     );
+    if (response['data'] is! Map) throw _invalid;
+    final data = xmlyMap(response['data']);
+    final base = xmlyMap(data[account ? 'baseAlbum' : 'album']);
+    if (xmlyIdentifier('${base['albumId'] ?? ''}') != number) {
+      throw const XmlyException('id_mismatch', '专辑简介与当前专辑不匹配');
+    }
+    final intro = xmlyMap(data[account ? 'intro' : 'detail']);
+    if (!account &&
+        intro['albumId'] != null &&
+        xmlyIdentifier('${intro['albumId']}') != number) {
+      throw const XmlyException('id_mismatch', '专辑简介与当前专辑不匹配');
+    }
+    final rich = account
+        ? intro['richIntro']
+        : intro['introRich'] ?? base['introRich'];
+    if (rich is! String) {
+      throw const XmlyException('invalid_introduction', '完整专辑简介格式无效，请重试');
+    }
+    final anchor = xmlyMap(data['anchor']);
+    // Keep only public metadata; authorization/follow state is account-specific.
+    final album = Album.fromApi({
+      for (final key in [
+        'albumId',
+        'title',
+        'coverLarge',
+        'coverMiddle',
+        'coverSmall',
+        'tracks',
+        'totalCount',
+        'uid',
+      ])
+        if (base.containsKey(key)) key: base[key],
+      'nickname': account ? anchor['nickname'] : base['nickname'],
+      'intro': _text(intro['intro']),
+    });
+    return AlbumIntroductionData(
+      richText: rich,
+      album: album,
+      recommendations: includeRecommendations
+          ? (await albumSimilar(number)).recommendations
+          : HomeSection(title: '收听本专辑的人也在听', albums: const []),
+    );
+  }
+
+  Future<AlbumSimilarData> albumSimilar(String albumId) async {
     final number = xmlyIdentifier(albumId);
     final response = await client.request(
       'GET',
       XmlyClient.mobile,
-      '/fmobile-album/album/rec/detail/ts-$_stamp',
-      query: {'albumId': number, 'supportWebp': 'true'},
-      account: false,
+      '/album-mobile/album/similar/querySimilarAlbumList/ts-$_stamp',
+      query: {'albumId': number},
+      signed: false,
     );
+    if (response['data'] is! Map) throw _invalid;
     final data = xmlyMap(response['data']);
-    final detail = xmlyMap(data['detail']);
-    final album = xmlyMap(data['album']);
-    if (xmlyIdentifier('${album['albumId'] ?? ''}') != number ||
-        (detail['albumId'] != null &&
-            xmlyIdentifier('${detail['albumId']}') != number)) {
-      throw const XmlyException('id_mismatch', '专辑简介与当前专辑不匹配');
+    final anchor = xmlyMap(data['anchorOtherAlbums']);
+    final recommended = xmlyMap(data['recommendAlbumResult']);
+    if (recommended.isNotEmpty && _integer(recommended['ret']) != 0) {
+      throw XmlyException(
+        '${recommended['ret'] ?? 'invalid_similar'}',
+        _text(recommended['msg']).isEmpty
+            ? '相关推荐暂时无法加载，请重试'
+            : _text(recommended['msg']),
+      );
     }
-    // intro/shortIntro/shortIntroRich are server-truncated previews.
-    final rich = detail['introRich'] ?? album['introRich'];
-    if (rich is! String) {
-      throw const XmlyException('invalid_introduction', '完整专辑简介格式无效，请重试');
+    List<Album> albums(Object? value) {
+      if (value == null) return const [];
+      final rows = value is Map ? value['list'] : value;
+      final result = <Album>[];
+      final seen = <String>{number};
+      for (final raw in _list(rows, maximum: 100)) {
+        final row = xmlyMap(raw);
+        // Captured promoted cards have valid album IDs too: filter their
+        // actual adInfo marker before parsing, not by title or ID heuristics.
+        if (row['adInfo'] != null) continue;
+        final album = Album.fromApi(row);
+        if (seen.add(album.id)) result.add(album);
+      }
+      return result;
     }
-    final recommendations = <Album>[];
-    final seen = <String>{number};
-    for (final row in _list(data['recAlbums'], maximum: 100)) {
-      final recommendation = Album.fromApi(xmlyMap(row));
-      if (seen.add(recommendation.id)) recommendations.add(recommendation);
-    }
-    return AlbumIntroductionData(
-      richText: rich,
-      recommendations: HomeSection(
-        title: _text(data['recAlbumsPanelTitle']).isEmpty
-            ? '相关推荐'
-            : _text(data['recAlbumsPanelTitle']),
-        albums: recommendations,
+
+    return AlbumSimilarData(
+      anchorAlbums: HomeSection(
+        title: '主播其他专辑',
+        albums: albums(anchor['albums']),
       ),
+      recommendations: HomeSection(
+        title: '收听本专辑的人也在听',
+        albums: albums(recommended['albums']),
+      ),
+      showAnchorMore: anchor['isShowMoreButton'] == true,
     );
   }
 

@@ -52,7 +52,7 @@ class AnchorContentPage<T> {
   final int? reportedTotal;
 }
 
-/// Public creator content uses no cookies; following belongs to its account.
+/// Public reads stay available anonymously; mobile relations use its account.
 class XmlyAnchor {
   XmlyAnchor(this.client) {
     AppLog.instance.trace("lib/api/xmly_anchor.dart::XmlyAnchor.new");
@@ -154,10 +154,58 @@ class XmlyAnchor {
     return xmlyIdentifier('$uid');
   }
 
+  Future<Map<String, dynamic>> _mobileAnchorInfo(String uid) async {
+    final response = await client.request(
+      'GET',
+      XmlyClient.mobile,
+      '/mobile-user/v3/artist/homepage/ts-${DateTime.now().millisecondsSinceEpoch}',
+      query: {'toUid': uid},
+    );
+    final cards = xmlyMap(response['data'])['cards'];
+    if (cards is! List) throw _invalid;
+    for (final card in cards) {
+      final module = xmlyMap(card);
+      if (module['cardType'] != 'ArtistPageAnchorInfoModule') continue;
+      final body = module['body'];
+      if (body is! List || body.length != 1) throw _invalid;
+      final row = xmlyMap(body.single);
+      if ('${row['id']}' != uid ||
+          '${xmlyMap(row['anchorExt'])['anchorUid']}' != uid) {
+        throw _invalid;
+      }
+      return row;
+    }
+    throw _invalid;
+  }
+
   Future<AnchorProfile> profile(String uid) async {
     AppLog.instance.trace("lib/api/xmly_anchor.dart::XmlyAnchor.profile");
 
     final id = xmlyIdentifier(uid);
+    if (client.credentials != null) {
+      final row = await _mobileAnchorInfo(id);
+      final ext = xmlyMap(row['anchorExt']);
+      final counts = xmlyMap(row['count']);
+      final verify = xmlyMap(ext['verify']);
+      final nickname = _text(row['title']);
+      if (nickname.isEmpty) throw _invalid;
+      final location = <String>{_text(ext['province']), _text(ext['city'])}
+        ..remove('');
+      return AnchorProfile(
+        uid: id,
+        nickname: nickname,
+        avatar: _mobileImage(row['cover']),
+        intro: _text(row['summary']),
+        verification: _text(verify['ptitle']),
+        verified: verify['isVerified'] == true,
+        level: xmlyPositive(ext['anchorGrade']),
+        location: location.join(' · '),
+        fans: _count(counts['anchorFansCount']),
+        following: _count(counts['anchorFolloweeCount']),
+        albums: _count(counts['anchorAlbumCount']),
+        tracks: _count(counts['anchorTrackCount']),
+      );
+    }
     final data = await _get('/revision/user/basic', {'uid': id});
     if ('${data['uid']}' != id) throw _invalid;
     final nickname = _text(data['nickName']);
@@ -189,15 +237,11 @@ class XmlyAnchor {
       throw const XmlyException('login_required', '请先登录后关注主播');
     }
     final id = xmlyIdentifier(uid);
-    final response = await client.request(
-      'GET',
-      XmlyClient.searchOrigin,
-      '/revision/user/basic',
-      query: {'uid': id},
-    );
-    final data = xmlyMap(response['data']);
-    final followed = xmlyMap(data['relation'])['isFollow'];
-    if ('${data['uid']}' != id || followed is! bool) throw _invalid;
+    final data = await _mobileAnchorInfo(id);
+    final followed = xmlyMap(data['interact'])['isFollowed'];
+    if (followed is! bool) {
+      throw const XmlyException('follow_status_unavailable', '移动端未返回关注状态，请重试');
+    }
     return followed;
   }
 
@@ -212,11 +256,16 @@ class XmlyAnchor {
     }
     await client.request(
       'POST',
-      XmlyClient.searchOrigin,
-      following
-          ? '/revision/follow/setFollow'
-          : '/revision/follow/cancelFollow',
-      data: {'followingUid': id},
+      XmlyClient.mobile,
+      '/fans/follow',
+      data: {
+        'isFollow': following,
+        'subBizType': 1,
+        'toUid': id,
+        'bizType': 11,
+      },
+      signed: true,
+      form: true,
     );
   }
 
@@ -226,6 +275,78 @@ class XmlyAnchor {
     int pageSize = 10,
   }) async {
     AppLog.instance.trace("lib/api/xmly_anchor.dart::XmlyAnchor.albums");
+
+    if (client.credentials != null) {
+      if (page < 1 || page > 10000 || pageSize < 1 || pageSize > 100) {
+        throw const XmlyException('invalid_page', '无法继续翻页，请刷新后重试');
+      }
+      final id = xmlyIdentifier(uid);
+      final response = await client.request(
+        'GET',
+        XmlyClient.mobile,
+        '/mobile-user/v3/artist/album/ts-${DateTime.now().millisecondsSinceEpoch}',
+        query: {
+          'toUid': id,
+          'pageId': page,
+          'orderBy': 0,
+          'finishStatus': 0,
+          'paidType': 0,
+        },
+      );
+      final data = xmlyMap(response['data']);
+      final card = xmlyMap(data['card']);
+      // Mobile pages always advance twelve slots, even on the short last page.
+      const stride = 12;
+      if (_count(data['offset']) != page * stride) {
+        throw const XmlyException('repeated_page', '列表分页未前进，请刷新后重试');
+      }
+      if (card['cardType'] != 'ArtistPageAllAlbumListModule') throw _invalid;
+      final rawBody = card['body'];
+      final rows = rawBody ?? const [];
+      final hasMore = card['hasMore'];
+      final total = _count(
+        xmlyMap(xmlyMap(card['header'])['count'])['anchorAlbumCount'],
+      );
+      if (rows is! List ||
+          rows.length > stride ||
+          (rawBody != null && (hasMore is! bool || total == null))) {
+        throw _invalid;
+      }
+      final items = <AnchorAlbum>[];
+      for (final value in rows) {
+        final row = xmlyMap(value);
+        final ext = xmlyMap(row['albumExt']);
+        final number = xmlyPositive(row['id']);
+        if (number == null ||
+            '${ext['albumId']}' != '$number' ||
+            _text(row['title']).isEmpty)
+          throw _invalid;
+        items.add(
+          AnchorAlbum(
+            album: Album.fromApi({
+              'albumId': '$number',
+              'uid': id,
+              'title': row['title'],
+              'cover_url': _mobileImage(row['cover'])?.toString(),
+              'intro': row['summary'],
+              'isPaid': ext['isPaid'],
+              'isFinished': ext['isFinished'],
+              'tracks': xmlyMap(row['count'])['albumTrackCount'],
+            }),
+            playCount: _count(xmlyMap(row['count'])['albumPlayTimesCount']),
+          ),
+        );
+      }
+      return AnchorContentPage(
+        items: items,
+        page: page,
+        pageSize: stride,
+        total: total,
+        reportedTotal: total,
+        // The server can leave hasMore true on a three-item final page.
+        hasMore: hasMore == true && (total == null || page * stride < total),
+      );
+    }
 
     final pc = pageSize == 10;
     return _content<AnchorAlbum>(

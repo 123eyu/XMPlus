@@ -96,6 +96,10 @@ Map<String, dynamic> _publicRaw(Map<String, dynamic> raw) {
     'isPaid',
     'is_paid',
     'isAuthorized',
+    'is_authorized',
+    'is_free',
+    'sample_duration',
+    'isNoCopyright',
     'intro',
     'coverLarge',
     'coverMiddle',
@@ -120,6 +124,8 @@ Map<String, dynamic> _publicRaw(Map<String, dynamic> raw) {
   }
   final uid = xmlyPositive(raw['uid']);
   if (uid != null) result['uid'] = uid;
+  final comments = raw['count_comment'];
+  if (comments is int && comments >= 0) result['count_comment'] = comments;
   if (raw['avatarPath'] is String) {
     final avatar = _cover({'coverSmall': raw['avatarPath']});
     if (avatar != null &&
@@ -420,6 +426,9 @@ class Track {
     AppLog.instance.trace("lib/models/xmly_models.dart::Track.factory:fromApi");
 
     final duration = value['duration'];
+    final playtimes = value['playtimes'] ?? value['count_play'];
+    final createdAt = value['createdAt'] ?? value['created_at'];
+    final authorized = _flag(value['isAuthorized'] ?? value['is_authorized']);
     // A validated catalogue position defines playback order. Preserve provider
     // ordinal fields in raw, where they cannot override that page position.
     return Track(
@@ -439,10 +448,19 @@ class Track {
           xmlyPositive(value['orderNum']),
       episode: xmlyPositive(value['episode']),
       isPaid: _flag(value['is_paid'] ?? value['isPaid']),
-      isAuthorized: _flag(value['isAuthorized']),
+      isAuthorized: authorized,
       coverUrl: _cover(value) ?? album?.coverUrl,
       intro: _text(value['intro']),
-      raw: {...value, if (position != null) 'officialPosition': position},
+      raw: {
+        ...value,
+        if (value['isAuthorized'] == null && authorized != null)
+          'isAuthorized': authorized,
+        if (value['play'] == null && playtimes is int && playtimes >= 0)
+          'play': playtimes,
+        if (value['date'] == null && createdAt is int && createdAt > 0)
+          'date': createdAt,
+        if (position != null) 'officialPosition': position,
+      },
     );
   }
   factory Track.fromJson(Map<String, dynamic> value) {
@@ -788,6 +806,7 @@ class SearchPage {
   final List<AnchorSearchResult> anchors;
   final Map<String, int> totals;
   final int page, pageSize, total;
+  final int? totalPages;
   final String kind;
   SearchPage({
     this.tracks = const [],
@@ -797,6 +816,7 @@ class SearchPage {
     required this.page,
     required this.pageSize,
     required this.total,
+    this.totalPages,
     required this.kind,
   }) {
     AppLog.instance.trace("lib/models/xmly_models.dart::SearchPage.new");
@@ -807,12 +827,14 @@ class AlbumPage {
   final Album album;
   final List<Track> tracks;
   final int page, pageSize, total;
+  final bool ascending;
   AlbumPage({
     required this.album,
     required this.tracks,
     required this.page,
     required this.pageSize,
     required this.total,
+    required this.ascending,
   }) {
     AppLog.instance.trace("lib/models/xmly_models.dart::AlbumPage.new");
   }

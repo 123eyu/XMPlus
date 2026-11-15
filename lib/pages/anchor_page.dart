@@ -166,7 +166,7 @@ class _AnchorPageState extends State<AnchorPage>
   }) {
     AppLog.instance.trace("lib/pages/anchor_page.dart::_AnchorPageState._read");
 
-    final client = widget.runtime.anonymous;
+    final client = _primaryClient;
     return client.withReadPolicy(
       () {
         AppLog.instance.trace(
@@ -318,7 +318,7 @@ class _AnchorPageState extends State<AnchorPage>
         AppLog.instance.trace(
           "lib/pages/anchor_page.dart::_AnchorPageState._loadProfile.closure#4",
         );
-        _profileError = '主播资料加载失败';
+        _profileError = error is XmlyException ? error.message : '主播资料加载失败';
       });
     } finally {
       if (_current(generation))
@@ -797,6 +797,12 @@ class _AnchorPageState extends State<AnchorPage>
     );
 
     final accounts = widget.runtime.accounts;
+    final requested = widget.accountIdentity;
+    if (requested != null) {
+      return accounts.accountIds.contains(requested)
+          ? accounts.clientFor(requested)
+          : widget.runtime.anonymous;
+    }
     final identity = accounts.primaryAccountId;
     return identity != null && accounts.accountIds.contains(identity)
         ? accounts.clientFor(identity)
@@ -911,7 +917,9 @@ class _AnchorPageState extends State<AnchorPage>
         AppLog.instance.trace(
           "lib/pages/anchor_page.dart::_AnchorPageState._changeFollowing.closure#1",
         );
-        _followError = '请先登录主账号后关注主播';
+        _followError = widget.accountIdentity == null
+            ? '请先登录主账号后关注主播'
+            : '当前账号不可用，请重新登录后关注主播';
       });
       return;
     }
@@ -938,7 +946,7 @@ class _AnchorPageState extends State<AnchorPage>
 
         if (!_sameFollow(client, key, uid, request) ||
             !identical(client, admitted)) {
-          throw const XmlyException('account_changed', '主账号已变更，请重试');
+          throw const XmlyException('account_changed', '当前账号已变更，请重试');
         }
         attempted = true;
         await XmlyAnchor(admitted).setFollowing(uid, following: desired);
@@ -1002,7 +1010,7 @@ class _AnchorPageState extends State<AnchorPage>
     final client = _primaryClient;
     if (client.credentials?.uid == _uid) return const SizedBox.shrink();
     return Tooltip(
-      message: _following == true ? '使用主账号取消关注' : '使用主账号关注主播',
+      message: _following == true ? '使用当前账号取消关注' : '使用当前账号关注主播',
       child: OutlinedButton.icon(
         key: const ValueKey('anchorFollow'),
         onPressed: _followBusy ? null : _changeFollowing,
@@ -1866,14 +1874,15 @@ class _AnchorAlbumCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 18),
                         ],
-                        Flexible(
-                          child: _metric(
-                            context,
-                            Icons.graphic_eq_rounded,
-                            '${album.total}',
-                            '${album.total} 集',
+                        if (album.raw['tracks'] != null)
+                          Flexible(
+                            child: _metric(
+                              context,
+                              Icons.graphic_eq_rounded,
+                              '${album.total}',
+                              '${album.total} 集',
+                            ),
                           ),
-                        ),
                       ],
                     ),
                   ],

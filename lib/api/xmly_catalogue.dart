@@ -192,6 +192,7 @@ class XmlyCatalogue {
       if (result.total < 0 ||
           result.page != page ||
           result.pageSize != pageSize ||
+          !result.ascending ||
           result.album.id != albumId) {
         throw const XmlyException('invalid_catalogue', '专辑分页无效');
       }
@@ -199,10 +200,15 @@ class XmlyCatalogue {
       if (expectedTotal != result.total)
         throw const XmlyException('catalogue_changed', '专辑内容发生变化，请刷新重试');
       final offset = (page - 1) * pageSize;
-      if (result.tracks.length != (result.total - offset).clamp(0, pageSize)) {
-        throw const XmlyException('incomplete_catalogue', '专辑分页不完整，请刷新重试');
+      if (result.tracks.length > (result.total - offset).clamp(0, pageSize)) {
+        throw const XmlyException('invalid_catalogue', '专辑分页无效');
       }
-      _checkTracks(result.tracks, albumId, offset);
+      _checkTracks(
+        result.tracks,
+        albumId,
+        offset,
+        (offset + pageSize).clamp(0, result.total),
+      );
       return result;
     }
 
@@ -217,9 +223,7 @@ class XmlyCatalogue {
       for (var page = 2; page <= lastPage; page++)
         ...(await livePage(page)).tracks,
     ];
-    if (values.length != total)
-      throw const XmlyException('incomplete_catalogue', '专辑分页不完整，请刷新重试');
-    _checkTracks(values, albumId, 0);
+    _checkTracks(values, albumId, 0, total);
     // Official ascending positions, never a UI-sorted list index, are the fallback.
     values.sort((a, b) {
       AppLog.instance.trace(
@@ -232,19 +236,27 @@ class XmlyCatalogue {
     return List.unmodifiable(values);
   }
 
-  static void _checkTracks(List<Track> tracks, String albumId, int offset) {
+  static void _checkTracks(
+    List<Track> tracks,
+    String albumId,
+    int offset,
+    int end,
+  ) {
     AppLog.instance.trace(
       "lib/api/xmly_catalogue.dart::XmlyCatalogue._checkTracks",
     );
 
     final identifiers = <String>{};
+    var previous = offset;
     for (var index = 0; index < tracks.length; index++) {
       final track = tracks[index];
       xmlyIdentifier(track.id);
       if (track.albumId != albumId)
         throw const XmlyException('id_mismatch', '专辑包含其他专辑的声音');
-      if (track.officialPosition != offset + index + 1)
-        throw const XmlyException('incomplete_catalogue', '专辑声音顺序无效，请刷新重试');
+      final position = track.officialPosition;
+      if (position == null || position <= previous || position > end)
+        throw const XmlyException('invalid_catalogue', '专辑声音顺序无效，请刷新重试');
+      previous = position;
       if (!identifiers.add(track.id))
         throw const XmlyException('duplicate_page', '专辑声音重复，请刷新重试');
     }

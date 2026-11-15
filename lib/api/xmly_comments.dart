@@ -58,6 +58,20 @@ class TrackCommentPage {
   final bool hasMore;
 }
 
+class AlbumReviewBadge {
+  const AlbumReviewBadge({
+    required this.icon,
+    required this.label,
+    required this.aspectRatio,
+    this.darkIcon,
+  });
+
+  final Uri icon;
+  final Uri? darkIcon;
+  final String label;
+  final double aspectRatio;
+}
+
 class AlbumReview {
   const AlbumReview({
     required this.id,
@@ -67,6 +81,11 @@ class AlbumReview {
     required this.replyCount,
     this.uid = '',
     this.avatarUrl,
+    this.likes,
+    this.region = '',
+    this.highQuality = false,
+    this.badges = const [],
+    this.previewReply,
   });
 
   factory AlbumReview.fromApi(Map<String, dynamic> row) {
@@ -76,20 +95,38 @@ class AlbumReview {
     if (row['content'] is! String || row['createdAt'] is! int) {
       throw XmlyComments._invalid;
     }
+    final id = xmlyIdentifier('${row['commentId'] ?? ''}');
+    final replies = row['replies'];
+    if (replies != null && replies is! List) throw XmlyComments._invalid;
+    AlbumReviewReply? preview;
+    if (replies is List && replies.isNotEmpty) {
+      if (replies.first is! Map) throw XmlyComments._invalid;
+      preview = AlbumReviewReply.fromApi(xmlyMap(replies.first), commentId: id);
+    }
     return AlbumReview(
-      id: xmlyIdentifier('${row['commentId'] ?? ''}'),
+      id: id,
       uid: XmlyComments._reviewUid(row['uid']),
       author: XmlyComments._text(row['nickname']),
       content: row['content'] as String,
       createdAt: XmlyComments._createdAt(row['createdAt']),
       replyCount: XmlyComments._count(row['replyCount'] ?? 0),
       avatarUrl: XmlyComments._avatar(row['smallHeader']),
+      likes: row['likes'] == null ? null : XmlyComments._count(row['likes']),
+      region: XmlyComments._text(row['region']),
+      highQuality: row['isHighQuality'] == true,
+      badges: XmlyComments._reviewBadges(row['userTags']),
+      previewReply: preview,
     );
   }
 
   final String id, author, content, createdAt, uid;
   final Uri? avatarUrl;
   final int replyCount;
+  final int? likes;
+  final String region;
+  final bool highQuality;
+  final List<AlbumReviewBadge> badges;
+  final AlbumReviewReply? previewReply;
 }
 
 class AlbumReviewPage {
@@ -102,6 +139,12 @@ class AlbumReviewPage {
     this.albumScore,
     this.allCommentsCount,
     this.albumValidScoreNum,
+    this.recommendationScore,
+    this.recommendationLabel = '',
+    this.recommendationCount,
+    this.recommendedRatio,
+    this.neutralRatio,
+    this.notRecommendedRatio,
   }) : comments = List.unmodifiable(comments) {
     AppLog.instance.trace('lib/api/xmly_comments.dart::AlbumReviewPage.new');
   }
@@ -114,7 +157,7 @@ class AlbumReviewPage {
       'lib/api/xmly_comments.dart::AlbumReviewPage.factory:fromApi',
     );
     final pagination = xmlyMap(data['comments']);
-    XmlyComments._reviewPagination(pagination, page, 30);
+    XmlyComments._reviewPagination(pagination, page, 20);
     final comments = <AlbumReview>[];
     final ids = <String>{};
     void append(Object? raw) {
@@ -136,6 +179,12 @@ class AlbumReviewPage {
     if (score != null && (score is! num || !score.isFinite || score < 0)) {
       throw XmlyComments._invalid;
     }
+    final rawSummary = data['recScoreSummary'];
+    if (rawSummary != null && rawSummary is! Map) throw XmlyComments._invalid;
+    final summary = xmlyMap(rawSummary);
+    final rawDiagram = summary['diagram'];
+    if (rawDiagram != null && rawDiagram is! Map) throw XmlyComments._invalid;
+    final diagram = xmlyMap(rawDiagram);
     return AlbumReviewPage(
       comments: comments,
       page: page,
@@ -149,6 +198,14 @@ class AlbumReviewPage {
       albumValidScoreNum: data['albumValidScoreNum'] == null
           ? null
           : XmlyComments._count(data['albumValidScoreNum']),
+      recommendationScore: XmlyComments._ratio(summary['score']),
+      recommendationLabel: XmlyComments._text(summary['label']),
+      recommendationCount: summary['totalNum'] == null
+          ? null
+          : XmlyComments._count(summary['totalNum']),
+      recommendedRatio: XmlyComments._ratio(diagram['1']),
+      neutralRatio: XmlyComments._ratio(diagram['2']),
+      notRecommendedRatio: XmlyComments._ratio(diagram['3']),
     );
   }
 
@@ -156,6 +213,12 @@ class AlbumReviewPage {
   final int page, pageSize, maxPageId, total;
   final double? albumScore;
   final int? allCommentsCount, albumValidScoreNum;
+  final double? recommendationScore,
+      recommendedRatio,
+      neutralRatio,
+      notRecommendedRatio;
+  final String recommendationLabel;
+  final int? recommendationCount;
   bool get hasMore {
     AppLog.instance.trace(
       'lib/api/xmly_comments.dart::AlbumReviewPage.hasMore.get',
@@ -175,6 +238,9 @@ class AlbumReviewReply {
     this.avatarUrl,
     this.parentReplyId = '',
     this.parentReplyNickName = '',
+    this.likes,
+    this.region = '',
+    this.badges = const [],
   });
 
   factory AlbumReviewReply.fromApi(
@@ -200,12 +266,18 @@ class AlbumReviewReply {
       avatarUrl: XmlyComments._avatar(row['smallHeader']),
       parentReplyId: XmlyComments._reviewUid(row['parentReplyId']),
       parentReplyNickName: XmlyComments._text(row['parentReplyNickName']),
+      likes: row['likes'] == null ? null : XmlyComments._count(row['likes']),
+      region: XmlyComments._text(row['region']),
+      badges: XmlyComments._reviewBadges(row['userTags']),
     );
   }
 
   final String id, commentId, author, content, createdAt, uid;
   final String parentReplyId, parentReplyNickName;
   final Uri? avatarUrl;
+  final int? likes;
+  final String region;
+  final List<AlbumReviewBadge> badges;
 }
 
 class AlbumReviewRepliesPage {
@@ -283,6 +355,48 @@ class XmlyComments {
         : xmlyIdentifier('$value');
   }
 
+  static double? _ratio(Object? value) {
+    if (value == null) return null;
+    if (value is! num || !value.isFinite || value < 0 || value > 1) {
+      throw _invalid;
+    }
+    return value.toDouble();
+  }
+
+  static List<AlbumReviewBadge> _reviewBadges(Object? value) {
+    if (value is! List) return const [];
+    final badges = <AlbumReviewBadge>[];
+    for (final raw in value) {
+      if (raw is! Map) continue;
+      final icon = _avatar(raw['icon']);
+      final width = raw['width'], height = raw['height'];
+      if (icon == null ||
+          width is! num ||
+          height is! num ||
+          !width.isFinite ||
+          !height.isFinite ||
+          width <= 0 ||
+          height <= 0) {
+        continue;
+      }
+      final extra = xmlyMap(raw['extra']);
+      final level = extra['level'];
+      badges.add(
+        AlbumReviewBadge(
+          icon: icon,
+          darkIcon: _avatar(raw['darkIcon']),
+          aspectRatio: (width / height).clamp(0.5, 5.0).toDouble(),
+          label: raw['businessName'] == 'grade' && level is int && level > 0
+              ? '等级 $level'
+              : raw['businessName'] == 'vip'
+              ? '会员标识'
+              : '用户标识',
+        ),
+      );
+    }
+    return List.unmodifiable(badges);
+  }
+
   static void _reviewPagination(
     Map<String, dynamic> data,
     int page,
@@ -309,6 +423,7 @@ class XmlyComments {
   Future<AlbumReviewPage> loadAlbumReviews(
     String albumId, {
     int page = 1,
+    bool newest = false,
   }) async {
     AppLog.instance.trace(
       'lib/api/xmly_comments.dart::XmlyComments.loadAlbumReviews',
@@ -317,12 +432,12 @@ class XmlyComments {
     final response = await client.request(
       'GET',
       XmlyClient.mobile,
-      '/album-comment-mobile/web/album/comment/list/query/${DateTime.now().millisecondsSinceEpoch}',
+      '/album-comment-mobile/album/comment/list/query/${DateTime.now().millisecondsSinceEpoch}',
       query: {
         'albumId': xmlyIdentifier(albumId),
         'pageId': page,
-        'pageSize': 30,
-        'order': 'content-score-desc',
+        'pageSize': 20,
+        'order': newest ? 'time-desc' : 'content-score-desc',
       },
       account: false,
       signed: false,

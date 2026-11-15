@@ -719,18 +719,26 @@ class DownloadService {
                 result.page != page ||
                 result.pageSize != xmlyAlbumPageSize ||
                 result.album.id != albumId ||
-                result.tracks.length !=
+                result.tracks.length >
                     (result.total - offset).clamp(0, xmlyAlbumPageSize)) {
-              throw const XmlyException('invalid_catalogue', '专辑分页不完整或无效');
+              throw const XmlyException('invalid_catalogue', '专辑分页无效');
             }
             final ids = seen.toSet();
+            var previousPosition = offset;
             for (var index = 0; index < result.tracks.length; index++) {
               final track = result.tracks[index];
+              xmlyIdentifier(track.id);
+              final position = track.officialPosition;
               if (track.albumId != albumId ||
-                  track.officialPosition != offset + index + 1 ||
+                  position == null ||
+                  position <= previousPosition ||
+                  position > offset + xmlyAlbumPageSize ||
+                  position > result.total ||
+                  track.orderNo != position ||
                   !ids.add(track.id)) {
                 throw const XmlyException('invalid_catalogue', '专辑声音顺序无效');
               }
+              previousPosition = position;
             }
             return result;
           } catch (error, stack) {
@@ -999,7 +1007,7 @@ class DownloadService {
       "lib/services/download_service.dart::DownloadService._refreshAlbum",
     );
 
-    // Read one complete strict snapshot before admitting anything. A second
+    // Cover each requested source range before admitting anything. A second
     // change during this bounded pass stops visibly rather than looping.
     final tracks = <Track>[];
     final first = await _albumPage(
@@ -1011,7 +1019,7 @@ class DownloadService {
       checkpoint: checkpoint,
     );
     tracks.addAll(first.tracks);
-    for (var page = 2; tracks.length < first.total; page++) {
+    for (var page = 2; (page - 1) * xmlyAlbumPageSize < first.total; page++) {
       await checkpoint();
       final result = await _albumPage(
         job.accountIdentity,

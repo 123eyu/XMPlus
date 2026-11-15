@@ -47,6 +47,8 @@ class AlbumReviewsPage extends StatefulWidget {
     this.accountIdentity,
     this.onDownload,
     this.onPlayAlbum,
+    this.bottomBar,
+    this.embedded = false,
     super.key,
   });
 
@@ -55,6 +57,8 @@ class AlbumReviewsPage extends StatefulWidget {
   final String? accountIdentity;
   final TrackDownload? onDownload;
   final AlbumPlayback? onPlayAlbum;
+  final Widget? bottomBar;
+  final bool embedded;
 
   @override
   State<AlbumReviewsPage> createState() {
@@ -71,7 +75,7 @@ class _AlbumReviewsPageState extends State<AlbumReviewsPage> {
   late XmlyClient _client;
   Completer<void>? _cancelled, _panelCancelled;
   int _generation = 0, _failedPage = 1;
-  bool _busy = false, _failed = false;
+  bool _busy = false, _failed = false, _newest = false;
 
   @override
   void initState() {
@@ -143,7 +147,8 @@ class _AlbumReviewsPageState extends State<AlbumReviewsPage> {
           AppLog.instance.trace(
             'lib/pages/album_reviews_page.dart::_AlbumReviewsPageState._load.closure#2',
           );
-          return XmlyComments(client).loadAlbumReviews(albumId, page: page);
+          return XmlyComments(client)
+              .loadAlbumReviews(albumId, page: page, newest: _newest);
         },
         rateLimitRetries: 4,
         cancelled: cancelled.future,
@@ -258,23 +263,28 @@ class _AlbumReviewsPageState extends State<AlbumReviewsPage> {
     );
     final result = _result;
     return Scaffold(
-      appBar: AppHeader(
-        title: const Text('专辑评价'),
-        actions: [
-          IconButton(
-            tooltip: '刷新',
-            onPressed: _busy
-                ? null
-                : () {
-                    AppLog.instance.trace(
-                      'lib/pages/album_reviews_page.dart::_AlbumReviewsPageState.build.closure#1',
-                    );
-                    unawaited(_load(result?.page ?? 1));
-                  },
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
+      bottomNavigationBar: widget.bottomBar,
+      appBar: widget.embedded
+          ? null
+          : AppHeader(
+              title: Text(
+                widget.albumTitle.isEmpty ? '专辑评价' : widget.albumTitle,
+              ),
+              actions: [
+                IconButton(
+                  tooltip: '刷新',
+                  onPressed: _busy
+                      ? null
+                      : () {
+                          AppLog.instance.trace(
+                            'lib/pages/album_reviews_page.dart::_AlbumReviewsPageState.build.closure#1',
+                          );
+                          unawaited(_load(result?.page ?? 1));
+                        },
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
       body: SafeArea(
         top: false,
         child: Align(
@@ -304,16 +314,55 @@ class _AlbumReviewsPageState extends State<AlbumReviewsPage> {
                       padding: EdgeInsets.all(padding),
                       sliver: SliverList.list(
                         children: [
-                          if (widget.albumTitle.isNotEmpty) ...[
-                            Text(
-                              widget.albumTitle,
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 16),
-                          ],
                           if (result != null) ...[
                             _ReviewOverview(result: result),
                             const SizedBox(height: 24),
+                            Wrap(
+                              alignment: WrapAlignment.spaceBetween,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 24,
+                              runSpacing: 8,
+                              children: [
+                                Text(
+                                  '全部 ${result.allCommentsCount ?? result.total}',
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                ),
+                                Wrap(
+                                  spacing: 4,
+                                  children: [
+                                    for (final newest in [false, true])
+                                      TextButton(
+                                        onPressed: _busy || _newest == newest
+                                            ? null
+                                            : () {
+                                                setState(() {
+                                                  _newest = newest;
+                                                  _result = null;
+                                                });
+                                                unawaited(_load(1));
+                                              },
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                          disabledForegroundColor: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurface,
+                                          textStyle: TextStyle(
+                                            fontWeight: _newest == newest
+                                                ? FontWeight.w600
+                                                : FontWeight.normal,
+                                          ),
+                                        ),
+                                        child: Semantics(
+                                          selected: _newest == newest,
+                                          child: Text(newest ? '最新' : '综合'),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ],
                           if (_failed)
                             _ReviewFailure(
@@ -351,6 +400,11 @@ class _AlbumReviewsPageState extends State<AlbumReviewsPage> {
                               avatarUrl: review.avatarUrl,
                               createdAt: review.createdAt,
                               content: review.content,
+                              likes: review.likes,
+                              region: review.region,
+                              highQuality: review.highQuality,
+                              badges: review.badges,
+                              previewReply: review.previewReply,
                               onAuthor: _openAuthor,
                               action: TextButton.icon(
                                 onPressed: () {
@@ -362,13 +416,10 @@ class _AlbumReviewsPageState extends State<AlbumReviewsPage> {
                                 style: TextButton.styleFrom(
                                   minimumSize: const Size(48, 48),
                                 ),
-                                icon: const Icon(
-                                  Icons.chat_bubble_outline,
-                                  size: 18,
-                                ),
+                                icon: const Icon(Icons.expand_more, size: 18),
                                 label: Text(
                                   review.replyCount > 0
-                                      ? '${review.replyCount} 条回复'
+                                      ? '共${review.replyCount}条回复'
                                       : '查看回复',
                                 ),
                               ),
@@ -408,45 +459,128 @@ class _ReviewOverview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppLog.instance.trace(
-      'lib/pages/album_reviews_page.dart::_ReviewOverview.build',
-    );
     final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Wrap(
-          spacing: 24,
-          runSpacing: 12,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            if (result.albumScore != null)
-              Column(
-                mainAxisSize: MainAxisSize.min,
+    final score = result.recommendationScore;
+    final hasSummary =
+        score != null ||
+        result.recommendationLabel.isNotEmpty ||
+        result.recommendationCount != null;
+    final description = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (result.recommendationLabel.isNotEmpty)
+          Text(
+            result.recommendationLabel,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              color: theme.brightness == Brightness.dark
+                  ? Colors.amber.shade300
+                  : Colors.amber.shade800,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        if (result.recommendationCount != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            '${result.recommendationCount}人点评',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
+    );
+    final ratios = [
+      ('推荐', result.recommendedRatio),
+      ('一般', result.neutralRatio),
+      ('不行', result.notRecommendedRatio),
+    ];
+    final distribution = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final (label, value) in ratios)
+          if (value != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Semantics(
+                label: '$label ${(value * 100).round()}%',
+                child: ExcludeSemantics(
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: MediaQuery.textScalerOf(context).scale(40),
+                        child: Text(
+                          label,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: LinearProgressIndicator(
+                          value: value,
+                          minHeight: 6,
+                          borderRadius: BorderRadius.circular(6),
+                          color: theme.colorScheme.outline,
+                          backgroundColor:
+                              theme.colorScheme.surfaceContainerHighest,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+      ],
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (score != null) ...[
+          Text(
+            '推荐值 ${(score * 100).round()}%',
+            style: theme.textTheme.titleLarge,
+          ),
+          const SizedBox(height: 24),
+        ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 340 ||
+                MediaQuery.textScalerOf(context).scale(16) > 22) {
+              return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    result.albumScore!.toStringAsFixed(1),
-                    style: theme.textTheme.headlineLarge?.copyWith(
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                  const Text('专辑总分'),
+                  description,
+                  if (hasSummary) const SizedBox(height: 16),
+                  distribution,
                 ],
-              ),
-            if (result.allCommentsCount != null)
-              Text('${result.allCommentsCount} 条评价'),
-            if (result.albumValidScoreNum != null)
-              Text('${result.albumValidScoreNum} 人评分'),
-            if (result.albumScore == null &&
-                result.allCommentsCount == null &&
-                result.albumValidScoreNum == null)
-              const Text('专辑评价'),
-          ],
+              );
+            }
+            return Row(
+              children: [
+                if (hasSummary) ...[
+                  Expanded(flex: 2, child: description),
+                  const SizedBox(width: 24),
+                ],
+                Expanded(flex: 3, child: distribution),
+              ],
+            );
+          },
         ),
-      ),
+        if (!hasSummary && ratios.every((entry) => entry.$2 == null))
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: [
+              if (result.albumScore != null)
+                Text('专辑评分 ${result.albumScore!.toStringAsFixed(1)}'),
+              if (result.albumValidScoreNum != null)
+                Text('${result.albumValidScoreNum}人评分'),
+            ],
+          ),
+        const SizedBox(height: 24),
+        const Divider(height: 1),
+      ],
     );
   }
 }
@@ -676,6 +810,10 @@ class _ReviewRepliesState extends State<_ReviewReplies> {
                 avatarUrl: root.avatarUrl,
                 createdAt: root.createdAt,
                 content: root.content,
+                likes: root.likes,
+                region: root.region,
+                highQuality: root.highQuality,
+                badges: root.badges,
                 onAuthor: widget.onAuthor,
               ),
               const SizedBox(height: 16),
@@ -707,6 +845,9 @@ class _ReviewRepliesState extends State<_ReviewReplies> {
                     avatarUrl: reply.avatarUrl,
                     createdAt: reply.createdAt,
                     content: reply.content,
+                    likes: reply.likes,
+                    region: reply.region,
+                    badges: reply.badges,
                     parentAuthor: reply.parentReplyNickName,
                     onAuthor: widget.onAuthor,
                   ),
@@ -770,11 +911,22 @@ class _ReviewContent extends StatefulWidget {
     required this.onAuthor,
     this.parentAuthor = '',
     this.action,
+    this.likes,
+    this.region = '',
+    this.highQuality = false,
+    this.badges = const [],
+    this.previewReply,
+    this.compact = false,
   });
   final String author, uid, createdAt, content, parentAuthor;
   final Uri? avatarUrl;
   final Future<void> Function(String) onAuthor;
   final Widget? action;
+  final int? likes;
+  final String region;
+  final bool highQuality, compact;
+  final List<AlbumReviewBadge> badges;
+  final AlbumReviewReply? previewReply;
 
   @override
   State<_ReviewContent> createState() {
@@ -800,139 +952,238 @@ class _ReviewContentState extends State<_ReviewContent> {
 
   @override
   Widget build(BuildContext context) {
-    AppLog.instance.trace(
-      'lib/pages/album_reviews_page.dart::_ReviewContentState.build',
-    );
     final theme = Theme.of(context);
     final long = widget.content.runes.length > 360;
     final content = long && !_expanded
         ? '${String.fromCharCodes(widget.content.runes.take(360))}…'
         : widget.content;
     final author = widget.author.isEmpty ? '听友' : widget.author;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Semantics(
-              button: widget.uid.isNotEmpty,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: widget.uid.isEmpty
-                    ? null
-                    : () {
-                        AppLog.instance.trace(
-                          'lib/pages/album_reviews_page.dart::_ReviewContentState.build.closure#1',
-                        );
-                        unawaited(widget.onAuthor(widget.uid));
-                      },
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 48),
-                  child: Row(
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final surface = theme.colorScheme.surfaceContainerLow;
+    final preview = widget.previewReply;
+    final avatarSize = widget.compact ? 28.0 : 40.0;
+    final badgeHeight = MediaQuery.textScalerOf(context)
+        .scale(16)
+        .clamp(16.0, 24.0)
+        .toDouble();
+    void openAuthor() {
+      unawaited(widget.onAuthor(widget.uid));
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: widget.compact ? 0 : 28),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            label: '${author}的主页',
+            button: widget.uid.isNotEmpty,
+            child: InkWell(
+              onTap: widget.uid.isEmpty ? null : openAuthor,
+              borderRadius: BorderRadius.circular(24),
+              child: SizedBox(
+                width: widget.compact ? 32 : 48,
+                height: 48,
+                child: Center(
+                  child: ClipOval(
+                    child: SizedBox.square(
+                      dimension: avatarSize,
+                      child: widget.avatarUrl == null
+                          ? Icon(
+                              Icons.account_circle_outlined,
+                              size: avatarSize,
+                              color: muted,
+                            )
+                          : Image(
+                              image: LoggedNetworkImage(
+                                widget.avatarUrl.toString(),
+                              ),
+                              fit: BoxFit.cover,
+                              excludeFromSemantics: true,
+                              errorBuilder: (context, error, stack) => Icon(
+                                Icons.account_circle_outlined,
+                                size: avatarSize,
+                                color: muted,
+                              ),
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: widget.uid.isEmpty ? null : openAuthor,
+                  borderRadius: BorderRadius.circular(6),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 48),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            author,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: muted,
+                            ),
+                          ),
+                          for (final badge in widget.badges)
+                            Image(
+                              image: LoggedNetworkImage(
+                                (theme.brightness == Brightness.dark
+                                        ? badge.darkIcon ?? badge.icon
+                                        : badge.icon)
+                                    .toString(),
+                              ),
+                              width: badgeHeight * badge.aspectRatio,
+                              height: badgeHeight,
+                              fit: BoxFit.contain,
+                              semanticLabel: badge.label,
+                              errorBuilder: (context, error, stack) =>
+                                  const SizedBox.shrink(),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (widget.parentAuthor.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      '回复 ${widget.parentAuthor}',
+                      style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                    ),
+                  ),
+                Container(
+                  width: double.infinity,
+                  padding: widget.compact
+                      ? EdgeInsets.zero
+                      : const EdgeInsets.all(12),
+                  decoration: widget.compact
+                      ? null
+                      : BoxDecoration(
+                          color: surface,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ClipOval(
-                        child: SizedBox.square(
-                          dimension: 36,
-                          child: widget.avatarUrl == null
-                              ? const Icon(
-                                  Icons.account_circle_outlined,
-                                  size: 36,
-                                )
-                              : Image(
-                                  image: LoggedNetworkImage(
-                                    widget.avatarUrl.toString(),
-                                  ),
-                                  fit: BoxFit.cover,
-                                  excludeFromSemantics: true,
-                                  errorBuilder: (context, error, stack) {
-                                    AppLog.instance.trace(
-                                      'lib/pages/album_reviews_page.dart::_ReviewContentState.build.closure#2',
-                                    );
-                                    return const Icon(
-                                      Icons.account_circle_outlined,
-                                      size: 36,
-                                    );
-                                  },
-                                ),
+                      if (widget.highQuality) ...[
+                        Text(
+                          '优质评价',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: theme.brightness == Brightness.dark
+                                ? Colors.orange.shade200
+                                : Colors.brown.shade400,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
+                        const SizedBox(height: 6),
+                      ],
+                      CommentText(
+                        content,
+                        style: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              author,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                color: widget.uid.isEmpty
-                                    ? null
-                                    : theme.colorScheme.primary,
-                              ),
-                            ),
-                            Text(
-                              widget.createdAt,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
+                      if (long)
+                        TextButton(
+                          onPressed: () =>
+                              setState(() => _expanded = !_expanded),
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(48, 48),
+                          ),
+                          child: Text(_expanded ? '收起' : '展开全文'),
                         ),
-                      ),
                     ],
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (widget.parentAuthor.isNotEmpty) ...[
-              Text(
-                '回复 ${widget.parentAuthor}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            CommentText(content, style: theme.textTheme.bodyMedium),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                if (long)
-                  TextButton(
-                    onPressed: () {
-                      AppLog.instance.trace(
-                        'lib/pages/album_reviews_page.dart::_ReviewContentState.build.closure#3',
-                      );
-                      setState(() {
-                        AppLog.instance.trace(
-                          'lib/pages/album_reviews_page.dart::_ReviewContentState.build.closure#3.closure#1',
-                        );
-                        _expanded = !_expanded;
-                      });
-                    },
-                    style: TextButton.styleFrom(
-                      minimumSize: const Size(48, 48),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      [
+                        widget.createdAt.split(' ').first,
+                        if (widget.region.isNotEmpty) widget.region,
+                      ].join(' · '),
+                      style: theme.textTheme.bodySmall?.copyWith(color: muted),
                     ),
-                    child: Text(_expanded ? '收起' : '展开全文'),
-                  ),
-                IconButton(
-                  tooltip: '复制全文',
-                  onPressed: _copy,
-                  icon: const Icon(Icons.copy_outlined, size: 18),
+                    if (widget.likes != null)
+                      Semantics(
+                        label: '${widget.likes}人赞同',
+                        child: ExcludeSemantics(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.thumb_up_outlined,
+                                size: 18,
+                                color: muted,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${widget.likes}',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: muted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    IconButton(
+                      tooltip: '复制全文',
+                      onPressed: _copy,
+                      icon: Icon(Icons.copy_outlined, size: 16, color: muted),
+                    ),
+                  ],
                 ),
-                if (widget.action != null) widget.action!,
+                if (preview != null)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: surface,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _ReviewContent(
+                          key: ValueKey('preview:${preview.id}'),
+                          author: preview.author,
+                          uid: preview.uid,
+                          avatarUrl: preview.avatarUrl,
+                          createdAt: preview.createdAt,
+                          content: preview.content,
+                          region: preview.region,
+                          likes: preview.likes,
+                          badges: preview.badges,
+                          parentAuthor: preview.parentReplyNickName,
+                          onAuthor: widget.onAuthor,
+                          compact: true,
+                        ),
+                        if (widget.action != null) widget.action!,
+                      ],
+                    ),
+                  )
+                else if (widget.action != null)
+                  widget.action!,
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

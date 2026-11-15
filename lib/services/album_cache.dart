@@ -346,25 +346,34 @@ class AlbumCache extends ChangeNotifier {
             total: album.total,
             raw: album.raw,
           );
-          // A complete observation replaces the catalogue. Partial observations
-          // replace only their known positions, in either display order; keep the
-          // remaining cached pages, but retire positions beyond the new total.
-          final complete = observed.length == page.total;
-          final positions = observed
-              .map((track) {
-                AppLog.instance.trace(
-                  "lib/services/album_cache.dart::AlbumCache._remember.closure#1.closure#1.closure#1",
-                );
-                return track.officialPosition;
-              })
-              .whereType<int>()
-              .toSet();
+          // A source window covers unavailable slots too. Retire cached rows
+          // in that proven window, without dropping other offline pages.
+          final complete = page.page == 1 && page.pageSize >= page.total;
+          final first = (page.page - 1) * page.pageSize + 1;
+          final last = (page.page * page.pageSize).clamp(0, page.total);
+          final coveredStart = page.ascending ? first : page.total - last + 1;
+          final coveredEnd = page.ascending ? last : page.total - first + 1;
+          var previousPosition = page.ascending
+              ? coveredStart - 1
+              : coveredEnd + 1;
+          for (final track in observed) {
+            final position = track.officialPosition;
+            if (position == null ||
+                position < coveredStart ||
+                position > coveredEnd ||
+                (page.ascending
+                    ? position <= previousPosition
+                    : position >= previousPosition))
+              throw const FormatException('Invalid album positions');
+            previousPosition = position;
+          }
           final tracks = <String, Track>{
             if (!complete)
               for (final track in previous?.tracks ?? const <Track>[])
                 if (track.officialPosition == null ||
                     (track.officialPosition! <= page.total &&
-                        !positions.contains(track.officialPosition)))
+                        (track.officialPosition! < coveredStart ||
+                            track.officialPosition! > coveredEnd)))
                   track.id: _trackMetadata(track.toJson(), mergedAlbum),
           };
           for (final track in observed) {
