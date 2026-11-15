@@ -5,30 +5,43 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' show Abi;
-import 'dart:io' show Platform;
+import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:pub_semver/pub_semver.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../storage/app_storage.dart';
+import 'android_platform.dart';
 import 'app_log.dart';
 import 'http_log_attempt.dart';
-import 'network_retry.dart';
 
-/// Only stable, versioned releases from the public XMPlus repository are used.
+enum UpdateSource { automatic, github, xin }
+
+/// Stable release metadata; download resolution is deferred until user action.
 class UpdateRelease {
-  UpdateRelease._(this.tag, this.version, this.notes, this._assets) {
+  UpdateRelease._(
+    this.tag,
+    this.version,
+    this.notes,
+    this._assets, {
+    this._xinVersionId,
+  }) {
     AppLog.instance.trace("lib/services/update_service.dart::UpdateRelease._");
   }
 
   final String tag;
   final Version version;
   final String notes;
-  final List<(String, Uri)> _assets;
+  final List<_UpdateAsset> _assets;
+  final int? _xinVersionId;
 
   static Version parseVersion(String value) {
     AppLog.instance.trace(
@@ -59,7 +72,7 @@ class UpdateRelease {
     }
     final version = parseVersion(tag);
     if (version.isPreRelease) throw const FormatException('不是稳定版本');
-    final assets = <(String, Uri)>[];
+    final assets = <_UpdateAsset>[];
     for (final asset in data['assets'] as List) {
       if (asset is! Map ||
           asset['name'] is! String ||
@@ -83,7 +96,14 @@ class UpdateRelease {
           path[3] == 'download' &&
           path[4] == tag &&
           path[5] == name) {
-        assets.add((name, uri));
+        assets.add(
+          _UpdateAsset(
+            name,
+            uri,
+            sha256: _UpdateAsset.parseDigest(asset['digest']),
+            size: asset['size'] is int ? asset['size'] as int : null,
+          ),
+        );
       }
     }
     return UpdateRelease._(tag, version, data['body'] as String? ?? '', assets);
@@ -133,17 +153,51 @@ class UpdateRelease {
           if (const {'arm64-v8a', 'armeabi-v7a', 'x86_64'}.contains(abi))
             'android-$abi.apk',
       ],
-      'windows-x64' => ['windows-x64.zip'],
+      'windows-x64' => ['windows-x64-setup.exe'],
       _ => <String>[],
     };
     for (final suffix in suffixes) {
       final name = 'XMPlus-$version-$suffix';
       for (final asset in _assets) {
-        if (asset.$1 == name) return asset.$2;
+        if (asset.name == name) return asset.uri;
       }
     }
     return page;
   }
+}
+
+class _UpdateAsset {
+  _UpdateAsset(this.name, this.uri, {this.sha256, this.size}) {
+    AppLog.instance.trace('lib/services/update_service.dart::_UpdateAsset.new');
+  }
+
+  final String name;
+  final Uri uri;
+  final String? sha256;
+  final int? size;
+
+  static String? parseDigest(Object? value) {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::_UpdateAsset.parseDigest',
+    );
+    if (value is! String) return null;
+    final text = value.startsWith('sha256:') ? value.substring(7) : value;
+    return RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(text)
+        ? text.toLowerCase()
+        : null;
+  }
+}
+
+class _UpdateDownload {
+  _UpdateDownload(this.file, this.sha256, this.size) {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::_UpdateDownload.new',
+    );
+  }
+
+  final File file;
+  final String sha256;
+  final int? size;
 }
 
 enum _UpdateAction { ignore, download, page }
@@ -151,67 +205,66 @@ enum _UpdateAction { ignore, download, page }
 class UpdateService extends ChangeNotifier {
   UpdateService(this.storage, {HttpClientAdapter? adapter}) {
     AppLog.instance.trace(
-      "lib/services/update_service.dart::UpdateService.new",
+      'lib/services/update_service.dart::UpdateService.new',
     );
-
     if (adapter != null) _http.httpClientAdapter = adapter;
   }
 
   final AppStorage storage;
-  // A separate client deliberately has no account interceptors, cookies or token.
+  // No account interceptors, cookies or credentials on artifact requests.
   final Dio _http = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 20),
+      receiveTimeout: const Duration(seconds: 30),
       followRedirects: false,
-      headers: const {
-        'Accept': 'application/vnd.github+json',
-        'User-Agent': 'XMPlus',
-      },
-      validateStatus: (_) {
-        AppLog.instance.trace(
-          "lib/services/update_service.dart::UpdateService._http.closure#1",
-        );
-        return true;
-      },
+      headers: const {'Accept': 'application/json', 'User-Agent': 'XMPlus'},
     ),
   );
+  final _cancel = CancelToken();
+  CancelToken? _downloadCancel;
   PackageInfo? packageInfo;
   bool checking = false;
   String? message;
   String? error;
   bool _disposed = false;
-  final _closed = Completer<void>();
-  final _cancel = CancelToken();
 
   Map get _preferences {
     AppLog.instance.trace(
-      "lib/services/update_service.dart::UpdateService._preferences.get",
+      'lib/services/update_service.dart::UpdateService._preferences.get',
     );
-
     final value = (storage.state['settings'] as Map)['updates'];
     return value is Map ? value : const {};
   }
 
   bool get autoCheck {
     AppLog.instance.trace(
-      "lib/services/update_service.dart::UpdateService.autoCheck.get",
+      'lib/services/update_service.dart::UpdateService.autoCheck.get',
     );
     return _preferences['autoCheck'] != false;
   }
 
+  UpdateSource get source {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService.source.get',
+    );
+    return switch (_preferences['source']) {
+      'github' => UpdateSource.github,
+      'xin' => UpdateSource.xin,
+      _ => UpdateSource.automatic,
+    };
+  }
+
   String? get ignoredVersion {
     AppLog.instance.trace(
-      "lib/services/update_service.dart::UpdateService.ignoredVersion.get",
+      'lib/services/update_service.dart::UpdateService.ignoredVersion.get',
     );
-    return _preferences['ignoredVersion'] is String
-        ? _preferences['ignoredVersion'] as String
-        : null;
+    final value = _preferences['ignoredVersion'];
+    return value is String ? value : null;
   }
 
   String get versionLabel {
     AppLog.instance.trace(
-      "lib/services/update_service.dart::UpdateService.versionLabel.get",
+      'lib/services/update_service.dart::UpdateService.versionLabel.get',
     );
     return packageInfo == null
         ? '正在读取版本…'
@@ -220,27 +273,24 @@ class UpdateService extends ChangeNotifier {
 
   void _changed() {
     AppLog.instance.trace(
-      "lib/services/update_service.dart::UpdateService._changed",
+      'lib/services/update_service.dart::UpdateService._changed',
     );
-
     if (!_disposed) notifyListeners();
   }
 
   Future<bool> _save(Map<String, dynamic> changes) {
     AppLog.instance.trace(
-      "lib/services/update_service.dart::UpdateService._save",
+      'lib/services/update_service.dart::UpdateService._save',
     );
     return AppLog.instance.runWithErrorScope(() async {
       AppLog.instance.trace(
-        "lib/services/update_service.dart::UpdateService._save.closure#1",
+        'lib/services/update_service.dart::UpdateService._save.closure#1',
       );
-
       try {
         await storage.transaction((state) {
           AppLog.instance.trace(
-            "lib/services/update_service.dart::UpdateService._save.closure#1.closure#1",
+            'lib/services/update_service.dart::UpdateService._save.closure#1.closure#1',
           );
-
           final settings = state['settings'] as Map;
           final previous = settings['updates'];
           settings['updates'] = <String, dynamic>{
@@ -262,134 +312,522 @@ class UpdateService extends ChangeNotifier {
 
   Future<void> setAutoCheck(bool value) async {
     AppLog.instance.trace(
-      "lib/services/update_service.dart::UpdateService.setAutoCheck",
+      'lib/services/update_service.dart::UpdateService.setAutoCheck',
     );
-
     await _save({'autoCheck': value});
+  }
+
+  Future<void> setSource(UpdateSource value) async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService.setSource',
+    );
+    await _save({'source': value.name});
   }
 
   Future<void> clearIgnoredVersion() async {
     AppLog.instance.trace(
-      "lib/services/update_service.dart::UpdateService.clearIgnoredVersion",
+      'lib/services/update_service.dart::UpdateService.clearIgnoredVersion',
     );
-
     await _save({'ignoredVersion': null});
   }
 
-  Future<(int?, List<int>, HttpLogAttempt)> _latest() async {
+  void _localFailure(String operation, Object failure, StackTrace stack) {
     AppLog.instance.trace(
-      "lib/services/update_service.dart::UpdateService._latest",
+      'lib/services/update_service.dart::UpdateService._localFailure',
     );
+    // Never log Dio requestOptions/body or JSON parser source text.
+    final safe = failure is DioException
+        ? StateError(
+            'Update transport ${failure.type.name}; HTTP ${failure.response?.statusCode ?? '-'}',
+          )
+        : failure is FormatException
+        ? FormatException(failure.message)
+        : failure;
+    AppLog.instance.write(
+      AppLogLevel.warning,
+      'update',
+      operation,
+      error: safe,
+      stackTrace: stack,
+      localOnly: true,
+    );
+  }
 
-    const url =
-        'https://api.github.com/repos/teikengstudio/XMPlus/releases/latest';
-    for (var attempt = 0; ; attempt++) {
-      if (_disposed) throw StateError('Update service is closed');
-      final bytes = <int>[];
-      final diagnostic =
-          HttpLogAttempt(
-              reportFailure: false,
-              account: '公共更新检查（无账号）',
-              method: 'GET',
-              url: url,
-            )
-            ..requestHeaders = Map<String, dynamic>.from(_http.options.headers)
-            ..responseBytes = (() {
-              AppLog.instance.trace(
-                "lib/services/update_service.dart::UpdateService._latest.closure#1",
-              );
-              return bytes;
-            });
-      Response<ResponseBody>? response;
-      try {
-        diagnostic.started();
-        response = await _http.get<ResponseBody>(
-          url,
-          options: Options(responseType: ResponseType.stream),
-          cancelToken: _cancel,
-        );
-        diagnostic
-          ..requestHeaders = response.requestOptions.headers
-          ..status = response.statusCode
-          ..responseHeaders = response.headers.map
-          ..completeness = '响应体接收中；失败时保留全部已接收字节';
-        final iterator = StreamIterator(response.data!.stream);
-        try {
-          while (await Future.any<bool>([
-            iterator.moveNext().timeout(const Duration(seconds: 20)),
-            _closed.future.then<bool>((_) {
-              AppLog.instance.trace(
-                "lib/services/update_service.dart::UpdateService._latest.closure#2",
-              );
-              return throw StateError('Update service closed');
-            }),
-          ])) {
-            bytes.addAll(iterator.current);
-          }
-        } finally {
-          try {
-            await iterator.cancel();
-          } catch (failure, stack) {
-            AppLog.instance.write(
-              AppLogLevel.warning,
-              'update',
-              'Closing update response stream failed',
-              error: failure,
-              stackTrace: stack,
-            );
-          }
-        }
-        diagnostic.completeness = '完整响应体';
-        diagnostic.succeeded();
-        if (response.statusCode != 200 && response.statusCode != 404) {
-          throw DioException.badResponse(
-            statusCode: response.statusCode ?? 0,
-            requestOptions: response.requestOptions,
-            response: response,
+  Future<Map<String, dynamic>?> _githubRelease({
+    String? tag,
+    CancelToken? token,
+  }) async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._githubRelease',
+    );
+    final suffix = tag == null ? 'latest' : 'tags/${Uri.encodeComponent(tag)}';
+    try {
+      final response = await _http.get<String>(
+        'https://api.github.com/repos/teikengstudio/XMPlus/releases/$suffix',
+        options: Options(responseType: ResponseType.plain),
+        cancelToken: token ?? _cancel,
+      );
+      AppLog.instance.write(
+        AppLogLevel.info,
+        'update',
+        'GitHub update response: ${response.statusCode}',
+        localOnly: true,
+      );
+      return _jsonObject(response.data);
+    } on DioException catch (failure, stack) {
+      _localFailure('GitHub update request failed', failure, stack);
+      if (failure.response?.statusCode == 404 && tag == null) return null;
+      rethrow;
+    }
+  }
+
+  static Map<String, dynamic> _jsonObject(String? text) {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._jsonObject',
+    );
+    final value = jsonDecode(text ?? '');
+    if (value is! Map<String, dynamic>)
+      throw const FormatException('更新服务返回的数据无效');
+    return value;
+  }
+
+  Future<Map<String, dynamic>> _xinRequest(
+    String endpoint,
+    Map<String, dynamic> body,
+    CancelToken token,
+  ) async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._xinRequest',
+    );
+    const secret = String.fromEnvironment('XIN_CLIENT_SECRET');
+    if (secret.isEmpty)
+      throw const FormatException('此构建未配置莘应用更新凭据，请使用 GitHub 更新源');
+    try {
+      final response = await _http.post<String>(
+        'https://xinappstore.qiumingsanyu.top/api/app/update/$endpoint',
+        // Use the documented JSON credential form accepted by the deployed API.
+        // Neither this body nor credential headers are written to diagnostics.
+        data: {
+          ...body,
+          'client_id': 'xin_e6856fd600973e1af5e7ee6b',
+          'client_secret': secret,
+        },
+        options: Options(responseType: ResponseType.plain),
+        cancelToken: token,
+      );
+      AppLog.instance.write(
+        AppLogLevel.info,
+        'update',
+        'Xin $endpoint response: ${response.statusCode}',
+        localOnly: true,
+      );
+      return _jsonObject(response.data);
+    } catch (failure, stack) {
+      _localFailure('Xin $endpoint request failed', failure, stack);
+      rethrow;
+    }
+  }
+
+  Future<UpdateRelease?> _xinLatest({CancelToken? token}) async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._xinLatest',
+    );
+    final data = await _xinRequest('check', {
+      'identifier': 'teikengstudio.xmplus',
+    }, token ?? _cancel);
+    if (data['update_available'] == false) return null;
+    final latest = data['latest'];
+    if (data['update_available'] != true ||
+        latest is! Map ||
+        latest['version_name'] is! String ||
+        latest['version_id'] is! int) {
+      throw const FormatException('莘应用返回的版本数据无效');
+    }
+    final version = UpdateRelease.parseVersion(
+      latest['version_name'] as String,
+    );
+    if (version.isPreRelease) throw const FormatException('莘应用未返回稳定版本');
+    return UpdateRelease._(
+      'v$version',
+      version,
+      latest['changelog'] is String ? latest['changelog'] as String : '',
+      const [],
+      xinVersionId: latest['version_id'] as int,
+    );
+  }
+
+  Future<UpdateRelease?> _latest() async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._latest',
+    );
+    final selected = source;
+    if (selected == UpdateSource.xin) return _xinLatest();
+    try {
+      final data = await _githubRelease();
+      return data == null ? null : UpdateRelease.fromJson(data);
+    } on DioException catch (failure) {
+      // Only failure to establish a connection triggers the automatic fallback.
+      // HTTP failures, TLS errors and response timeouts stay on the chosen source.
+      if (selected != UpdateSource.automatic ||
+          failure.type != DioExceptionType.connectionTimeout)
+        rethrow;
+      return _xinLatest();
+    }
+  }
+
+  Future<List<String>> _assetNames(UpdateRelease release) async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._assetNames',
+    );
+    if (Platform.isAndroid) {
+      final info = await DeviceInfoPlugin().androidInfo;
+      return [
+        for (final abi in info.supportedAbis)
+          if (const {'arm64-v8a', 'armeabi-v7a', 'x86_64'}.contains(abi))
+            'XMPlus-${release.version}-android-$abi.apk',
+      ];
+    }
+    if (Platform.isWindows && Abi.current() == Abi.windowsX64) {
+      return ['XMPlus-${release.version}-windows-x64-setup.exe'];
+    }
+    throw const FormatException('当前平台不支持应用内安装，请查看官方发布页');
+  }
+
+  static Uri? _https(Object? value) {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._https',
+    );
+    if (value is! String) return null;
+    final uri = Uri.tryParse(value);
+    return uri != null &&
+            uri.scheme == 'https' &&
+            uri.host.isNotEmpty &&
+            uri.userInfo.isEmpty &&
+            !uri.hasFragment
+        ? uri
+        : null;
+  }
+
+  Future<(_UpdateAsset, Uri?)> _resolveAsset(
+    UpdateRelease release,
+    List<String> names,
+    CancelToken token,
+  ) async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._resolveAsset',
+    );
+    final assets = <_UpdateAsset>[...release._assets];
+    Uri? sums;
+    if (release._xinVersionId != null) {
+      final response = await _xinRequest('download', {
+        'version_id': release._xinVersionId,
+        'channel': Platform.isAndroid ? 'default' : 'windows',
+      }, token);
+      final data = response['data'];
+      if (data is! Map || data['identifier'] != 'teikengstudio.xmplus') {
+        throw const FormatException('莘应用返回了其他应用或无效的下载信息');
+      }
+      final version = data['version'];
+      if (version is! Map ||
+          version['id'] != release._xinVersionId ||
+          version['version_name'] is! String ||
+          UpdateRelease.parseVersion(version['version_name'] as String) !=
+              release.version) {
+        throw const FormatException('莘应用下载版本与更新信息不一致');
+      }
+      final candidates = data['candidates'];
+      if (candidates is List) {
+        for (final candidate in candidates) {
+          if (candidate is! Map ||
+              !const {'direct', 'http'}.contains(candidate['type']))
+            continue;
+          final uri = _https(candidate['resolved']);
+          if (uri == null) continue;
+          final origin = candidate['uri'] is String
+              ? Uri.tryParse(candidate['uri'] as String)
+              : null;
+          final name = candidate['name'] is String
+              ? candidate['name'] as String
+              : origin != null && origin.pathSegments.isNotEmpty
+              ? origin.pathSegments.last
+              : uri.pathSegments.isNotEmpty
+              ? uri.pathSegments.last
+              : '';
+          assets.add(
+            _UpdateAsset(
+              name,
+              uri,
+              sha256: _UpdateAsset.parseDigest(
+                candidate['sha256'] ?? candidate['digest'],
+              ),
+              size: candidate['size'] is int ? candidate['size'] as int : null,
+            ),
           );
         }
-        if (response.statusCode == 404) {
-          await diagnostic.fail(
-            const FormatException('GitHub 尚无稳定版本 (404)'),
-            StackTrace.current,
-          );
-        }
-        return (response.statusCode, bytes, diagnostic);
-      } catch (failure, stack) {
-        if (failure is DioException) {
-          diagnostic.requestHeaders = failure.requestOptions.headers;
-          diagnostic.transportError =
-              '${failure.type}: ${failure.error ?? failure.message}';
-        } else if (retryableTransport(failure)) {
-          diagnostic.transportError = '$failure';
-        }
-        if (_disposed) {
-          diagnostic.cancelled(failure);
-        } else {
-          await diagnostic.fail(failure, stack);
-        }
-        if (_disposed ||
-            attempt == 4 ||
-            !(retryableStatus(response?.statusCode) ||
-                retryableTransport(failure)))
-          rethrow;
-        await waitToRetry(
-          retryDelay(attempt, response?.headers.value('retry-after')),
-          closed: _closed.future,
+      }
+      final main = _https(data['main']);
+      if (main != null && main.pathSegments.isNotEmpty) {
+        assets.add(
+          _UpdateAsset(
+            main.pathSegments.last,
+            main,
+            sha256: _UpdateAsset.parseDigest(data['sha256'] ?? data['digest']),
+            size: data['size'] is int ? data['size'] as int : null,
+          ),
         );
       }
+      if (assets.isEmpty) {
+        throw FormatException(
+          data['need_parse'] == true
+              ? '莘应用下载暂不可用，请切换 GitHub 更新源'
+              : '当前设备不支持此渠道',
+        );
+      }
+    }
+    for (final asset in assets) {
+      if (asset.name == 'SHA256SUMS') sums = asset.uri;
+    }
+    for (final name in names) {
+      for (final asset in assets) {
+        if (asset.name == name) return (asset, sums);
+      }
+    }
+    throw FormatException(
+      release._xinVersionId != null ? '当前设备不支持此渠道' : '此版本没有适合当前设备的安装包，请查看官方发布页',
+    );
+  }
+
+  Future<String> _checksum(
+    UpdateRelease release,
+    _UpdateAsset asset,
+    Uri? sums,
+    CancelToken token,
+  ) async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._checksum',
+    );
+    if (asset.sha256 != null) return asset.sha256!;
+    if (sums == null && release._xinVersionId != null) {
+      // Mirrored resources can omit hashes; bind them to the original release.
+      final data = await _githubRelease(tag: release.tag, token: token);
+      final github = UpdateRelease.fromJson(data!);
+      for (final original in github._assets) {
+        if (original.name == asset.name && original.sha256 != null)
+          return original.sha256!;
+        if (original.name == 'SHA256SUMS') sums = original.uri;
+      }
+    }
+    if (sums == null) throw const FormatException('此版本缺少安装包校验信息，暂时无法安装');
+    try {
+      final response = await _http.get<String>(
+        sums.toString(),
+        options: Options(
+          responseType: ResponseType.plain,
+          followRedirects: true,
+          maxRedirects: 5,
+          headers: const {'Accept': 'text/plain'},
+        ),
+        cancelToken: token,
+      );
+      for (final line in const LineSplitter().convert(response.data ?? '')) {
+        final match = RegExp(r'^([a-fA-F0-9]{64})[ \t]+\*?(.+)$')
+            .firstMatch(line.trim());
+        if (match != null && match[2] == asset.name)
+          return match[1]!.toLowerCase();
+      }
+      throw const FormatException('安装包校验信息不完整，暂时无法安装');
+    } catch (failure, stack) {
+      _localFailure('Reading update checksum failed', failure, stack);
+      rethrow;
+    }
+  }
+
+  void _checkCancelled(CancelToken token) {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._checkCancelled',
+    );
+    if (token.isCancelled) throw token.cancelError!;
+    if (_disposed) throw StateError('Update service disposed');
+  }
+
+  Future<void> _deleteFile(File file) async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._deleteFile',
+    );
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (failure, stack) {
+      _localFailure('Cleaning update artifact failed', failure, stack);
+    }
+  }
+
+  Future<void> _cleanOldArtifacts(Directory directory) async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._cleanOldArtifacts',
+    );
+    try {
+      await for (final entity in directory.list(followLinks: false)) {
+        if (entity is! File ||
+            !RegExp(
+              r'^XMPlus-\d+\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?-(?:windows-x64-setup\.exe|android-(?:arm64-v8a|armeabi-v7a|x86_64)\.apk)(?:\.part)?$',
+            ).hasMatch(p.basename(entity.path)))
+          continue;
+        final stat = await entity.stat();
+        // Handed-off installers must survive UI/app disposal and OS permission flows.
+        if (DateTime.now().difference(stat.modified) > const Duration(days: 7))
+          await _deleteFile(entity);
+      }
+    } catch (failure, stack) {
+      _localFailure('Cleaning old updates failed', failure, stack);
+    }
+  }
+
+  Future<void> _verify(_UpdateDownload download, CancelToken token) async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._verify',
+    );
+    _checkCancelled(token);
+    final length = await download.file.length();
+    if (length < 4 ||
+        download.size != null &&
+            download.size! > 0 &&
+            length != download.size) {
+      throw const FormatException('安装包大小不符，请重新下载');
+    }
+    final hash = await sha256
+        .bind(
+          download.file.openRead().map((chunk) {
+            AppLog.instance.trace(
+              'lib/services/update_service.dart::UpdateService._verify.closure#1',
+            );
+            _checkCancelled(token);
+            return chunk;
+          }),
+        )
+        .first;
+    _checkCancelled(token);
+    if (hash.toString() != download.sha256)
+      throw const FormatException('安装包校验失败，请重新下载');
+    final handle = await download.file.open();
+    try {
+      final header = await handle.read(4);
+      final valid = Platform.isAndroid
+          ? header[0] == 0x50 &&
+                header[1] == 0x4b &&
+                header[2] == 3 &&
+                header[3] == 4
+          : header[0] == 0x4d && header[1] == 0x5a;
+      if (!valid) throw const FormatException('下载内容不是有效的安装包');
+    } finally {
+      await handle.close();
+    }
+  }
+
+  Future<_UpdateDownload> _download(
+    UpdateRelease release,
+    CancelToken token,
+    void Function(String, double?) progress,
+  ) async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._download',
+    );
+    _downloadCancel = token;
+    File? partial;
+    try {
+      final names = await _assetNames(release);
+      _checkCancelled(token);
+      final (asset, sums) = await _resolveAsset(release, names, token);
+      final expected = await _checksum(release, asset, sums, token);
+      _checkCancelled(token);
+      final root = Platform.isAndroid
+          ? await getApplicationSupportDirectory()
+          : await getApplicationCacheDirectory();
+      final directory = Directory(p.join(root.path, 'updates'));
+      await directory.create(recursive: true);
+      await _cleanOldArtifacts(directory);
+      _checkCancelled(token);
+      partial = File(p.join(directory.path, '${asset.name}.part'));
+      progress('正在下载更新…', null);
+      await _http.download(
+        asset.uri.toString(),
+        partial.path,
+        cancelToken: token,
+        deleteOnError: true,
+        options: Options(
+          followRedirects: true,
+          maxRedirects: 5,
+          receiveTimeout: const Duration(minutes: 2),
+          headers: const {'Accept': 'application/octet-stream'},
+        ),
+        onReceiveProgress: (received, total) {
+          AppLog.instance.trace(
+            'lib/services/update_service.dart::UpdateService._download.closure#1',
+          );
+          progress(
+            '正在下载更新…',
+            total > 0 ? (received / total).clamp(0.0, 1.0) : null,
+          );
+        },
+      );
+      _checkCancelled(token);
+      progress('正在校验安装包…', null);
+      await _verify(_UpdateDownload(partial, expected, asset.size), token);
+      _checkCancelled(token);
+      final target = File(p.join(directory.path, asset.name));
+      if (await target.exists()) await target.delete();
+      final ready = await partial.rename(target.path);
+      partial = null;
+      return _UpdateDownload(ready, expected, asset.size);
+    } catch (failure, stack) {
+      if (!token.isCancelled && !_disposed)
+        _localFailure('Downloading update failed', failure, stack);
+      if (!token.isCancelled &&
+          !_disposed &&
+          source == UpdateSource.automatic &&
+          release._xinVersionId == null &&
+          failure is DioException &&
+          failure.type == DioExceptionType.connectionTimeout) {
+        if (partial != null) {
+          await _deleteFile(partial);
+          partial = null;
+        }
+        progress('正在切换更新源…', null);
+        final mirror = await _xinLatest(token: token);
+        _checkCancelled(token);
+        if (mirror == null || mirror.version != release.version) {
+          throw const FormatException('莘应用暂未提供此版本，请稍后重试');
+        }
+        return await _download(mirror, token, progress);
+      }
+      rethrow;
+    } finally {
+      if (partial != null) await _deleteFile(partial);
+      if (identical(_downloadCancel, token)) _downloadCancel = null;
+    }
+  }
+
+  Future<void> _install(_UpdateDownload download) async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::UpdateService._install',
+    );
+    if (Platform.isAndroid) {
+      await AndroidPlatform.installUpdate(download.file.path);
+    } else if (Platform.isWindows) {
+      await const MethodChannel('teikengstudio.xmplus/update')
+          .invokeMethod<void>('installUpdate', {'path': download.file.path});
+    } else {
+      throw const FormatException('当前平台不支持应用内安装');
     }
   }
 
   Future<void> check(BuildContext context, {bool manual = false}) {
     AppLog.instance.trace(
-      "lib/services/update_service.dart::UpdateService.check",
+      'lib/services/update_service.dart::UpdateService.check',
     );
     return AppLog.instance.runWithErrorScope(() async {
       AppLog.instance.trace(
-        "lib/services/update_service.dart::UpdateService.check.closure#1",
+        'lib/services/update_service.dart::UpdateService.check.closure#1',
       );
-
       if (checking || _disposed) return;
       var interactive = manual;
       checking = true;
@@ -399,27 +837,10 @@ class UpdateService extends ChangeNotifier {
       try {
         packageInfo ??= await PackageInfo.fromPlatform();
         _changed();
-        if (!manual && !autoCheck) return;
-        final (status, responseBytes, diagnostic) = await _latest();
-        if (status == 404) {
-          message = '暂无已发布的稳定版本';
-          if (manual && context.mounted && !_disposed)
-            _toast(context, message!);
-          return;
-        }
-        late final UpdateRelease release;
-        try {
-          final data = jsonDecode(utf8.decode(responseBytes));
-          if (data is! Map<String, dynamic>) {
-            throw const FormatException('GitHub 未返回有效的发布数据');
-          }
-          release = UpdateRelease.fromJson(data);
-        } catch (failure, stack) {
-          await diagnostic.fail(failure, stack);
-          rethrow;
-        }
-        if (!release.isNewerThan(packageInfo!.version)) {
-          message = '已是最新版本';
+        if (_disposed || !manual && !autoCheck) return;
+        final release = await _latest();
+        if (release == null || !release.isNewerThan(packageInfo!.version)) {
+          message = '已是最新版本或暂无已发布的稳定版本';
           if (manual && context.mounted && !_disposed)
             _toast(context, message!);
           return;
@@ -432,9 +853,9 @@ class UpdateService extends ChangeNotifier {
           return;
         final action = await showDialog<_UpdateAction>(
           context: context,
-          builder: (context) {
+          builder: (dialogContext) {
             AppLog.instance.trace(
-              "lib/services/update_service.dart::UpdateService.check.closure#1.closure#1",
+              'lib/services/update_service.dart::UpdateService.check.closure#1.closure#1',
             );
             return AlertDialog(
               title: const Text('发现新版本'),
@@ -446,7 +867,7 @@ class UpdateService extends ChangeNotifier {
                     children: [
                       Text(
                         release.tag,
-                        style: Theme.of(context).textTheme.titleLarge,
+                        style: Theme.of(dialogContext).textTheme.titleLarge,
                       ),
                       const SizedBox(height: 8),
                       Text('当前版本：$versionLabel'),
@@ -458,9 +879,9 @@ class UpdateService extends ChangeNotifier {
                       TextButton(
                         onPressed: () {
                           AppLog.instance.trace(
-                            "lib/services/update_service.dart::UpdateService.check.closure#1.closure#1.closure#1",
+                            'lib/services/update_service.dart::UpdateService.check.closure#1.closure#1.closure#1',
                           );
-                          Navigator.pop(context, _UpdateAction.page);
+                          Navigator.pop(dialogContext, _UpdateAction.page);
                         },
                         child: const Text('查看官方发布页'),
                       ),
@@ -472,29 +893,29 @@ class UpdateService extends ChangeNotifier {
                 TextButton(
                   onPressed: () {
                     AppLog.instance.trace(
-                      "lib/services/update_service.dart::UpdateService.check.closure#1.closure#1.closure#2",
+                      'lib/services/update_service.dart::UpdateService.check.closure#1.closure#1.closure#2',
                     );
-                    Navigator.pop(context, _UpdateAction.ignore);
+                    Navigator.pop(dialogContext, _UpdateAction.ignore);
                   },
                   child: const Text('忽略此版本'),
                 ),
                 TextButton(
                   onPressed: () {
                     AppLog.instance.trace(
-                      "lib/services/update_service.dart::UpdateService.check.closure#1.closure#1.closure#3",
+                      'lib/services/update_service.dart::UpdateService.check.closure#1.closure#1.closure#3',
                     );
-                    Navigator.pop(context);
+                    Navigator.pop(dialogContext);
                   },
                   child: const Text('稍后'),
                 ),
-                TextButton(
+                FilledButton(
                   onPressed: () {
                     AppLog.instance.trace(
-                      "lib/services/update_service.dart::UpdateService.check.closure#1.closure#1.closure#4",
+                      'lib/services/update_service.dart::UpdateService.check.closure#1.closure#1.closure#4',
                     );
-                    Navigator.pop(context, _UpdateAction.download);
+                    Navigator.pop(dialogContext, _UpdateAction.download);
                   },
-                  child: const Text('获取更新'),
+                  child: const Text('下载更新'),
                 ),
               ],
             );
@@ -507,51 +928,30 @@ class UpdateService extends ChangeNotifier {
             'ignoredVersion': release.version.toString(),
           });
           if (!saved && context.mounted && !_disposed) _toast(context, error!);
-        } else if (action == _UpdateAction.page ||
-            action == _UpdateAction.download) {
-          var target = release.page;
-          if (action == _UpdateAction.download) {
-            if (Platform.isAndroid) {
-              try {
-                final info = await DeviceInfoPlugin().androidInfo;
-                target = release.downloadUri(
-                  platform: 'android',
-                  androidAbis: info.supportedAbis,
-                );
-              } catch (failure, stack) {
-                AppLog.instance.write(
-                  AppLogLevel.warning,
-                  'update',
-                  'Reading Android update ABI failed; using official release page',
-                  error: failure,
-                  stackTrace: stack,
-                );
-                // If device ABI discovery fails, the official page remains usable.
-              }
-            } else if (Platform.isWindows && Abi.current() == Abi.windowsX64) {
-              target = release.downloadUri(platform: 'windows-x64');
-            }
-          }
-          if (_disposed) return;
-          // The OS/browser handles downloading; XMPlus never executes the asset.
-          if (!await launchUrl(target, mode: LaunchMode.externalApplication)) {
-            throw const FormatException('无法打开浏览器，请在关于页复制官方发布链接');
-          }
-        }
-      } catch (failure, stack) {
-        if (!_disposed) {
-          AppLog.instance.write(
-            AppLogLevel.error,
-            'update',
-            'Checking for updates failed',
-            error: failure,
-            stackTrace: stack,
-            localOnly: true,
+        } else if (action == _UpdateAction.page) {
+          if (!await launchUrl(
+            release.page,
+            mode: LaunchMode.externalApplication,
+          ))
+            throw const FormatException('无法打开官方发布页');
+        } else if (action == _UpdateAction.download && context.mounted) {
+          await showDialog<void>(
+            context: context,
+            barrierDismissible: false,
+            builder: (dialogContext) {
+              AppLog.instance.trace(
+                'lib/services/update_service.dart::UpdateService.check.closure#1.closure#2',
+              );
+              return _UpdateDownloadDialog(service: this, release: release);
+            },
           );
         }
+      } catch (failure, stack) {
+        if (!_disposed)
+          _localFailure('Checking for updates failed', failure, stack);
         error = failure is FormatException
             ? failure.message.toString()
-            : '检查更新失败，请检查网络后重试；也可前往官方发布页';
+            : '检查更新失败，请检查网络后重试；也可切换更新源或查看官方发布页';
         if (interactive && context.mounted && !_disposed)
           _toast(context, error!);
       } finally {
@@ -563,17 +963,15 @@ class UpdateService extends ChangeNotifier {
 
   static void _toast(BuildContext context, String text) {
     AppLog.instance.trace(
-      "lib/services/update_service.dart::UpdateService._toast",
+      'lib/services/update_service.dart::UpdateService._toast',
     );
-
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
   void _recordFailure(String message, Object failure, StackTrace stack) {
     AppLog.instance.trace(
-      "lib/services/update_service.dart::UpdateService._recordFailure",
+      'lib/services/update_service.dart::UpdateService._recordFailure',
     );
-
     if (!HttpLogOperation.reportFailure(failure, stack) &&
         !AppLog.instance.errorWasRecorded(failure)) {
       AppLog.instance.write(
@@ -590,13 +988,241 @@ class UpdateService extends ChangeNotifier {
   @override
   void dispose() {
     AppLog.instance.trace(
-      "lib/services/update_service.dart::UpdateService.dispose",
+      'lib/services/update_service.dart::UpdateService.dispose',
     );
-
     _disposed = true;
-    _closed.complete();
     _cancel.cancel('Update service disposed');
+    _downloadCancel?.cancel('Update service disposed');
     _http.close(force: true);
     super.dispose();
+  }
+}
+
+class _UpdateDownloadDialog extends StatefulWidget {
+  const _UpdateDownloadDialog({required this.service, required this.release});
+  final UpdateService service;
+  final UpdateRelease release;
+
+  @override
+  State<_UpdateDownloadDialog> createState() {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::_UpdateDownloadDialog.createState',
+    );
+    return _UpdateDownloadDialogState();
+  }
+}
+
+class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
+  CancelToken _token = CancelToken();
+  _UpdateDownload? _download;
+  String _stage = '正在获取下载信息…';
+  double? _progress;
+  String? _error;
+  bool _busy = true;
+  bool _installing = false;
+  bool _handedOff = false;
+  bool _closing = false;
+  Future<void>? _pending;
+
+  @override
+  void initState() {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::_UpdateDownloadDialogState.initState',
+    );
+    super.initState();
+    _retryDownload();
+  }
+
+  void _retryDownload() {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::_UpdateDownloadDialogState._retryDownload',
+    );
+    _pending = _startDownload();
+    unawaited(_pending!);
+  }
+
+  Future<void> _startDownload() async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::_UpdateDownloadDialogState._startDownload',
+    );
+    _token = CancelToken();
+    setState(() {
+      AppLog.instance.trace(
+        'lib/services/update_service.dart::_UpdateDownloadDialogState._startDownload.closure#1',
+      );
+      _error = null;
+      _busy = true;
+      _stage = '正在获取下载信息…';
+      _progress = null;
+    });
+    try {
+      final result = await widget.service._download(widget.release, _token, (
+        stage,
+        progress,
+      ) {
+        AppLog.instance.trace(
+          'lib/services/update_service.dart::_UpdateDownloadDialogState._startDownload.closure#2',
+        );
+        if (!mounted || _token.isCancelled) return;
+        setState(() {
+          AppLog.instance.trace(
+            'lib/services/update_service.dart::_UpdateDownloadDialogState._startDownload.closure#2.closure#1',
+          );
+          _stage = stage;
+          _progress = progress;
+        });
+      });
+      if (!mounted || _token.isCancelled) {
+        await widget.service._deleteFile(result.file);
+        return;
+      }
+      setState(() {
+        AppLog.instance.trace(
+          'lib/services/update_service.dart::_UpdateDownloadDialogState._startDownload.closure#3',
+        );
+        _download = result;
+        _busy = false;
+      });
+    } catch (failure) {
+      if (!mounted || _token.isCancelled) return;
+      setState(() {
+        AppLog.instance.trace(
+          'lib/services/update_service.dart::_UpdateDownloadDialogState._startDownload.closure#4',
+        );
+        _busy = false;
+        _error = failure is FormatException
+            ? failure.message.toString()
+            : '下载失败，请检查网络后重试或切换更新源';
+      });
+    }
+  }
+
+  Future<void> _install() async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::_UpdateDownloadDialogState._install',
+    );
+    setState(() {
+      AppLog.instance.trace(
+        'lib/services/update_service.dart::_UpdateDownloadDialogState._install.closure#1',
+      );
+      _installing = true;
+      _error = null;
+    });
+    var verified = false;
+    try {
+      await widget.service._verify(_download!, _token);
+      verified = true;
+      // Once passed to the OS, keep the file even if permission/UAC is denied.
+      _handedOff = true;
+      await widget.service._install(_download!);
+      if (!mounted) return;
+      setState(() {
+        AppLog.instance.trace(
+          'lib/services/update_service.dart::_UpdateDownloadDialogState._install.closure#2',
+        );
+        _installing = false;
+        _stage = '已打开系统安装器。如未完成安装，可再次点击安装。';
+      });
+    } catch (failure, stack) {
+      widget.service._localFailure(
+        'Starting update installer failed',
+        failure,
+        stack,
+      );
+      if (!verified) {
+        final invalid = _download;
+        _download = null;
+        if (!_handedOff && invalid != null)
+          await widget.service._deleteFile(invalid.file);
+      }
+      if (!mounted) return;
+      setState(() {
+        AppLog.instance.trace(
+          'lib/services/update_service.dart::_UpdateDownloadDialogState._install.closure#3',
+        );
+        _installing = false;
+        _error = failure is FormatException
+            ? failure.message.toString()
+            : '安装未完成，请允许安装后重试';
+      });
+    }
+  }
+
+  Future<void> _close() async {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::_UpdateDownloadDialogState._close',
+    );
+    if (_closing) return;
+    _closing = true;
+    _token.cancel('User cancelled update');
+    // Finish deleting this attempt's partial before another dialog can download.
+    await _pending;
+    if (_download != null && !_handedOff) {
+      await widget.service._deleteFile(_download!.file);
+      _download = null;
+    }
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  void dispose() {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::_UpdateDownloadDialogState.dispose',
+    );
+    _token.cancel('Update dialog disposed');
+    if (!_handedOff && _download != null)
+      unawaited(widget.service._deleteFile(_download!.file));
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      'lib/services/update_service.dart::_UpdateDownloadDialogState.build',
+    );
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        title: Text('更新至 ${widget.release.tag}'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _error ??
+                    (_installing
+                        ? '正在打开系统安装器…'
+                        : _download != null
+                        ? (_handedOff ? _stage : '下载完成，点击安装')
+                        : _stage),
+              ),
+              if (_busy || _installing) ...[
+                const SizedBox(height: 16),
+                LinearProgressIndicator(value: _installing ? null : _progress),
+                if (_progress != null && !_installing) ...[
+                  const SizedBox(height: 8),
+                  Text('${(_progress! * 100).round()}%'),
+                ],
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _installing ? null : _close,
+            child: Text(_busy ? '取消下载' : '稍后'),
+          ),
+          if (_download != null)
+            FilledButton(
+              onPressed: _installing ? null : _install,
+              child: Text(_error == null ? '安装' : '重试安装'),
+            )
+          else if (_error != null)
+            FilledButton(onPressed: _retryDownload, child: const Text('重试下载')),
+        ],
+      ),
+    );
   }
 }

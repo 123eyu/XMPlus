@@ -66,6 +66,7 @@ jobs:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       SENTRY_UPLOAD_SYMBOLS: 'true'
       SENTRY_ENVIRONMENT: production
+      XIN_CLIENT_SECRET: ${{ secrets.XIN_CLIENT_SECRET }}
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -81,12 +82,12 @@ jobs:
           flutter-version: '3.47.9'
           channel: stable
           cache: true
-      - name: Require release telemetry configuration
+      - name: Require release configuration
         run: |
           set -euo pipefail
-          for name in SENTRY_DSN SENTRY_ORG SENTRY_PROJECT SENTRY_AUTH_TOKEN; do
+          for name in SENTRY_DSN SENTRY_ORG SENTRY_PROJECT SENTRY_AUTH_TOKEN XIN_CLIENT_SECRET; do
             if [[ -z "${!name}" ]]; then
-              echo "::error::Required Sentry configuration $name is missing; configure variables SENTRY_DSN/SENTRY_ORG/SENTRY_PROJECT and secret SENTRY_AUTH_TOKEN."
+              echo "::error::Required release configuration $name is missing."
               exit 1
             fi
           done
@@ -149,6 +150,7 @@ jobs:
           flutter build apk --release --split-per-abi --no-pub
           --dart-define=SENTRY_DSN="$SENTRY_DSN"
           --dart-define=SENTRY_ENVIRONMENT="$SENTRY_ENVIRONMENT"
+          --dart-define=XIN_CLIENT_SECRET="$XIN_CLIENT_SECRET"
       - name: Upload Android debug symbols
         env:
           SENTRY_RELEASE: ${{ steps.version.outputs.release }}
@@ -203,6 +205,7 @@ jobs:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       SENTRY_UPLOAD_SYMBOLS: 'true'
       SENTRY_ENVIRONMENT: production
+      XIN_CLIENT_SECRET: ${{ secrets.XIN_CLIENT_SECRET }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -212,12 +215,12 @@ jobs:
           flutter-version: '3.47.9'
           channel: stable
           cache: true
-      - name: Require release telemetry configuration
+      - name: Require release configuration
         shell: pwsh
         run: |
-          foreach ($name in @('SENTRY_DSN', 'SENTRY_ORG', 'SENTRY_PROJECT', 'SENTRY_AUTH_TOKEN')) {
+          foreach ($name in @('SENTRY_DSN', 'SENTRY_ORG', 'SENTRY_PROJECT', 'SENTRY_AUTH_TOKEN', 'XIN_CLIENT_SECRET')) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name, 'Process'))) {
-              throw "Required Sentry configuration $name is missing; configure variables SENTRY_DSN/SENTRY_ORG/SENTRY_PROJECT and secret SENTRY_AUTH_TOKEN."
+              throw "Required release configuration $name is missing."
             }
           }
       - name: Restore source-built Windows runtime and provenance
@@ -228,14 +231,42 @@ jobs:
       - name: Unpack native supply
         shell: pwsh
         run: Expand-Archive -LiteralPath "$env:RUNNER_TEMP/windows-native/windows-native-supply.zip" -DestinationPath build/windows-native
+      - name: Locate Inno Setup compiler
+        shell: pwsh
+        run: |
+          $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          $innoDirectory = if ($compiler) { Split-Path $compiler.Source } else { $null }
+          if (-not $innoDirectory) {
+            foreach ($root in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+              if (-not $root) { continue }
+              $candidate = Join-Path $root 'Inno Setup 6'
+              if (Test-Path -LiteralPath (Join-Path $candidate 'ISCC.exe') -PathType Leaf) { $innoDirectory = $candidate; break }
+            }
+          }
+          if (-not $innoDirectory) { $innoDirectory = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6' }
+          if (-not (Test-Path -LiteralPath (Join-Path $innoDirectory 'ISCC.exe') -PathType Leaf)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+            $innoDirectory = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6'
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $innoDirectory 'ISCC.exe') -PathType Leaf)) { throw 'Inno Setup compiler is missing.' }
+          $innoDirectory | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $env:PATH = "$innoDirectory;$env:PATH"
       - name: Build and package Windows
         shell: pwsh
-        run: ./tool/build_windows.ps1 -RuntimeOnly
+        run: |
+          ./tool/build_windows.ps1 -RuntimeOnly
+          $files = @(Get-ChildItem dist/XMPlus-*-windows-x64*.zip, dist/XMPlus-*-windows-x64-setup.exe -File | Sort-Object Name)
+          if ($files.Count -ne 3) { throw 'Expected two portable ZIPs and one installer.' }
+          $files | ForEach-Object { "{0}  ./{1}" -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name } | Set-Content dist/SHA256SUMS-WINDOWS -Encoding ascii
       - name: Upload Windows release files
         uses: actions/upload-artifact@v6
         with:
           name: XMPlus-windows
-          path: dist/XMPlus-*-windows-x64*.zip
+          path: |
+            dist/XMPlus-*-windows-x64*.zip
+            dist/XMPlus-*-windows-x64-setup.exe
+            dist/SHA256SUMS-WINDOWS
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
@@ -266,16 +297,17 @@ jobs:
         run: |
           set -euo pipefail
           (cd release && sha256sum --check SHA256SUMS)
-          (cd release && sha256sum ./*.apk ./*.zip > SHA256SUMS)
+          (cd release && sha256sum --check SHA256SUMS-WINDOWS)
+          (cd release && sha256sum ./*.apk ./*.zip ./*.exe > SHA256SUMS)
           python3 tool/release_notes.py "$RELEASE_TAG" --output release/RELEASE-NOTES.md
           release_flags=()
           if [[ "$RELEASE_TAG" == "v1.1.8" ]]; then
             release_flags+=(--prerelease --latest=false)
           fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release/*.apk release/*.zip release/SHA256SUMS --clobber
+            gh release upload "$RELEASE_TAG" release/*.apk release/*.zip release/*.exe release/SHA256SUMS --clobber
             gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file release/RELEASE-NOTES.md "${release_flags[@]}"
           else
-            gh release create "$RELEASE_TAG" release/*.apk release/*.zip release/SHA256SUMS \
+            gh release create "$RELEASE_TAG" release/*.apk release/*.zip release/*.exe release/SHA256SUMS \
               --verify-tag --title "$RELEASE_TAG" --notes-file release/RELEASE-NOTES.md "${release_flags[@]}"
           fi

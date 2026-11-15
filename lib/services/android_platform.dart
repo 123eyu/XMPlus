@@ -273,4 +273,11 @@ class AndroidPlatform {
     );
     return _invoke<void>('openAudioFile', {'path': path});
   }
+
+  static Future<void> installUpdate(String path) {
+    AppLog.instance.trace(
+      "lib/services/android_platform.dart::AndroidPlatform.installUpdate",
+    );
+    return _channel.invokeMethod<void>('installUpdate', {'path': path});
+  }
 }

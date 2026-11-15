@@ -8,6 +8,7 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include "system_media_controls.h"
+#include "windows_update.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -32,6 +33,8 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   system_media_controls_ = std::make_unique<SystemMediaControls>(
       GetHandle(), flutter_controller_->engine()->messenger());
+  windows_update_ = std::make_unique<WindowsUpdate>(
+      flutter_controller_->engine()->messenger(), GetHandle());
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
@@ -48,6 +51,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  windows_update_.reset();
   system_media_controls_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
@@ -60,6 +64,9 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (windows_update_ && windows_update_->HandleWindowMessage(message, wparam)) {
+    return 0;
+  }
   if (message == SystemMediaControls::kMessage) {
     if (system_media_controls_) system_media_controls_->ProcessEvents();
     return 0;

@@ -179,7 +179,24 @@ class _MyAppState extends State<MyApp> with WindowListener {
   void onWindowClose() async {
     AppLog.instance.trace("lib/app.dart::_MyAppState.onWindowClose");
 
-    await onCloseRequested();
+    var updating = false;
+    if (Platform.isWindows) {
+      try {
+        updating = await const MethodChannel('teikengstudio.xmplus/update')
+                .invokeMethod<bool>('isUpdateReady') ??
+            false;
+      } catch (error, stack) {
+        AppLog.instance.write(
+          AppLogLevel.warning,
+          'update',
+          'Reading installer readiness failed',
+          error: error,
+          stackTrace: stack,
+          localOnly: true,
+        );
+      }
+    }
+    await onCloseRequested(explicitExit: updating);
   }
 
   @override

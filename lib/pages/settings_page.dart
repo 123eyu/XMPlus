@@ -722,9 +722,43 @@ class _AboutSettings extends StatelessWidget {
                   SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('启动时自动检查更新'),
-                    subtitle: const Text('仅检查 GitHub 稳定版，不会自动下载或安装'),
+                    subtitle: const Text('不会自动下载或安装'),
                     value: updates.autoCheck,
                     onChanged: updates.setAutoCheck,
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.cloud_download_outlined),
+                    title: const Text('更新源'),
+                    subtitle: updates.source == UpdateSource.automatic
+                        ? const Text('优先 GitHub，连接超时切换莘应用')
+                        : null,
+                    trailing: DropdownButton<UpdateSource>(
+                      value: updates.source,
+                      underline: const SizedBox.shrink(),
+                      items: const [
+                        DropdownMenuItem(
+                          value: UpdateSource.automatic,
+                          child: Text('默认'),
+                        ),
+                        DropdownMenuItem(
+                          value: UpdateSource.github,
+                          child: Text('GitHub'),
+                        ),
+                        DropdownMenuItem(
+                          value: UpdateSource.xin,
+                          child: Text('莘应用'),
+                        ),
+                      ],
+                      onChanged: updates.checking
+                          ? null
+                          : (value) {
+                              AppLog.instance.trace(
+                                "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#1",
+                              );
+                              if (value != null) updates.setSource(value);
+                            },
+                    ),
                   ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
@@ -742,7 +776,7 @@ class _AboutSettings extends StatelessWidget {
                         ? null
                         : () {
                             AppLog.instance.trace(
-                              "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#1",
+                              "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#2",
                             );
                             updates.check(context, manual: true);
                           },
@@ -782,7 +816,7 @@ class _AboutSettings extends StatelessWidget {
                       icon: const Icon(Icons.open_in_new),
                       onPressed: () {
                         AppLog.instance.trace(
-                          "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#2",
+                          "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#3",
                         );
                         _openContact(
                           context,
@@ -811,7 +845,7 @@ class _AboutSettings extends StatelessWidget {
                       icon: const Icon(Icons.open_in_new),
                       onPressed: () {
                         AppLog.instance.trace(
-                          "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#3",
+                          "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#4",
                         );
 
                         _openContact(context, 'https://t.me/+csbfHjIyqkoyNDA1');
@@ -830,7 +864,7 @@ class _AboutSettings extends StatelessWidget {
                       icon: const Icon(Icons.open_in_new),
                       onPressed: () {
                         AppLog.instance.trace(
-                          "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#4",
+                          "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#5",
                         );
                         _openContact(
                           context,
@@ -869,7 +903,7 @@ class _AboutSettings extends StatelessWidget {
               label: const Text('查看许可'),
               onPressed: () {
                 AppLog.instance.trace(
-                  "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#5",
+                  "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#6",
                 );
                 showLicensePage(
                   context: context,
@@ -883,11 +917,11 @@ class _AboutSettings extends StatelessWidget {
               label: const Text('许可与来源'),
               onPressed: () {
                 AppLog.instance.trace(
-                  "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#6",
+                  "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#7",
                 );
                 AppLog.instance.runWithErrorScope(() async {
                   AppLog.instance.trace(
-                    "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#6.closure#1",
+                    "lib/pages/settings_page.dart::_AboutSettings.build.closure#1.closure#7.closure#1",
                   );
 
                   try {

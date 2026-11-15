@@ -36,6 +36,8 @@ class MainActivity : AudioServiceActivity() {
     private val notificationPermissionRequest = 2102
     private val logExportRequest = 2103
     private var pendingLogExport: LogExport? = null
+    private val updatePermissionRequest = 2104
+    private var pendingUpdate: Pair<File, MethodChannel.Result>? = null
 
     private class LogExport(
         val result: MethodChannel.Result,
@@ -80,6 +82,30 @@ class MainActivity : AudioServiceActivity() {
                             }
                             startActivity(Intent.createChooser(intent, "打开音频"))
                             result.success(null)
+                        }
+                        "installUpdate" -> {
+                            check(pendingUpdate == null) { "安装授权尚未结束" }
+                            val requested = File(requireNotNull(call.argument<String>("path")))
+                            require(requested.isAbsolute) { "安装包路径无效" }
+                            val file = requested.canonicalFile
+                            val root = File(filesDir, "updates").canonicalFile
+                            require(file.parentFile == root && file.isFile &&
+                                file.name.matches(Regex("XMPlus-[0-9]+\\.[0-9]+\\.[0-9]+-android-(arm64-v8a|armeabi-v7a|x86_64)\\.apk"))) {
+                                "安装包无效，请重新下载"
+                            }
+                            if (packageManager.canRequestPackageInstalls()) {
+                                openUpdateInstaller(file)
+                                result.success(null)
+                            } else {
+                                pendingUpdate = Pair(file, result)
+                                try {
+                                    startActivityForResult(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                        Uri.parse("package:$packageName")), updatePermissionRequest)
+                                } catch (error: Exception) {
+                                    pendingUpdate = null
+                                    throw error
+                                }
+                            }
                         }
                         "claimLogUploadPrompt" -> result.success(XMPlusApplication.claimLogUploadPrompt())
                         "exportLogSnapshot" -> {
@@ -219,6 +245,14 @@ class MainActivity : AudioServiceActivity() {
             }
     }
 
+    private fun openUpdateInstaller(file: File) {
+        val uri = FileProvider.getUriForFile(this, "$packageName.files", file)
+        startActivity(Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        })
+    }
+
     private fun copyNoReplace(source: String, target: String) {
         require(File(source).isAbsolute && File(target).isAbsolute && source != target)
         var input: FileDescriptor? = null
@@ -346,6 +380,20 @@ class MainActivity : AudioServiceActivity() {
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == updatePermissionRequest) {
+            val pending = pendingUpdate
+            pendingUpdate = null
+            if (pending != null) {
+                try {
+                    check(packageManager.canRequestPackageInstalls()) { "未允许安装，请授权后重试" }
+                    openUpdateInstaller(pending.first)
+                    pending.second.success(null)
+                } catch (error: Exception) {
+                    pending.second.error("update_install", error.message, null)
+                }
+            }
+            return
+        }
         if (requestCode != logExportRequest) {
             super.onActivityResult(requestCode, resultCode, data)
             return
@@ -408,6 +456,8 @@ class MainActivity : AudioServiceActivity() {
     override fun onDestroy() {
         notificationPermissionResult?.success(false)
         notificationPermissionResult = null
+        pendingUpdate?.second?.error("update_install", "安装授权已中断，请重试", null)
+        pendingUpdate = null
         pendingLogExport?.let {
             it.cancelled.set(true)
             it.result.error("log_export_destroyed", "Activity 已销毁，日志导出未完成", null)

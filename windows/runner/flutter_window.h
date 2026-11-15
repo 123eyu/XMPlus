@@ -13,6 +13,7 @@
 #include "win32_window.h"
 
 class SystemMediaControls;
+class WindowsUpdate;
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -35,6 +36,7 @@ class FlutterWindow : public Win32Window {
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
   std::unique_ptr<SystemMediaControls> system_media_controls_;
+  std::unique_ptr<WindowsUpdate> windows_update_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

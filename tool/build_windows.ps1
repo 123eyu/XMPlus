@@ -25,6 +25,19 @@ if (-not $SdkRoot) { $SdkRoot = Split-Path (Split-Path (Get-Command flutter.bat 
 $Flutter = Join-Path $SdkRoot 'bin\flutter.bat'
 $Dart = Join-Path $SdkRoot 'bin\dart.bat'
 $UploadSentrySymbols = $env:SENTRY_UPLOAD_SYMBOLS -ceq 'true'
+if ([string]::IsNullOrWhiteSpace($env:XIN_CLIENT_SECRET)) {
+    throw 'Release builds require process environment XIN_CLIENT_SECRET for the Xin update source.'
+}
+$innoCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+$InnoCompiler = if ($innoCommand) { $innoCommand.Source } else { $null }
+if (-not $InnoCompiler) {
+    foreach ($directory in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+        if (-not $directory) { continue }
+        $candidate = Join-Path $directory 'Inno Setup 6\ISCC.exe'
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { $InnoCompiler = $candidate; break }
+    }
+}
+if (-not $InnoCompiler) { throw 'Install Inno Setup 6 and add its directory to PATH before packaging.' }
 if ($UploadSentrySymbols) {
     $sentryEnvironment = $env:SENTRY_ENVIRONMENT
     if ([string]::IsNullOrWhiteSpace($sentryEnvironment)) { $sentryEnvironment = 'production' }
@@ -115,7 +128,7 @@ function Copy-Tree([string]$From, [string]$To, [string]$Mode) {
             if ($Mode -eq 'assets') { $allowed = $item.Extension -in @('.png', '.jpg', '.jpeg', '.webp', '.svg', '.ico', '.ttf', '.otf', '.json') }
             if ($Mode -eq 'windows') {
                 $allowed = $item.Name -in @('CMakeLists.txt', 'LICENSE.PiliPlus', '.gitignore') -or
-                    $item.Extension -in @('.cpp', '.cc', '.h', '.rc', '.manifest', '.ico', '.png')
+                    $item.Extension -in @('.cpp', '.cc', '.h', '.rc', '.manifest', '.ico', '.png', '.iss', '.isl', '.LICENSE')
             }
             if ($allowed) { Copy-File $item.FullName $destination }
         }
@@ -175,12 +188,13 @@ function Assert-ProjectClientsStopped {
         }
     }
 }
-function Assert-Replacement([string]$Target, [string]$Zip, [string]$NoFFmpegZip, [string]$SourceDirectory) {
+function Assert-Replacement([string]$Target, [string]$Zip, [string]$NoFFmpegZip, [string]$Setup, [string]$SourceDirectory) {
     $hasTarget = Test-Path -LiteralPath $Target
     $hasZip = Test-Path -LiteralPath $Zip
     $hasNoFFmpegZip = Test-Path -LiteralPath $NoFFmpegZip
+    $hasSetup = Test-Path -LiteralPath $Setup
     if (Test-Path -LiteralPath $SourceDirectory) { throw "Existing development sources must be preserved: $SourceDirectory" }
-    if (-not $hasTarget -and -not $hasZip -and -not $hasNoFFmpegZip) { return }
+    if (-not $hasTarget -and -not $hasZip -and -not $hasNoFFmpegZip -and -not $hasSetup) { return }
     if (-not $LocalCandidate -or -not $ReplaceLocalCandidate -or -not $hasTarget) {
         throw 'Output exists; only -LocalCandidate -ReplaceLocalCandidate may replace a recognized private candidate.'
     }
@@ -195,6 +209,7 @@ function Assert-Replacement([string]$Target, [string]$Zip, [string]$NoFFmpegZip,
     }
     if ($hasZip) { Assert-PlainPath $Zip }
     if ($hasNoFFmpegZip) { Assert-PlainPath $NoFFmpegZip }
+    if ($hasSetup) { Assert-PlainPath $Setup }
 }
 function File-Inventory([string]$Root) {
     foreach ($file in Get-ChildItem -LiteralPath $Root -File -Recurse -Force | Sort-Object FullName) {
@@ -308,6 +323,7 @@ $dist = [IO.Path]::GetFullPath($OutputDirectory)
 $target = Join-Path $dist $PackageName
 $targetZip = $target + '.zip'
 $targetNoFFmpegZip = $target + '-no-ffmpeg.zip'
+$targetSetup = $target + '-setup.exe'
 if (-not [IO.Path]::IsPathRooted($DevelopmentDirectory)) { $DevelopmentDirectory = Join-Path $ProjectRoot $DevelopmentDirectory }
 $development = [IO.Path]::GetFullPath($DevelopmentDirectory)
 if ($development.Equals($dist, [StringComparison]::OrdinalIgnoreCase) -or
@@ -318,7 +334,7 @@ $targetSources = Join-Path $development $SourceName
 $targetEvidence = Join-Path $development ($PackageName + '-evidence')
 if (Test-Path -LiteralPath $targetEvidence) { throw "Existing development evidence must be preserved: $targetEvidence" }
 Assert-ProjectClientsStopped
-Assert-Replacement $target $targetZip $targetNoFFmpegZip $targetSources
+Assert-Replacement $target $targetZip $targetNoFFmpegZip $targetSetup $targetSources
 
 $stage = Join-Path $ProjectRoot ('build\xmplus-package-' + [Guid]::NewGuid().ToString('N'))
 $source = $ProjectRoot
@@ -371,7 +387,7 @@ try {
         if (Test-Path -LiteralPath $obsolete -PathType Leaf) { Remove-Item -LiteralPath $obsolete }
     }
     $buildArguments = @('build', 'windows', '--release', '--no-pub')
-    foreach ($name in @('SENTRY_DSN', 'SENTRY_NON_PRODUCTION_DSN', 'SENTRY_ENVIRONMENT')) {
+    foreach ($name in @('SENTRY_DSN', 'SENTRY_NON_PRODUCTION_DSN', 'SENTRY_ENVIRONMENT', 'XIN_CLIENT_SECRET')) {
         $value = [Environment]::GetEnvironmentVariable($name, 'Process')
         if (-not [string]::IsNullOrWhiteSpace($value)) { $buildArguments += "--dart-define=$name=$value" }
     }
@@ -417,6 +433,7 @@ try {
     Copy-File (Join-Path $ProjectRoot 'LICENSE') (Join-Path $bundle 'LICENSE')
     Copy-File (Join-Path $ProjectRoot 'NOTICE') (Join-Path $bundle 'NOTICE')
     Copy-File (Join-Path $ProjectRoot 'windows\LICENSE.PiliPlus') (Join-Path $bundle 'LICENSE.PiliPlus')
+    Copy-File (Join-Path $ProjectRoot 'windows\runner\resources\ChineseSimplified.LICENSE') (Join-Path $bundle 'licenses\ChineseSimplified.LICENSE')
     # Runtime payload: licenses and notices only, not source archives or build evidence.
     $nativeLicenses = @($nativeManifest.artifacts | Where-Object {
         $_.path -like 'licenses/native/licenses/*' -and
@@ -543,7 +560,7 @@ try {
     Ensure-Directory $dist
     Ensure-Directory $development
     Assert-ProjectClientsStopped
-    Assert-Replacement $target $targetZip $targetNoFFmpegZip $targetSources
+    Assert-Replacement $target $targetZip $targetNoFFmpegZip $targetSetup $targetSources
     $moves = @(@{ from = $bundle; to = $target }, @{ from = $stagedZip; to = $targetZip },
         @{ from = $stagedNoFFmpegZip; to = $targetNoFFmpegZip }, @{ from = $evidence; to = $targetEvidence })
     if ($stagedSources) {
@@ -557,7 +574,7 @@ try {
     $backups = @()
     $installed = @()
     try {
-        foreach ($destination in @($target, $targetZip, $targetNoFFmpegZip)) {
+        foreach ($destination in @($target, $targetZip, $targetNoFFmpegZip, $targetSetup)) {
             if (Test-Path -LiteralPath $destination) {
                 $backup = $destination + '.backup-' + [Guid]::NewGuid().ToString('N')
                 Move-Item -LiteralPath $destination -Destination $backup
@@ -568,6 +585,17 @@ try {
             Move-Item -LiteralPath $move.from -Destination $move.to
             $installed += $move
         }
+        # Compile only from the admitted dist runtime, never raw runner output.
+        foreach ($file in $manifest.files) { Assert-Hash (Child-Path $target $file.path) $file.sha256 }
+        if (@(File-Inventory $target).Count -ne $manifest.files.Count) { throw 'Installed runtime inventory mismatch.' }
+        & $InnoCompiler '/Qp' "/DAppVersion=$ReleaseVersion" "/DRuntimeDirectory=$target" "/DPackageOutputDirectory=$stage" (Join-Path $ProjectRoot 'windows\setup.iss')
+        if ($LASTEXITCODE -ne 0) { throw "Inno Setup exited with code $LASTEXITCODE." }
+        $stagedSetup = Join-Path $stage ($PackageName + '-setup.exe')
+        if (-not (Test-Path -LiteralPath $stagedSetup -PathType Leaf) -or (Get-Item -LiteralPath $stagedSetup).Length -eq 0) {
+            throw 'Inno Setup did not produce the expected installer.'
+        }
+        Move-Item -LiteralPath $stagedSetup -Destination $targetSetup
+        $installed += @{ from = $stagedSetup; to = $targetSetup }
     } catch {
         for ($i = $installed.Count - 1; $i -ge 0; $i--) {
             Move-Item -LiteralPath $installed[$i].to -Destination $installed[$i].from
@@ -614,6 +642,8 @@ try {
     Write-Host "ZIP: $targetZip"
     Write-Host "ZIP SHA-256: $zipHash"
     Write-Host "ZIP without FFmpeg (libmpv retained): $targetNoFFmpegZip"
+    Write-Host "Installer: $targetSetup"
+    Write-Host "Installer SHA-256: $(File-Hash $targetSetup)"
     Write-Host "Development materials (not runtime): $development"
     Write-Host "Status: $statusValue"
     Write-Host "Workspace build: $release"
