@@ -101,42 +101,50 @@ class _PlaybackModeButtonState extends State<PlaybackModeButton> {
 
         final mode = widget.runtime.player.effectiveSettings.loopMode;
         final colors = Theme.of(context).colorScheme;
-        return PopupMenuButton<String>(
-          key: const ValueKey('playbackModeMenu'),
-          enabled: !_saving,
-          tooltip: playbackModeLabel(mode),
-          initialValue: mode,
-          icon: Icon(
-            playbackModeIcon(mode),
-            color: mode == 'off' ? null : colors.primary,
-          ),
-          onSelected: _select,
-          itemBuilder: (context) {
+        // The persistent playback dock is a sibling of the page Navigator.
+        // Anchor to its overlay, as the speed and volume controls do.
+        return MenuAnchor(
+          consumeOutsideTap: true,
+          menuChildren: [
+            for (final value in const ['off', 'single', 'all', 'shuffle'])
+              MenuItemButton(
+                onPressed: _saving
+                    ? null
+                    : () {
+                        AppLog.instance.trace(
+                          "lib/pages/playback_mode_control.dart::_PlaybackModeButtonState.build.closure#1.closure#1",
+                        );
+                        _select(value);
+                      },
+                leadingIcon: Icon(playbackModeIcon(value), size: 20),
+                trailingIcon: value == mode
+                    ? Icon(Icons.check_rounded, size: 18, color: colors.primary)
+                    : null,
+                child: Text(playbackModeLabel(value)),
+              ),
+          ],
+          builder: (context, controller, _) {
             AppLog.instance.trace(
-              "lib/pages/playback_mode_control.dart::_PlaybackModeButtonState.build.closure#1.closure#1",
+              "lib/pages/playback_mode_control.dart::_PlaybackModeButtonState.build.closure#1.closure#2",
             );
-
-            return [
-              for (final value in const ['off', 'single', 'all', 'shuffle'])
-                PopupMenuItem(
-                  value: value,
-                  child: Row(
-                    children: [
-                      Icon(playbackModeIcon(value), size: 20),
-                      const SizedBox(width: 12),
-                      Expanded(child: Text(playbackModeLabel(value))),
-                      if (value == mode) ...[
-                        const SizedBox(width: 16),
-                        Icon(
-                          Icons.check_rounded,
-                          size: 18,
-                          color: colors.primary,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-            ];
+            return IconButton(
+              key: const ValueKey('playbackModeMenu'),
+              tooltip: playbackModeLabel(mode),
+              icon: Icon(
+                playbackModeIcon(mode),
+                color: mode == 'off' ? null : colors.primary,
+              ),
+              onPressed: _saving
+                  ? null
+                  : () {
+                      AppLog.instance.trace(
+                        "lib/pages/playback_mode_control.dart::_PlaybackModeButtonState.build.closure#1.closure#2.closure#1",
+                      );
+                      controller.isOpen
+                          ? controller.close()
+                          : controller.open();
+                    },
+            );
           },
         );
       },
