@@ -23,8 +23,9 @@ Future<void> showSkipSegmentsSettings(
 }
 
 class PlaybackSkipButton extends StatelessWidget {
-  const PlaybackSkipButton({required this.runtime, super.key});
+  const PlaybackSkipButton({required this.runtime, this.onPressed, super.key});
   final AppRuntime runtime;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -49,12 +50,14 @@ class PlaybackSkipButton extends StatelessWidget {
               : '跳过片头片尾',
           color: enabled ? Theme.of(context).colorScheme.primary : null,
           icon: const Icon(Icons.content_cut_rounded),
-          onPressed: () {
-            AppLog.instance.trace(
-              "lib/pages/playback_skip_control.dart::PlaybackSkipButton.build.closure#1.closure#1",
-            );
-            showSkipSegmentsSettings(context, runtime);
-          },
+          onPressed:
+              onPressed ??
+              () {
+                AppLog.instance.trace(
+                  "lib/pages/playback_skip_control.dart::PlaybackSkipButton.build.closure#1.closure#1",
+                );
+                showSkipSegmentsSettings(context, runtime);
+              },
         );
       },
     );

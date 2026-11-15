@@ -1466,6 +1466,13 @@ class _PlayerPanelState extends State<PlayerPanel> {
     );
   }
 
+  void _skipSegments() {
+    AppLog.instance.trace(
+      "lib/pages/player_panel.dart::_PlayerPanelState._skipSegments",
+    );
+    showSkipSegmentsSettings(_navigator.context, _runtime);
+  }
+
   void _openAlbum(String albumId) {
     AppLog.instance.trace(
       "lib/pages/player_panel.dart::_PlayerPanelState._openAlbum",
@@ -1695,77 +1702,83 @@ class _PlayerPanelState extends State<PlayerPanel> {
           AppLog.instance.trace(
             "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.seekSlider",
           );
-          return SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 3,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
-              inactiveTrackColor: colors.onSurface.withValues(alpha: 0.12),
-            ),
-            child: KeyedSubtree(
-              key: ValueKey((player, epoch, dock)),
-              child: Slider(
-                key: dock ? const ValueKey('dockSeekSlider') : null,
-                padding: EdgeInsets.symmetric(
-                  vertical: dock ? 12 : 22,
-                  horizontal: 5,
-                ),
-                value: position,
-                max: max > 0 ? max : 1,
-                label: playbackTime(position),
-                semanticFormatterCallback: playbackTime,
-                onChangeStart: track == null || max == 0 || _busy
-                    ? null
-                    : (_) {
-                        AppLog.instance.trace(
-                          "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.seekSlider.closure#1",
-                        );
-                        _dragEpoch = epoch;
-                      },
-                onChanged: track == null || max == 0 || _busy
-                    ? null
-                    : (value) {
-                        AppLog.instance.trace(
-                          "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.seekSlider.closure#2",
-                        );
+          // A track change can remount this slider while a popup excludes the
+          // dock's semantics. Keep its value-indicator portal in that subtree.
+          return Overlay.wrap(
+            alwaysSizeToContent: true,
+            clipBehavior: Clip.none,
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
+                inactiveTrackColor: colors.onSurface.withValues(alpha: 0.12),
+              ),
+              child: KeyedSubtree(
+                key: ValueKey((player, epoch, dock)),
+                child: Slider(
+                  key: dock ? const ValueKey('dockSeekSlider') : null,
+                  padding: EdgeInsets.symmetric(
+                    vertical: dock ? 12 : 22,
+                    horizontal: 5,
+                  ),
+                  value: position,
+                  max: max > 0 ? max : 1,
+                  label: playbackTime(position),
+                  semanticFormatterCallback: playbackTime,
+                  onChangeStart: track == null || max == 0 || _busy
+                      ? null
+                      : (_) {
+                          AppLog.instance.trace(
+                            "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.seekSlider.closure#1",
+                          );
+                          _dragEpoch = epoch;
+                        },
+                  onChanged: track == null || max == 0 || _busy
+                      ? null
+                      : (value) {
+                          AppLog.instance.trace(
+                            "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.seekSlider.closure#2",
+                          );
 
-                        if (_dragEpoch == epoch &&
-                            player.playbackEpoch == epoch) {
+                          if (_dragEpoch == epoch &&
+                              player.playbackEpoch == epoch) {
+                            setState(() {
+                              AppLog.instance.trace(
+                                "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.seekSlider.closure#2.closure#1",
+                              );
+                              _dragPosition = value;
+                            });
+                          }
+                        },
+                  onChangeEnd: track == null || max == 0 || _busy
+                      ? null
+                      : (value) async {
+                          AppLog.instance.trace(
+                            "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.seekSlider.closure#3",
+                          );
+
+                          final selectedEpoch = _dragEpoch;
                           setState(() {
                             AppLog.instance.trace(
-                              "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.seekSlider.closure#2.closure#1",
+                              "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.seekSlider.closure#3.closure#1",
                             );
-                            _dragPosition = value;
+
+                            _dragPosition = null;
+                            _dragEpoch = null;
                           });
-                        }
-                      },
-                onChangeEnd: track == null || max == 0 || _busy
-                    ? null
-                    : (value) async {
-                        AppLog.instance.trace(
-                          "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.seekSlider.closure#3",
-                        );
-
-                        final selectedEpoch = _dragEpoch;
-                        setState(() {
-                          AppLog.instance.trace(
-                            "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.seekSlider.closure#3.closure#1",
-                          );
-
-                          _dragPosition = null;
-                          _dragEpoch = null;
-                        });
-                        if (selectedEpoch != epoch ||
-                            player.playbackEpoch != epoch) {
-                          return;
-                        }
-                        await _act(() {
-                          AppLog.instance.trace(
-                            "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.seekSlider.closure#3.closure#2",
-                          );
-                          return player.seek(value, expectedEpoch: epoch);
-                        });
-                      },
+                          if (selectedEpoch != epoch ||
+                              player.playbackEpoch != epoch) {
+                            return;
+                          }
+                          await _act(() {
+                            AppLog.instance.trace(
+                              "lib/pages/player_panel.dart::_PlayerPanelState.build.closure#1.seekSlider.closure#3.closure#2",
+                            );
+                            return player.seek(value, expectedEpoch: epoch);
+                          });
+                        },
+                ),
               ),
             ),
           );
@@ -1915,7 +1928,10 @@ class _PlayerPanelState extends State<PlayerPanel> {
                         if (availableWidth >= 1080)
                           PlaybackModeButton(runtime: _runtime),
                         if (availableWidth >= 1200)
-                          PlaybackSkipButton(runtime: _runtime),
+                          PlaybackSkipButton(
+                            runtime: _runtime,
+                            onPressed: _skipSegments,
+                          ),
                         if (showProgress)
                           PlaybackActionButton(
                             size: 48,
@@ -2157,7 +2173,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
                   : null,
             ),
             PlaybackVolumeControl(runtime: _runtime, vertical: true),
-            PlaybackSkipButton(runtime: _runtime),
+            PlaybackSkipButton(runtime: _runtime, onPressed: _skipSegments),
             PlaybackActionButton(
               onPressed: () {
                 AppLog.instance.trace(

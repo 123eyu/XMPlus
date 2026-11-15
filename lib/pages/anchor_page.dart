@@ -2,13 +2,14 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../common/widgets/app_scrollbar.dart';
 import '../api/xmly_anchor.dart';
+import '../api/xmly_client.dart';
 import '../common/widgets/adaptive_text.dart';
 import '../common/widgets/app_header.dart';
 import '../common/widgets/content_paging.dart';
+import '../common/widgets/app_tab_button.dart';
 import '../common/widgets/logged_network_image.dart';
 import '../models/xmly_models.dart';
 import '../services/app_log.dart';
@@ -45,13 +46,33 @@ class AnchorPage extends StatefulWidget {
   }
 }
 
+enum _AnchorOrder { defaultOrder, latest, oldest, popular }
+
 class _AnchorListing<T> {
-  List<T> items = [];
-  int page = 0, pageSize = 1, requestedPage = 1, generation = 0;
-  int? total;
-  bool busy = false;
+  _AnchorListing({required this.pageSize}) {
+    AppLog.instance.trace("lib/pages/anchor_page.dart::_AnchorListing.new");
+  }
+
+  List<T> items = [], source = [];
+  int page = 0, requestedPage = 1, pageSize;
+  int? total, reportedTotal, sourceReportedTotal;
+  _AnchorOrder order = _AnchorOrder.defaultOrder;
   Completer<void>? cancelled;
+  int request = 0, loaded = 0;
+  int? loadingTotal;
+  bool busy = false,
+      sourceReady = false,
+      refreshNeeded = false,
+      datesReady = false;
   String? error;
+
+  void cancel() {
+    AppLog.instance.trace("lib/pages/anchor_page.dart::_AnchorListing.cancel");
+    request++;
+    cancelled?.complete();
+    cancelled = null;
+    busy = false;
+  }
 }
 
 class _AnchorPageState extends State<AnchorPage>
@@ -70,10 +91,14 @@ class _AnchorPageState extends State<AnchorPage>
   String? _uid, _resolveError, _profileError;
   AnchorProfile? _profile;
   bool _resolving = true, _profileBusy = false;
-  bool _openingFollow = false;
   bool _expanded = false;
-  _AnchorListing<AnchorAlbum> _albums = _AnchorListing();
-  _AnchorListing<Track> _tracks = _AnchorListing();
+  XmlyClient? _followClient;
+  String? _followKey, _followError;
+  bool? _following;
+  bool _followBusy = false, _followMutating = false;
+  int _followRequest = 0, _libraryRevision = -1;
+  _AnchorListing<AnchorAlbum> _albums = _AnchorListing(pageSize: 10);
+  _AnchorListing<Track> _tracks = _AnchorListing(pageSize: 20);
 
   @override
   void initState() {
@@ -83,6 +108,7 @@ class _AnchorPageState extends State<AnchorPage>
 
     super.initState();
     _tabs = TabController(length: 2, vsync: this)..addListener(_selectTab);
+    widget.runtime.addListener(_runtimeChanged);
     _refresh();
   }
 
@@ -93,6 +119,10 @@ class _AnchorPageState extends State<AnchorPage>
     );
 
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.runtime != widget.runtime) {
+      oldWidget.runtime.removeListener(_runtimeChanged);
+      widget.runtime.addListener(_runtimeChanged);
+    }
     if (oldWidget.runtime != widget.runtime ||
         oldWidget.accountIdentity != widget.accountIdentity ||
         oldWidget.uid != widget.uid ||
@@ -110,10 +140,12 @@ class _AnchorPageState extends State<AnchorPage>
 
     _generation++;
     _playRequest++;
+    _followRequest++;
+    widget.runtime.removeListener(_runtimeChanged);
     _cancelled.complete();
+    _albums.cancel();
+    _tracks.cancel();
     _tabs.dispose();
-    _albums.cancelled?.complete();
-    _tracks.cancelled?.complete();
     for (final scroll in _scrolls) {
       scroll.dispose();
     }
@@ -143,7 +175,9 @@ class _AnchorPageState extends State<AnchorPage>
         return action(XmlyAnchor(client));
       },
       rateLimitRetries: 0,
-      cancelled: cancelled ?? _cancelled.future,
+      cancelled: cancelled == null
+          ? _cancelled.future
+          : Future.any([_cancelled.future, cancelled]),
     );
   }
 
@@ -169,11 +203,11 @@ class _AnchorPageState extends State<AnchorPage>
     );
 
     final generation = ++_generation;
+    _albums.cancel();
+    _tracks.cancel();
     _cancelled.complete();
     _cancelled = Completer<void>();
     _playRequest++;
-    _albums.cancelled?.complete();
-    _tracks.cancelled?.complete();
     setState(() {
       AppLog.instance.trace(
         "lib/pages/anchor_page.dart::_AnchorPageState._refresh.closure#1",
@@ -185,8 +219,12 @@ class _AnchorPageState extends State<AnchorPage>
       _resolving = true;
       _profileBusy = false;
       _expanded = false;
-      _albums = _AnchorListing();
-      _tracks = _AnchorListing();
+      _albums = _AnchorListing(pageSize: 10)..order = _albums.order;
+      _tracks = _AnchorListing(pageSize: 20)..order = _tracks.order;
+      _followRequest++;
+      _following = null;
+      _followError = null;
+      _followBusy = _followMutating = false;
     });
     try {
       final uid = widget.uid != null
@@ -208,7 +246,7 @@ class _AnchorPageState extends State<AnchorPage>
         _uid = uid;
         _resolving = false;
       });
-      await Future.wait([_loadProfile(), _loadSelected()]);
+      await Future.wait([_loadProfile(), _loadSelected(), _loadFollowing()]);
     } catch (error, stack) {
       if (!_current(generation)) return;
       _record('Resolving anchor failed', error, stack);
@@ -225,10 +263,23 @@ class _AnchorPageState extends State<AnchorPage>
 
   Future<void> _reload() async {
     AppLog.instance.trace(
-      'lib/pages/anchor_page.dart::_AnchorPageState._reload',
+      "lib/pages/anchor_page.dart::_AnchorPageState._reload",
     );
     if (_uid == null) return _refresh();
-    await Future.wait([_loadProfile(), _loadSelected(page: 1)]);
+    if (_selected == 0) {
+      _albums.cancel();
+      _albums.source = [];
+      _albums.sourceReady = _albums.datesReady = false;
+    } else {
+      _tracks.cancel();
+      _tracks.source = [];
+      _tracks.sourceReady = _tracks.datesReady = false;
+    }
+    await Future.wait([
+      _loadProfile(),
+      _loadSelected(page: 1),
+      _loadFollowing(),
+    ]);
   }
 
   Future<void> _loadProfile() async {
@@ -286,75 +337,351 @@ class _AnchorPageState extends State<AnchorPage>
     );
 
     if (_selected == 0) {
-      return _load<AnchorAlbum>(_albums, (api, uid, page) {
-        AppLog.instance.trace(
-          "lib/pages/anchor_page.dart::_AnchorPageState._loadSelected.closure#1",
-        );
-        return api.albums(uid, page: page);
-      }, page: page ?? _albums.requestedPage);
-    }
-    return _load<Track>(_tracks, (api, uid, page) {
-      AppLog.instance.trace(
-        "lib/pages/anchor_page.dart::_AnchorPageState._loadSelected.closure#2",
+      return _load<AnchorAlbum>(
+        _albums,
+        (api, uid, page) {
+          AppLog.instance.trace(
+            "lib/pages/anchor_page.dart::_AnchorPageState._loadSelected.closure#1",
+          );
+          return api.albums(uid, page: page);
+        },
+        (album) {
+          AppLog.instance.trace(
+            "lib/pages/anchor_page.dart::_AnchorPageState._loadSelected.closure#2",
+          );
+          return album.album.id;
+        },
+        (api, uid, progress) {
+          AppLog.instance.trace(
+            "lib/pages/anchor_page.dart::_AnchorPageState._loadSelected.closure#3",
+          );
+          return api.allAlbums(
+            uid,
+            withDates:
+                _albums.order == _AnchorOrder.latest ||
+                _albums.order == _AnchorOrder.oldest,
+            onProgress: progress,
+          );
+        },
+        (item) {
+          AppLog.instance.trace(
+            "lib/pages/anchor_page.dart::_AnchorPageState._loadSelected.closure#4",
+          );
+          return item.playCount ?? 0;
+        },
+        page: page ?? _albums.requestedPage,
       );
-      return api.tracks(uid, page: page);
-    }, page: page ?? _tracks.requestedPage);
+    }
+    return _load<Track>(
+      _tracks,
+      (api, uid, page) {
+        AppLog.instance.trace(
+          "lib/pages/anchor_page.dart::_AnchorPageState._loadSelected.closure#5",
+        );
+        return api.tracks(uid, page: page);
+      },
+      (track) {
+        AppLog.instance.trace(
+          "lib/pages/anchor_page.dart::_AnchorPageState._loadSelected.closure#6",
+        );
+        return track.id;
+      },
+      (api, uid, progress) {
+        AppLog.instance.trace(
+          "lib/pages/anchor_page.dart::_AnchorPageState._loadSelected.closure#7",
+        );
+        return api.allTracks(uid, onProgress: progress);
+      },
+      _trackPlays,
+      page: page ?? _tracks.requestedPage,
+    );
+  }
+
+  int _trackPlays(Track track) {
+    AppLog.instance.trace(
+      "lib/pages/anchor_page.dart::_AnchorPageState._trackPlays",
+    );
+
+    return xmlyPositive(track.raw['play']) ?? 0;
+  }
+
+  String _trackDescription(Track track) {
+    AppLog.instance.trace(
+      "lib/pages/anchor_page.dart::_AnchorPageState._trackDescription",
+    );
+
+    final timestamp = xmlyPositive(track.raw['date']);
+    final date = timestamp == null
+        ? ''
+        : DateTime.fromMillisecondsSinceEpoch(timestamp)
+              .toIso8601String()
+              .substring(0, 10);
+    return [
+      if (track.album.isNotEmpty) track.album,
+      if (date.isNotEmpty) date,
+      '${track.duration ~/ 60}:${(track.duration.toInt() % 60).toString().padLeft(2, '0')}',
+      '${_count(_trackPlays(track))} 次播放',
+    ].join(' · ');
+  }
+
+  int? _createdAt(Object? item) {
+    AppLog.instance.trace(
+      "lib/pages/anchor_page.dart::_AnchorPageState._createdAt",
+    );
+
+    return switch (item) {
+      AnchorAlbum() => item.createdAt?.millisecondsSinceEpoch,
+      Track() => xmlyPositive(item.raw['date']),
+      _ => null,
+    };
+  }
+
+  bool _hasDate(Object? item) {
+    AppLog.instance.trace(
+      "lib/pages/anchor_page.dart::_AnchorPageState._hasDate",
+    );
+
+    return _createdAt(item) != null;
+  }
+
+  List<T> _ordered<T>(_AnchorListing<T> listing, int Function(T) plays) {
+    AppLog.instance.trace(
+      "lib/pages/anchor_page.dart::_AnchorPageState._ordered",
+    );
+
+    switch (listing.order) {
+      case _AnchorOrder.defaultOrder:
+        return List.of(listing.source);
+      case _AnchorOrder.latest:
+      case _AnchorOrder.oldest:
+      case _AnchorOrder.popular:
+        final ranked = listing.source.asMap().entries.toList();
+        ranked.sort((a, b) {
+          AppLog.instance.trace(
+            "lib/pages/anchor_page.dart::_AnchorPageState._ordered.closure#1",
+          );
+
+          final int result;
+          if (listing.order == _AnchorOrder.popular) {
+            result = plays(b.value).compareTo(plays(a.value));
+          } else {
+            final aDate = _createdAt(a.value), bDate = _createdAt(b.value);
+            result = aDate == null
+                ? (bDate == null ? 0 : 1)
+                : bDate == null
+                ? -1
+                : listing.order == _AnchorOrder.latest
+                ? bDate.compareTo(aDate)
+                : aDate.compareTo(bDate);
+          }
+          return result == 0 ? a.key.compareTo(b.key) : result;
+        });
+        return ranked.map((entry) {
+          AppLog.instance.trace(
+            "lib/pages/anchor_page.dart::_AnchorPageState._ordered.closure#2",
+          );
+          return entry.value;
+        }).toList();
+    }
+  }
+
+  void _setListingOrder<T>(_AnchorListing<T> listing, _AnchorOrder order) {
+    AppLog.instance.trace(
+      "lib/pages/anchor_page.dart::_AnchorPageState._setListingOrder",
+    );
+    if (listing.order == order) return;
+    listing.cancel();
+    setState(() {
+      AppLog.instance.trace(
+        "lib/pages/anchor_page.dart::_AnchorPageState._setListingOrder.closure#1",
+      );
+      listing.order = order;
+      listing.requestedPage = 1;
+      listing.error = null;
+      listing.items = [];
+    });
+    unawaited(_loadSelected(page: 1));
+  }
+
+  void _showSourcePage<T>(
+    _AnchorListing<T> listing,
+    int Function(T) plays,
+    int page,
+  ) {
+    AppLog.instance.trace(
+      "lib/pages/anchor_page.dart::_AnchorPageState._showSourcePage",
+    );
+    final ordered = _ordered(listing, plays);
+    final last = math.max(1, (ordered.length / listing.pageSize).ceil());
+    final target = page.clamp(1, last).toInt();
+    listing.items = ordered
+        .skip((target - 1) * listing.pageSize)
+        .take(listing.pageSize)
+        .toList();
+    listing.page = listing.requestedPage = target;
+    listing.total = ordered.length;
+    listing.reportedTotal = listing.sourceReportedTotal;
+  }
+
+  Widget _orderControls() {
+    AppLog.instance.trace(
+      "lib/pages/anchor_page.dart::_AnchorPageState._orderControls",
+    );
+
+    final order = _selected == 0 ? _albums.order : _tracks.order;
+    return AppTabStrip(
+      children: [
+        for (final entry in const {
+          _AnchorOrder.defaultOrder: '默认',
+          _AnchorOrder.latest: '最新',
+          _AnchorOrder.oldest: '最早',
+          _AnchorOrder.popular: '最多播放',
+        }.entries)
+          AppTabButton(
+            key: ValueKey('anchorOrder-${entry.key.name}'),
+            label: entry.value,
+            selected: order == entry.key,
+            onPressed: () {
+              AppLog.instance.trace(
+                "lib/pages/anchor_page.dart::_AnchorPageState._orderControls.closure#1",
+              );
+
+              if (_selected == 0) {
+                _setListingOrder(_albums, entry.key);
+              } else {
+                _setListingOrder(_tracks, entry.key);
+              }
+            },
+          ),
+      ],
+    );
   }
 
   Future<void> _load<T>(
     _AnchorListing<T> listing,
-    Future<AnchorContentPage<T>> Function(XmlyAnchor, String, int) fetch, {
+    Future<AnchorContentPage<T>> Function(XmlyAnchor, String, int) fetch,
+    String Function(T) id,
+    Future<AnchorContentPage<T>> Function(
+      XmlyAnchor,
+      String,
+      void Function(int, int?),
+    )
+    fetchAll,
+    int Function(T) plays, {
     required int page,
   }) async {
-    AppLog.instance.trace('lib/pages/anchor_page.dart::_AnchorPageState._load');
+    AppLog.instance.trace("lib/pages/anchor_page.dart::_AnchorPageState._load");
     final generation = _generation;
     final uid = _uid;
-    if (uid == null) return;
-    final request = ++listing.generation;
-    listing.cancelled?.complete();
+    if (uid == null || page < 1) return;
+    listing.cancel();
+    final request = listing.request;
+    final complete = listing.order != _AnchorOrder.defaultOrder;
+    final timeOrder =
+        listing.order == _AnchorOrder.latest ||
+        listing.order == _AnchorOrder.oldest;
+    final scroll = identical(listing, _albums) ? _scrolls[0] : _scrolls[1];
+    if (complete && listing.sourceReady && (!timeOrder || listing.datesReady)) {
+      setState(() {
+        AppLog.instance.trace(
+          "lib/pages/anchor_page.dart::_AnchorPageState._load.closure#1",
+        );
+        listing.error = null;
+        listing.refreshNeeded = false;
+        _showSourcePage(listing, plays, page);
+      });
+      if (scroll.hasClients) scroll.jumpTo(0);
+      return;
+    }
     final cancelled = listing.cancelled = Completer<void>();
+    bool active() {
+      AppLog.instance.trace(
+        "lib/pages/anchor_page.dart::_AnchorPageState._load.active",
+      );
+      return _current(generation) && listing.request == request;
+    }
+
     setState(() {
       AppLog.instance.trace(
-        'lib/pages/anchor_page.dart::_AnchorPageState._load.closure#1',
+        "lib/pages/anchor_page.dart::_AnchorPageState._load.closure#2",
       );
       listing.requestedPage = page;
       listing.busy = true;
       listing.error = null;
+      listing.refreshNeeded = false;
+      listing.loaded = 0;
+      listing.loadingTotal = listing.total;
     });
     try {
       final next = await _read((api) {
         AppLog.instance.trace(
-          'lib/pages/anchor_page.dart::_AnchorPageState._load.closure#2',
+          "lib/pages/anchor_page.dart::_AnchorPageState._load.closure#3",
         );
+        if (complete) {
+          return fetchAll(api, uid, (loaded, total) {
+            AppLog.instance.trace(
+              "lib/pages/anchor_page.dart::_AnchorPageState._load.closure#3.closure#1",
+            );
+            if (!active()) return;
+            setState(() {
+              AppLog.instance.trace(
+                "lib/pages/anchor_page.dart::_AnchorPageState._load.closure#3.closure#1.closure#1",
+              );
+              listing.loaded = loaded;
+              listing.loadingTotal = total;
+            });
+          });
+        }
         return fetch(api, uid, page);
       }, cancelled: cancelled.future);
-      if (!_current(generation) || request != listing.generation) return;
+      if (!active()) return;
+      final seen = <String>{};
+      for (final item in next.items) {
+        if (!seen.add(id(item))) {
+          throw const XmlyException('repeated_page', '列表分页重复，请刷新后重试');
+        }
+      }
       setState(() {
         AppLog.instance.trace(
-          'lib/pages/anchor_page.dart::_AnchorPageState._load.closure#3',
+          "lib/pages/anchor_page.dart::_AnchorPageState._load.closure#4",
         );
-        listing.items = next.items;
-        listing.page = next.page;
-        listing.pageSize = next.pageSize;
-        listing.total = next.total;
+        listing.reportedTotal = next.reportedTotal;
+        if (complete) {
+          listing.source = next.items;
+          listing.sourceReportedTotal = next.reportedTotal;
+          listing.sourceReady = true;
+          listing.datesReady = listing.source.every(_hasDate);
+          _showSourcePage(listing, plays, page);
+        } else {
+          if (listing.sourceReady &&
+              next.reportedTotal != listing.sourceReportedTotal) {
+            listing.source = [];
+            listing.sourceReady = listing.datesReady = false;
+          }
+          listing.items = next.items;
+          listing.page = next.page;
+          listing.pageSize = next.pageSize;
+          listing.total = next.total;
+        }
       });
-      final scroll = identical(listing, _albums) ? _scrolls[0] : _scrolls[1];
       if (scroll.hasClients) scroll.jumpTo(0);
     } catch (error, stack) {
-      if (!_current(generation) || request != listing.generation) return;
+      if (!active()) return;
       _record('Loading anchor content failed', error, stack);
       setState(() {
         AppLog.instance.trace(
-          'lib/pages/anchor_page.dart::_AnchorPageState._load.closure#4',
+          "lib/pages/anchor_page.dart::_AnchorPageState._load.closure#5",
         );
+        listing.refreshNeeded =
+            error is XmlyException && error.code == 'repeated_page';
         listing.error = error is XmlyException ? error.message : '列表加载失败';
       });
     } finally {
       if (identical(listing.cancelled, cancelled)) listing.cancelled = null;
-      if (_current(generation) && request == listing.generation) {
+      if (active()) {
         setState(() {
           AppLog.instance.trace(
-            'lib/pages/anchor_page.dart::_AnchorPageState._load.closure#5',
+            "lib/pages/anchor_page.dart::_AnchorPageState._load.closure#6",
           );
           listing.busy = false;
         });
@@ -464,40 +791,206 @@ class _AnchorPageState extends State<AnchorPage>
     return '$value';
   }
 
-  Future<void> _openFollowPage() async {
+  XmlyClient get _primaryClient {
     AppLog.instance.trace(
-      "lib/pages/anchor_page.dart::_AnchorPageState._openFollowPage",
+      "lib/pages/anchor_page.dart::_AnchorPageState._primaryClient.get",
+    );
+
+    final accounts = widget.runtime.accounts;
+    final identity = accounts.primaryAccountId;
+    return identity != null && accounts.accountIds.contains(identity)
+        ? accounts.clientFor(identity)
+        : widget.runtime.anonymous;
+  }
+
+  bool _sameFollow(XmlyClient client, String key, String uid, int request) {
+    AppLog.instance.trace(
+      "lib/pages/anchor_page.dart::_AnchorPageState._sameFollow",
+    );
+
+    return mounted &&
+        request == _followRequest &&
+        _uid == uid &&
+        identical(client, _primaryClient) &&
+        client.cacheIdentity == key;
+  }
+
+  void _runtimeChanged() {
+    AppLog.instance.trace(
+      "lib/pages/anchor_page.dart::_AnchorPageState._runtimeChanged",
+    );
+
+    if (!mounted || _uid == null) return;
+    final client = _primaryClient;
+    final accountChanged =
+        !identical(client, _followClient) || client.cacheIdentity != _followKey;
+    final libraryChanged = widget.runtime.libraryRevision != _libraryRevision;
+    if (accountChanged) {
+      unawaited(_refresh());
+    } else if (libraryChanged && !_followMutating) {
+      unawaited(_loadFollowing());
+    }
+  }
+
+  Future<void> _loadFollowing() async {
+    AppLog.instance.trace(
+      "lib/pages/anchor_page.dart::_AnchorPageState._loadFollowing",
     );
 
     final uid = _uid;
-    if (uid == null || _openingFollow) return;
-    final generation = _generation;
+    if (uid == null) return;
+    final client = _primaryClient, key = _primaryClient.cacheIdentity;
+    final request = ++_followRequest;
+    _followClient = client;
+    _followKey = key;
+    _libraryRevision = widget.runtime.libraryRevision;
+    final canRead = client.accountAvailable && client.credentials!.uid != uid;
     setState(() {
       AppLog.instance.trace(
-        "lib/pages/anchor_page.dart::_AnchorPageState._openFollowPage.closure#1",
+        "lib/pages/anchor_page.dart::_AnchorPageState._loadFollowing.closure#1",
       );
-      _openingFollow = true;
+
+      _following = null;
+      _followError = null;
+      _followBusy = canRead;
+      _followMutating = false;
     });
+    if (!canRead) return;
     try {
-      if (!await launchUrl(
-        Uri.https('www.ximalaya.com', '/zhubo/$uid/'),
-        mode: LaunchMode.externalApplication,
-      )) {
-        throw StateError('The official anchor page could not be opened');
-      }
-    } catch (error, stack) {
-      _record('Opening official anchor page failed', error, stack);
-      if (_current(generation))
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('网页打开失败，请重试')));
-    } finally {
-      if (mounted)
+      final followed = await client.withReadPolicy(
+        () {
+          AppLog.instance.trace(
+            "lib/pages/anchor_page.dart::_AnchorPageState._loadFollowing.closure#2",
+          );
+          return XmlyAnchor(client).isFollowing(uid);
+        },
+        rateLimitRetries: 0,
+        cancelled: _cancelled.future,
+      );
+      if (_sameFollow(client, key, uid, request)) {
         setState(() {
           AppLog.instance.trace(
-            "lib/pages/anchor_page.dart::_AnchorPageState._openFollowPage.closure#2",
+            "lib/pages/anchor_page.dart::_AnchorPageState._loadFollowing.closure#3",
           );
-          _openingFollow = false;
+          _following = followed;
         });
+      }
+    } catch (error, stack) {
+      if (!_sameFollow(client, key, uid, request)) return;
+      _record('Loading following status failed', error, stack);
+      setState(() {
+        AppLog.instance.trace(
+          "lib/pages/anchor_page.dart::_AnchorPageState._loadFollowing.closure#4",
+        );
+
+        _followError = error is XmlyException ? error.message : '关注状态加载失败，请重试';
+      });
+    } finally {
+      if (_sameFollow(client, key, uid, request)) {
+        setState(() {
+          AppLog.instance.trace(
+            "lib/pages/anchor_page.dart::_AnchorPageState._loadFollowing.closure#5",
+          );
+          _followBusy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _changeFollowing() async {
+    AppLog.instance.trace(
+      "lib/pages/anchor_page.dart::_AnchorPageState._changeFollowing",
+    );
+
+    final uid = _uid;
+    if (_followBusy || uid == null) return;
+    final runtime = widget.runtime;
+    final client = _primaryClient, key = _primaryClient.cacheIdentity;
+    if (!client.accountAvailable) {
+      setState(() {
+        AppLog.instance.trace(
+          "lib/pages/anchor_page.dart::_AnchorPageState._changeFollowing.closure#1",
+        );
+        _followError = '请先登录主账号后关注主播';
+      });
+      return;
+    }
+    if (_following == null ||
+        !identical(client, _followClient) ||
+        key != _followKey) {
+      return _loadFollowing();
+    }
+    final desired = !_following!, request = ++_followRequest;
+    var attempted = false;
+    setState(() {
+      AppLog.instance.trace(
+        "lib/pages/anchor_page.dart::_AnchorPageState._changeFollowing.closure#2",
+      );
+
+      _followBusy = _followMutating = true;
+      _followError = null;
+    });
+    try {
+      await runtime.accounts.runWithAccount(client.identity, (admitted) async {
+        AppLog.instance.trace(
+          "lib/pages/anchor_page.dart::_AnchorPageState._changeFollowing.closure#3",
+        );
+
+        if (!_sameFollow(client, key, uid, request) ||
+            !identical(client, admitted)) {
+          throw const XmlyException('account_changed', '主账号已变更，请重试');
+        }
+        attempted = true;
+        await XmlyAnchor(admitted).setFollowing(uid, following: desired);
+      });
+      runtime.libraryChanged();
+      if (_sameFollow(client, key, uid, request)) {
+        setState(() {
+          AppLog.instance.trace(
+            "lib/pages/anchor_page.dart::_AnchorPageState._changeFollowing.closure#4",
+          );
+          _following = desired;
+        });
+      }
+    } catch (error, stack) {
+      _record('Changing following failed', error, stack);
+      if (attempted) runtime.libraryChanged();
+      if (!_sameFollow(client, key, uid, request)) return;
+      setState(() {
+        AppLog.instance.trace(
+          "lib/pages/anchor_page.dart::_AnchorPageState._changeFollowing.closure#5",
+        );
+
+        _following = null;
+        _followError = error is XmlyException ? error.message : '关注操作未完成，请重试';
+      });
+      // Reconcile uncertain writes with a read; never replay a follow request.
+      if (attempted) {
+        try {
+          final followed = await XmlyAnchor(client).isFollowing(uid);
+          if (_sameFollow(client, key, uid, request)) {
+            setState(() {
+              AppLog.instance.trace(
+                "lib/pages/anchor_page.dart::_AnchorPageState._changeFollowing.closure#6",
+              );
+
+              _following = followed;
+              if (followed == desired) _followError = null;
+            });
+          }
+        } catch (error, stack) {
+          _record('Reconciling following failed', error, stack);
+        }
+      }
+    } finally {
+      if (_sameFollow(client, key, uid, request)) {
+        setState(() {
+          AppLog.instance.trace(
+            "lib/pages/anchor_page.dart::_AnchorPageState._changeFollowing.closure#7",
+          );
+          _followBusy = _followMutating = false;
+        });
+      }
     }
   }
 
@@ -506,17 +999,28 @@ class _AnchorPageState extends State<AnchorPage>
       "lib/pages/anchor_page.dart::_AnchorPageState._followButton",
     );
 
+    final client = _primaryClient;
+    if (client.credentials?.uid == _uid) return const SizedBox.shrink();
     return Tooltip(
-      message: '在喜马拉雅关注',
+      message: _following == true ? '使用主账号取消关注' : '使用主账号关注主播',
       child: OutlinedButton.icon(
-        onPressed: _openingFollow ? null : _openFollowPage,
-        icon: _openingFollow
+        key: const ValueKey('anchorFollow'),
+        onPressed: _followBusy ? null : _changeFollowing,
+        icon: _followBusy
             ? const SizedBox.square(
                 dimension: 16,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : const Icon(Icons.add, size: 18),
-        label: const Text('去关注'),
+            : Icon(_following == true ? Icons.check : Icons.add, size: 18),
+        label: Text(
+          !client.accountAvailable
+              ? '登录后关注'
+              : _following == true
+              ? '已关注'
+              : _following == null && _followError != null
+              ? '重试关注状态'
+              : '关注',
+        ),
       ),
     );
   }
@@ -773,6 +1277,14 @@ class _AnchorPageState extends State<AnchorPage>
                   child: LinearProgressIndicator(minHeight: 2),
                 ),
               if (_profileError != null) _retry(_profileError!, _loadProfile),
+              if (_followError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    _followError!,
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
+                ),
             ],
           ),
         );
@@ -803,14 +1315,28 @@ class _AnchorPageState extends State<AnchorPage>
 
   Widget _footer<T>(_AnchorListing<T> listing, String empty) {
     AppLog.instance.trace(
-      'lib/pages/anchor_page.dart::_AnchorPageState._footer',
+      "lib/pages/anchor_page.dart::_AnchorPageState._footer",
     );
     return Column(
       children: [
-        if (listing.busy)
+        if (listing.busy) ...[
           const LinearProgressIndicator(semanticsLabel: '正在加载作品'),
-        if (listing.error != null) _retry(listing.error!, _loadSelected),
-        if (listing.page > 0 && listing.items.isEmpty)
+          if (listing.order != _AnchorOrder.defaultOrder)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                '正在排序 ${listing.loaded}'
+                '${listing.loadingTotal == null ? "" : " / ${listing.loadingTotal}"}',
+              ),
+            ),
+        ],
+        if (listing.error != null)
+          _retry(
+            listing.error!,
+            listing.refreshNeeded ? _refresh : _loadSelected,
+            label: listing.refreshNeeded ? '刷新' : '重试',
+          ),
+        if (!listing.busy && listing.page > 0 && listing.items.isEmpty)
           Padding(
             padding: const EdgeInsets.all(32),
             child: Center(child: Text(empty)),
@@ -823,7 +1349,7 @@ class _AnchorPageState extends State<AnchorPage>
             busy: listing.busy,
             onPage: (page) {
               AppLog.instance.trace(
-                'lib/pages/anchor_page.dart::_AnchorPageState._footer.closure#1',
+                "lib/pages/anchor_page.dart::_AnchorPageState._footer.closure#1",
               );
               return _loadSelected(page: page);
             },
@@ -971,8 +1497,8 @@ class _AnchorPageState extends State<AnchorPage>
                                   tabAlignment: TabAlignment.start,
                                   dividerColor: Colors.transparent,
                                   indicatorSize: TabBarIndicatorSize.label,
-                                  labelPadding: const EdgeInsets.only(
-                                    right: 28,
+                                  labelPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
                                   ),
                                   labelStyle: theme.textTheme.titleMedium
                                       ?.copyWith(
@@ -1001,6 +1527,27 @@ class _AnchorPageState extends State<AnchorPage>
                                     ),
                                   ],
                                 ),
+                              ),
+                            ),
+                          ),
+                          SliverPadding(
+                            padding: EdgeInsets.symmetric(horizontal: padding),
+                            sliver: SliverToBoxAdapter(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _orderControls(),
+                                  if (_selected == 1 &&
+                                      (_tracks.reportedTotal ?? 0) >
+                                          (_tracks.total ?? 0))
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 8),
+                                      child: Text(
+                                        '仅可查看前 ${_tracks.total} 条声音，排序限于这些内容',
+                                        style: theme.textTheme.bodySmall,
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                           ),
@@ -1043,8 +1590,7 @@ class _AnchorPageState extends State<AnchorPage>
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                     subtitle: AdaptiveText(
-                                      '${track.album}${track.album.isEmpty ? '' : ' · '}'
-                                      '${track.duration ~/ 60}:${(track.duration.toInt() % 60).toString().padLeft(2, '0')}',
+                                      _trackDescription(track),
                                     ),
                                     onTap: track.albumId.isEmpty
                                         ? null
@@ -1293,7 +1839,11 @@ class _AnchorAlbumCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      album.intro,
+                      [
+                        if (item.createdAt case final date?)
+                          date.toIso8601String().substring(0, 10),
+                        if (album.intro.isNotEmpty) album.intro,
+                      ].join(' · '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyMedium?.copyWith(

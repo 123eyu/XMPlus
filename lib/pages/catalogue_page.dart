@@ -60,6 +60,8 @@ void _recordCatalogueError(
         'insufficient_quota',
         'usage_uncertain',
         'rate_limited',
+        'rejected',
+        'permission_denied',
         'queue_full',
         'catalogue_limit',
         'invalid_id',
@@ -697,7 +699,7 @@ class _DiscoveryPageState extends State<DiscoveryPage>
     return Padding(
       padding: EdgeInsets.fromLTRB(padding, 12, padding, 8),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 620),
@@ -770,8 +772,8 @@ class _DiscoveryPageState extends State<DiscoveryPage>
             key: const ValueKey('searchCategoryTabs'),
             controller: _tabs,
             isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            labelPadding: const EdgeInsets.only(left: 4, right: 28),
+            tabAlignment: TabAlignment.center,
+            labelPadding: const EdgeInsets.symmetric(horizontal: 16),
             labelColor: colors.primary,
             unselectedLabelColor: colors.onSurface,
             labelStyle: const TextStyle(
@@ -1213,6 +1215,23 @@ class _DiscoveryPageState extends State<DiscoveryPage>
                             ),
                             sliver: SliverMainAxisGroup(
                               slivers: [
+                                if (result.anchors.isNotEmpty) ...[
+                                  _section(
+                                    '主播',
+                                    'user',
+                                    result.totals['user'] ?? result.total,
+                                    result.anchors.length,
+                                  ),
+                                  SliverList.builder(
+                                    itemCount: result.anchors.length,
+                                    itemBuilder: (_, index) {
+                                      AppLog.instance.trace(
+                                        "lib/pages/catalogue_page.dart::_DiscoveryPageState.build.closure#1.closure#3",
+                                      );
+                                      return _anchorTile(result.anchors[index]);
+                                    },
+                                  ),
+                                ],
                                 if (result.albums.isNotEmpty) ...[
                                   _section(
                                     '专辑',
@@ -1232,7 +1251,7 @@ class _DiscoveryPageState extends State<DiscoveryPage>
                                     itemCount: result.albums.length,
                                     itemBuilder: (_, index) {
                                       AppLog.instance.trace(
-                                        "lib/pages/catalogue_page.dart::_DiscoveryPageState.build.closure#1.closure#3",
+                                        "lib/pages/catalogue_page.dart::_DiscoveryPageState.build.closure#1.closure#4",
                                       );
                                       return _albumCard(
                                         result.albums[index],
@@ -1252,26 +1271,9 @@ class _DiscoveryPageState extends State<DiscoveryPage>
                                     itemCount: result.tracks.length,
                                     itemBuilder: (_, index) {
                                       AppLog.instance.trace(
-                                        "lib/pages/catalogue_page.dart::_DiscoveryPageState.build.closure#1.closure#4",
-                                      );
-                                      return _trackTile(result.tracks[index]);
-                                    },
-                                  ),
-                                ],
-                                if (result.anchors.isNotEmpty) ...[
-                                  _section(
-                                    '主播',
-                                    'user',
-                                    result.totals['user'] ?? result.total,
-                                    result.anchors.length,
-                                  ),
-                                  SliverList.builder(
-                                    itemCount: result.anchors.length,
-                                    itemBuilder: (_, index) {
-                                      AppLog.instance.trace(
                                         "lib/pages/catalogue_page.dart::_DiscoveryPageState.build.closure#1.closure#5",
                                       );
-                                      return _anchorTile(result.anchors[index]);
+                                      return _trackTile(result.tracks[index]);
                                     },
                                   ),
                                 ],
@@ -2224,15 +2226,45 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         value: 'ascending',
         checked: _ascending,
         enabled: !_busy,
-        child: const Text('最早在前'),
+        child: const Text('正序（最早在前）'),
       ),
       CheckedPopupMenuItem(
         value: 'descending',
         checked: !_ascending,
         enabled: !_busy,
-        child: const Text('最新在前'),
+        child: const Text('倒序（最新在前）'),
       ),
     ];
+  }
+
+  Widget _orderControl() {
+    AppLog.instance.trace(
+      "lib/pages/catalogue_page.dart::_AlbumPageViewState._orderControl",
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text('声音 ($_total)')),
+          Tooltip(
+            message: _ascending ? '切换为最新在前' : '切换为最早在前',
+            child: TextButton.icon(
+              key: const ValueKey('albumOrderToggle'),
+              onPressed: _busy
+                  ? null
+                  : () {
+                      AppLog.instance.trace(
+                        "lib/pages/catalogue_page.dart::_AlbumPageViewState._orderControl.closure#1",
+                      );
+                      _setOrder(!_ascending);
+                    },
+              icon: const Icon(Icons.swap_vert_rounded, size: 20),
+              label: Text(_ascending ? '正序' : '倒序'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<List<Track>> _all() async {
@@ -3221,6 +3253,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
                                 ],
                               ),
                             ),
+                            _orderControl(),
                             if (_busy) const LinearProgressIndicator(),
                             if (_error != null)
                               Padding(
