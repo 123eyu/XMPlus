@@ -1,7 +1,7 @@
 name: xmly_flutter
 description: XMPlus 下载与收听客户端
 publish_to: none
-version: 1.2.2+15
+version: 1.2.3+16
 environment:
   sdk: '>=3.13.7 <4.0.0'
   flutter: '>=3.47.9'
@@ -37,6 +37,8 @@ dependencies:
   pub_semver: ^2.2.1
   device_info_plus: ^13.3.0
   sentry_flutter: 10.3.0
+  xmplus_android_background:
+    path: packages/xmplus_android_background
 dev_dependencies:
   sentry_dart_plugin: 3.4.0
   analyzer: 14.7.0

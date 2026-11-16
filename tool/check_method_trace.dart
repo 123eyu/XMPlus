@@ -11,6 +11,18 @@ const traceExclusions = <String, String>{
       'Sentry transport: prevent trace recursion',
 };
 
+// These per-node traversals are covered by storage operation traces. Keep this
+// list narrow: adding a recursive trace here can stall startup on large profiles.
+const traceHotspots = <String>{
+  'lib/storage/app_storage.dart::AppStorage._validate.closure#1',
+  'lib/storage/app_storage.dart::AppStorage._validate.inspect',
+  'lib/storage/app_storage.dart::AppStorage._validate.closure#3',
+  'lib/storage/app_storage.dart::AppStorage._validate.closure#4',
+  'lib/storage/app_storage.dart::AppStorage._freezeMap',
+  'lib/storage/app_storage.dart::AppStorage._freezeMap.closure#1',
+  'lib/storage/app_storage.dart::AppStorage._freeze',
+};
+
 /// One source body, shared with the disposable AST instrumenter.
 class TraceBody {
   final FunctionBody body;
@@ -69,19 +81,15 @@ TraceScan scanMethodTrace(CompilationUnit unit, String path) {
   final seen = <FunctionBody>{};
   for (final body in collector.bodies) {
     if (!seen.add(body)) continue;
-    final reason = _exemption(body);
+    final identity = '$path::${identities.symbol(body.parent!)}';
+    final reason = traceHotspots.contains(identity)
+        ? 'storage per-node traversal (covered by operation traces)'
+        : _exemption(body);
     if (reason != null)
       exemptions.update(reason, (n) => n + 1, ifAbsent: () => 1);
     final entries = _TraceEntries(body);
     body.accept(entries);
-    bodies.add(
-      TraceBody(
-        body,
-        '$path::${identities.symbol(body.parent!)}',
-        reason,
-        entries.entries,
-      ),
-    );
+    bodies.add(TraceBody(body, identity, reason, entries.entries));
   }
   for (final type in collector.classes) {
     // Implicit constructors have no source body and must not be synthesized.

@@ -43,6 +43,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
   late final _appearance = AppAppearance(widget.runtime.storage);
   final _navigator = GlobalKey<NavigatorState>();
   final _messenger = GlobalKey<ScaffoldMessengerState>();
+  final _playerReturnTarget = GlobalKey(debugLabel: 'playerReturnTarget');
   final _playerRoutes = _PlayerRouteObserver();
   final _promptRoutes = LogUploadPromptObserver();
   final _sentryRoutes = SentryNavigatorObserver();
@@ -182,7 +183,8 @@ class _MyAppState extends State<MyApp> with WindowListener {
     var updating = false;
     if (Platform.isWindows) {
       try {
-        updating = await const MethodChannel('teikengstudio.xmplus/update')
+        updating =
+            await const MethodChannel('teikengstudio.xmplus/update')
                 .invokeMethod<bool>('isUpdateReady') ??
             false;
       } catch (error, stack) {
@@ -626,6 +628,80 @@ class _MyAppState extends State<MyApp> with WindowListener {
     super.dispose();
   }
 
+  Widget _buildPlayerLayout(BuildContext context, Widget navigator) {
+    AppLog.instance.trace('lib/app.dart::_MyAppState._buildPlayerLayout');
+    final android = Theme.of(context).platform == TargetPlatform.android;
+    final route = android ? _playerRoutes.playerTransition : null;
+    final blocked = _playerRoutes.current is PopupRoute || route != null;
+    final player = SafeArea(
+      top: false,
+      child: ExcludeFocus(
+        excluding: blocked,
+        child: ExcludeSemantics(
+          excluding: blocked,
+          child: AbsorbPointer(
+            absorbing: blocked,
+            child: PlayerPanel(
+              key: _playerReturnTarget,
+              runtime: widget.runtime,
+              navigatorKey: _navigator,
+              onExpand: !android
+                  ? null
+                  : () {
+                      AppLog.instance.trace(
+                        'lib/app.dart::_MyAppState._buildPlayerLayout.closure#1',
+                      );
+                      _navigator.currentState?.push(
+                        PlayerPanelRoute(
+                          runtime: widget.runtime,
+                          returnTarget: _playerReturnTarget,
+                        ),
+                      );
+                      setState(() {
+                        AppLog.instance.trace(
+                          'lib/app.dart::_MyAppState._buildPlayerLayout.closure#1.closure#1',
+                        );
+                      });
+                    },
+            ),
+          ),
+        ),
+      ),
+    );
+    if (!android) {
+      return Column(
+        children: [
+          Expanded(child: navigator),
+          if (_miniRoute == null && !_playerRoutes.playerExpanded) player,
+        ],
+      );
+    }
+    return AnimatedBuilder(
+      animation: route?.animation ?? kAlwaysDismissedAnimation,
+      builder: (context, _) {
+        AppLog.instance.trace(
+          'lib/app.dart::_MyAppState._buildPlayerLayout.closure#2',
+        );
+        return CustomMultiChildLayout(
+          delegate: _PlayerLayoutDelegate(expanded: route != null),
+          children: [
+            LayoutId(id: 'navigator', child: navigator),
+            if (_miniRoute == null)
+              LayoutId(
+                id: 'player',
+                child: Opacity(
+                  opacity: route == null
+                      ? 1
+                      : (1 - route.expansion / 0.2).clamp(0.0, 1.0),
+                  child: player,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     AppLog.instance.trace("lib/app.dart::_MyAppState.build");
@@ -705,32 +781,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
                                 !_exitPending &&
                                 _closeDialog == null;
                           },
-                          child: Column(
-                            children: [
-                              Expanded(child: child!),
-                              if (_miniRoute == null &&
-                                  !_playerRoutes.playerExpanded)
-                                SafeArea(
-                                  top: false,
-                                  child: ExcludeFocus(
-                                    excluding:
-                                        _playerRoutes.current is PopupRoute,
-                                    child: ExcludeSemantics(
-                                      excluding:
-                                          _playerRoutes.current is PopupRoute,
-                                      child: AbsorbPointer(
-                                        absorbing:
-                                            _playerRoutes.current is PopupRoute,
-                                        child: PlayerPanel(
-                                          runtime: widget.runtime,
-                                          navigatorKey: _navigator,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
+                          child: _buildPlayerLayout(context, child!),
                         );
                       },
                     ),
@@ -775,10 +826,64 @@ class _MyAppState extends State<MyApp> with WindowListener {
   }
 }
 
+// Lay out the real bar first so the route can measure its current bounds even
+// during rotation/font changes. The navigator stays full-size until pop ends.
+class _PlayerLayoutDelegate extends MultiChildLayoutDelegate {
+  _PlayerLayoutDelegate({required this.expanded}) {
+    AppLog.instance.trace('lib/app.dart::_PlayerLayoutDelegate.new');
+  }
+
+  final bool expanded;
+
+  @override
+  void performLayout(Size size) {
+    AppLog.instance.trace('lib/app.dart::_PlayerLayoutDelegate.performLayout');
+    var barHeight = 0.0;
+    if (hasChild('player')) {
+      barHeight = layoutChild(
+        'player',
+        BoxConstraints(
+          minWidth: size.width,
+          maxWidth: size.width,
+          maxHeight: size.height,
+        ),
+      ).height;
+      positionChild('player', Offset(0, size.height - barHeight));
+    }
+    layoutChild(
+      'navigator',
+      BoxConstraints.tight(
+        Size(size.width, expanded ? size.height : size.height - barHeight),
+      ),
+    );
+    positionChild('navigator', Offset.zero);
+  }
+
+  @override
+  bool shouldRelayout(_PlayerLayoutDelegate oldDelegate) {
+    AppLog.instance.trace('lib/app.dart::_PlayerLayoutDelegate.shouldRelayout');
+    return expanded != oldDelegate.expanded;
+  }
+}
+
 class _PlayerRouteObserver extends NavigatorObserver with ChangeNotifier {
   final _routes = <Route<dynamic>>[];
   Route<dynamic>? current;
   bool _disposed = false;
+  PlayerPanelRoute? _exitingPlayer;
+
+  PlayerPanelRoute? get playerTransition {
+    AppLog.instance.trace(
+      'lib/app.dart::_PlayerRouteObserver.playerTransition.get',
+    );
+    if (_exitingPlayer case final route?) return route;
+    for (final route in _routes.reversed) {
+      if (route is PageRoute) {
+        return route is PlayerPanelRoute ? route : null;
+      }
+    }
+    return null;
+  }
 
   bool get playerExpanded {
     AppLog.instance.trace(
@@ -817,6 +922,20 @@ class _PlayerRouteObserver extends NavigatorObserver with ChangeNotifier {
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     AppLog.instance.trace("lib/app.dart::_PlayerRouteObserver.didPop");
 
+    if (route is PlayerPanelRoute) {
+      _exitingPlayer = route;
+      unawaited(
+        route.completed.then((_) {
+          AppLog.instance.trace(
+            'lib/app.dart::_PlayerRouteObserver.didPop.closure#1',
+          );
+          if (!_disposed && identical(_exitingPlayer, route)) {
+            _exitingPlayer = null;
+            notifyListeners();
+          }
+        }),
+      );
+    }
     _routes.remove(route);
     _changed(previousRoute);
   }

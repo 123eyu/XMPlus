@@ -828,7 +828,8 @@ class XmlyExperience {
       'GET',
       XmlyClient.mobile,
       '/fsubscribe-web/subscribe/comprehensive/rank/$_stamp',
-      query: {'pageId': page, 'sign': 2, 'size': pageSize},
+      // sign=2 refreshes the first page even when pageId is greater than one.
+      query: {'pageId': page, 'sign': page == 1 ? 2 : 1, 'size': pageSize},
     );
     if (response['data'] is! Map<String, dynamic>) throw _invalid;
     final data = response['data'] as Map<String, dynamic>;
@@ -1086,6 +1087,7 @@ class XmlyExperience {
       if (!ids.add(track.id))
         throw const XmlyException('repeated_page', '更新列表重复，请刷新后重试');
       final timeline = _time(row['timeline']);
+      if (timeline <= 0) throw _invalid;
       if (cursor != null && timeline > cursor) throw _invalid;
       cursor = timeline;
       items.add(
@@ -1095,13 +1097,14 @@ class XmlyExperience {
         ),
       );
     }
-    final more = _more(data);
+    // The live feed can advertise more for a subscribed account yet return an
+    // empty page without a cursor. There is no next request until a refresh.
+    final more = _more(data) && items.isNotEmpty;
     // The live service may ignore timeline; do not present the repeated newest
     // page as older updates or claim that the complete feed was loaded.
     if (before != null && cursor != null && cursor >= before) {
       throw const XmlyException('repeated_page', '暂时无法读取更早的更新，已保留当前列表');
     }
-    if (more && (cursor == null || cursor <= 0)) throw _invalid;
     return UpdatePage(items: items, hasMore: more, nextTimeline: cursor);
   }
 }

@@ -481,6 +481,7 @@ class AutoDownloadService {
       "lib/services/auto_download_service.dart::AutoDownloadService._message",
     );
     return switch (error) {
+      XmlyException(code: 'content_removed') => '自动下载已停止：专辑已下架',
       XmlyException(code: 'usage_uncertain') => '自动下载已停止：请先核对未确认的听时',
       XmlyException(code: 'insufficient_quota') => '自动下载已停止：听时不足',
       XmlyException(code: 'login_expired') => '自动下载已停止：请重新登录原账号',
@@ -507,6 +508,7 @@ class AutoDownloadService {
           'auth_required',
           'confirmation_required',
           'confirmation_changed',
+          'content_removed',
           'insufficient_quota',
           'usage_uncertain',
         }.contains(error.code))

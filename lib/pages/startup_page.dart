@@ -115,7 +115,6 @@ class _StartupPageState extends State<StartupPage> {
           _runtime = runtime;
         });
       } catch (error, stackTrace) {
-        AppLog.instance.level = AppLogLevel.info;
         final expected =
             (error is StorageException &&
                 const {'directory', 'locked'}.contains(error.code)) ||
