@@ -338,6 +338,7 @@ class PlaybackPolicy {
     double resumePosition = 0,
     required PlaybackSettings settings,
     bool manualReplay = false,
+    bool cloudResume = false,
   }) {
     AppLog.instance.trace(
       "lib/services/playback_policy.dart::PlaybackPolicy.start",
@@ -348,8 +349,13 @@ class PlaybackPolicy {
     _started = true;
     _manual = manualReplay;
     _finished = false;
-    final resume = _clamp(resumePosition);
-    return _canSkip && resume < settings.skipIntroSeconds
+    var resume = _clamp(resumePosition);
+    final canSkip = _canSkip;
+    final end = _duration - (canSkip ? settings.skipOutroSeconds : 0);
+    if (cloudResume && !manualReplay && end > 0 && resume > end * 0.95) {
+      resume = 0;
+    }
+    return canSkip && resume < settings.skipIntroSeconds
         ? settings.skipIntroSeconds.toDouble()
         : resume;
   }

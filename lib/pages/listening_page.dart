@@ -1966,6 +1966,7 @@ class _ListeningPageState extends State<ListeningPage>
               final historyProgress = (
                 position: row.position,
                 updatedAt: row.updatedAt,
+                fromCloud: true,
               );
               return row.track.albumId.isEmpty
                   ? _runtime.player.playTrack(

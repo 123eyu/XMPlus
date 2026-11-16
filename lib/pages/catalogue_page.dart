@@ -1668,7 +1668,8 @@ class _AlbumPageViewState extends State<AlbumPageView> {
     return (position: position.toDouble(), updatedAt: updatedAt);
   }
 
-  ({Track track, double position, int updatedAt})? get _continueRecord {
+  ({Track track, double position, int updatedAt, bool fromCloud})?
+  get _continueRecord {
     AppLog.instance.trace(
       "lib/pages/catalogue_page.dart::_AlbumPageViewState._continueRecord.get",
     );
@@ -1682,9 +1683,10 @@ class _AlbumPageViewState extends State<AlbumPageView> {
         track: current,
         position: player.position,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
+        fromCloud: false,
       );
     }
-    ({Track track, double position, int updatedAt})? latest;
+    ({Track track, double position, int updatedAt, bool fromCloud})? latest;
     for (final track in _knownAlbumTracks.values) {
       final saved = _savedProgress(track.id);
       if (saved != null &&
@@ -1693,6 +1695,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           track: track,
           position: saved.position,
           updatedAt: saved.updatedAt,
+          fromCloud: false,
         );
       }
     }
@@ -1711,6 +1714,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           }),
           position: (cloud['position'] as num).toDouble(),
           updatedAt: updatedAt,
+          fromCloud: true,
         );
       }
     }
@@ -1801,7 +1805,11 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           track,
           historyProgress: record == null
               ? null
-              : (position: record.position, updatedAt: record.updatedAt),
+              : (
+                  position: record.position,
+                  updatedAt: record.updatedAt,
+                  fromCloud: record.fromCloud,
+                ),
         );
       } else {
         await player.playAlbum(
@@ -1811,7 +1819,11 @@ class _AlbumPageViewState extends State<AlbumPageView> {
           accountIdentity: client.identity,
           historyProgress: record == null
               ? null
-              : (position: record.position, updatedAt: record.updatedAt),
+              : (
+                  position: record.position,
+                  updatedAt: record.updatedAt,
+                  fromCloud: record.fromCloud,
+                ),
         );
       }
     } catch (error, stack) {
@@ -3093,7 +3105,7 @@ class _AlbumPageViewState extends State<AlbumPageView> {
 
   Future<void> _play(
     Track track, {
-    ({double position, int updatedAt})? historyProgress,
+    ({double position, int updatedAt, bool fromCloud})? historyProgress,
   }) async {
     AppLog.instance.trace(
       "lib/pages/catalogue_page.dart::_AlbumPageViewState._play",
