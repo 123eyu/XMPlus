@@ -101,7 +101,16 @@ class AlbumReview {
     AlbumReviewReply? preview;
     if (replies is List && replies.isNotEmpty) {
       if (replies.first is! Map) throw XmlyComments._invalid;
-      preview = AlbumReviewReply.fromApi(xmlyMap(replies.first), commentId: id);
+      final reply = xmlyMap(replies.first);
+      // The reply-list endpoint's RootComment embeds only a reference, not a
+      // renderable preview. Full previews still require all reply fields.
+      if (reply.length == 2 &&
+          reply.containsKey('replyId') &&
+          reply['unFollowAnchor'] is bool) {
+        xmlyIdentifier('${reply['replyId'] ?? ''}');
+      } else {
+        preview = AlbumReviewReply.fromApi(reply, commentId: id);
+      }
     }
     return AlbumReview(
       id: id,
@@ -414,13 +423,34 @@ class XmlyComments {
     final pages = _count(data['maxPageId']);
     _count(data['totalCount']);
     final list = data['list'];
+    // A page past the current maxPageId is returned with the requested pageId
+    // and an empty list. Preserve those bounds rather than inventing a page.
     if (pageId != page ||
         size < 1 ||
         size > requestedSize ||
-        (pages > 0 && page > pages) ||
         list is! List ||
-        list.length > size) {
-      throw _invalid;
+        list.length > size ||
+        (pages > 0 && page > pages && list.isNotEmpty)) {
+      throw XmlyException(
+        'invalid_comments',
+        _invalid.message,
+        diagnostics: {
+          'requestedPage': page,
+          'requestedSize': requestedSize,
+          for (final key in [
+            'pageId',
+            'pageSize',
+            'maxPageId',
+            'totalCount',
+            'list',
+          ])
+            key: _diagnosticField(
+              data[key],
+              present: data.containsKey(key),
+              includeNumber: true,
+            ),
+        },
+      );
     }
   }
 

@@ -50,14 +50,12 @@ class AppStorage {
         "lib/storage/app_storage.dart::AppStorage.open.closure#1",
       );
 
-      if (AppLog.instance.level == AppLogLevel.debug) {
-        AppLog.instance.write(
-          AppLogLevel.debug,
-          'storage',
-          'Opening profile',
-          data: {'directory': absoluteDirectory},
-        );
-      }
+      AppLog.instance.write(
+        AppLogLevel.info,
+        'storage',
+        'Opening profile',
+        data: {'directory': absoluteDirectory},
+      );
       if (!p.isAbsolute(absoluteDirectory)) {
         throw const StorageException('directory', '请选择绝对路径的资料目录');
       }
@@ -179,6 +177,7 @@ class AppStorage {
             (next['settings'] as Map).remove('showRequestFailureBanner');
           });
         }
+        AppLog.instance.write(AppLogLevel.info, 'storage', 'Profile opened');
         return storage;
       } catch (error, stack) {
         if (!AppLog.instance.errorWasRecorded(error) &&
@@ -410,17 +409,13 @@ class AppStorage {
     if (cleanup != null &&
         (cleanup is! List ||
             cleanup.any((key) {
-              AppLog.instance.trace(
-                "lib/storage/app_storage.dart::AppStorage._validate.closure#1",
-              );
+              // Trace-exempt hot path: one invocation per cleanup entry.
               return key is! String;
             }))) {
       throw const StorageException('corrupt', '凭据清理记录格式无效');
     }
     void inspect(Object? node) {
-      AppLog.instance.trace(
-        "lib/storage/app_storage.dart::AppStorage._validate.inspect",
-      );
+      // Trace-exempt hot path: validation visits every persisted value.
 
       if (node is Map) {
         for (final entry in node.entries) {
@@ -466,16 +461,12 @@ class AppStorage {
       final pending = entry.value is Map ? entry.value['pending'] : null;
       if (pending is! Map) continue;
       final current = progress.putIfAbsent(entry.key, () {
-        AppLog.instance.trace(
-          "lib/storage/app_storage.dart::AppStorage._validate.closure#3",
-        );
+        // Trace-exempt hot path: one invocation per legacy progress entry.
         return <String, dynamic>{};
       }) as Map;
       for (final report in pending.entries) {
         current.putIfAbsent(report.key, () {
-          AppLog.instance.trace(
-            "lib/storage/app_storage.dart::AppStorage._validate.closure#4",
-          );
+          // Trace-exempt hot path: one invocation per pending report.
           return report.value;
         });
       }
@@ -483,21 +474,17 @@ class AppStorage {
   }
 
   static Map<String, dynamic> _freezeMap(Map<String, dynamic> value) {
-    AppLog.instance.trace(
-      "lib/storage/app_storage.dart::AppStorage._freezeMap",
-    );
+    // Trace-exempt hot path: recursive freezing is covered by operation traces.
     return Map.unmodifiable(
       value.map((key, item) {
-        AppLog.instance.trace(
-          "lib/storage/app_storage.dart::AppStorage._freezeMap.closure#1",
-        );
+        // Trace-exempt hot path: one invocation per map field.
         return MapEntry(key, _freeze(item));
       }),
     );
   }
 
   static Object? _freeze(Object? value) {
-    AppLog.instance.trace("lib/storage/app_storage.dart::AppStorage._freeze");
+    // Trace-exempt hot path: one invocation per persisted value.
     return value is Map<String, dynamic>
         ? _freezeMap(value)
         : value is List

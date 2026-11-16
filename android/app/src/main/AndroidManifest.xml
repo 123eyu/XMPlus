@@ -40,10 +40,6 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
-        <service
-            android:name=".DownloadForegroundService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
         <receiver
             android:name="com.ryanheise.audioservice.MediaButtonReceiver"
             android:exported="true"
@@ -59,6 +55,11 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+        <provider
+            android:name=".SharedAudioProvider"
+            android:authorities="${applicationId}.audio"
+            android:exported="false"
+            android:grantUriPermissions="true" />
         <meta-data android:name="flutterEmbedding" android:value="2" />
     </application>
     <queries>

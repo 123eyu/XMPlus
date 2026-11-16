@@ -35,6 +35,12 @@ class AppLog {
   );
   static final _safeId = RegExp(r'^[A-Za-z0-9_-]+$');
   static final _exportName = RegExp(r'^XMPlus-export-[A-Za-z0-9_-]+\.log$');
+  static final _urlPrefix = RegExp(r'^[A-Za-z][A-Za-z0-9+.-]*://');
+  static final _formPrefix = RegExp(r'^[^=&\s]+=');
+  static final _cookieHeader = RegExp(
+    r'\b(cookie2?|set-cookie)\s*:\s*[^\r\n]*',
+    caseSensitive: false,
+  );
   static final _activeTemporaryFiles = <String>{};
 
   Directory? _root;
@@ -45,7 +51,6 @@ class AppLog {
   File? _file;
   bool _initialized = false, _closed = false, _inside = false;
   bool _automaticFlushQueued = false, _promptClaimed = false;
-  bool _bootstrap = false;
   bool _prepared = false, _urgentFlush = false;
   String? _initialTrace;
   Future<void>? _initializing;
@@ -58,7 +63,8 @@ class AppLog {
   int? _missingFirstSequence, _missingLastSequence;
   int _lostRecords = 0, _lostBytes = 0;
   String? _persistenceError;
-  AppLogLevel _level = AppLogLevel.warning;
+  // Before profile settings are available, retain milestones, not method traces.
+  AppLogLevel _level = AppLogLevel.info;
   bool _pendingError = false;
   bool promptLogUpload = true;
   final _status = StreamController<void>.broadcast();
@@ -73,7 +79,6 @@ class AppLog {
 
   AppLogLevel get level => _level;
   set level(AppLogLevel value) {
-    _bootstrap = false;
     _level = value;
     _notify();
   }
@@ -198,8 +203,6 @@ class AppLog {
       _fail(error);
     }
     _initialized = true;
-    _bootstrap = true;
-    _level = AppLogLevel.debug;
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_pending.isNotEmpty || _persistenceError != null) _scheduleFlush();
     });
@@ -390,12 +393,7 @@ class AppLog {
       return;
     }
     if (_level != AppLogLevel.debug) return;
-    write(
-      AppLogLevel.debug,
-      'method',
-      method,
-      data: _bootstrap ? const {'phase': 'bootstrap'} : null,
-    );
+    write(AppLogLevel.debug, 'method', method);
   }
 
   void write(
@@ -1051,8 +1049,8 @@ class AppLog {
     // A form can contain JSON or header text in an encoded field value. Do not
     // mistake a URL query for a form or alter unrelated form values.
     if (!text.contains('\n') &&
-        !RegExp(r'^[A-Za-z][A-Za-z0-9+.-]*://').hasMatch(text) &&
-        RegExp(r'^[^=&\s]+=').hasMatch(text)) {
+        !_urlPrefix.hasMatch(text) &&
+        _formPrefix.hasMatch(text)) {
       return text
           .split('&')
           .map((part) {
@@ -1081,7 +1079,7 @@ class AppLog {
     // Match the remainder of a header line, including exception messages that
     // prefix the header with context (e.g. "HttpException: Cookie: ...").
     return _cleanJsonFragments(text).replaceAllMapped(
-      RegExp(r'\b(cookie2?|set-cookie)\s*:\s*[^\r\n]*', caseSensitive: false),
+      _cookieHeader,
       (match) => '${match.group(1)}: $cookieReplacement',
     );
   }

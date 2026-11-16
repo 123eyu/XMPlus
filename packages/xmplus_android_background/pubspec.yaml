@@ -1,0 +1,16 @@
+name: xmplus_android_background
+description: Android download foreground channel for every XMPlus Flutter engine.
+version: 1.0.0
+publish_to: none
+environment:
+  sdk: '>=3.13.7 <4.0.0'
+  flutter: '>=3.47.9'
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: teikengstudio.xmplus.background
+        pluginClass: DownloadBackgroundPlugin

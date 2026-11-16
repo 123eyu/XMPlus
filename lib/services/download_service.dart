@@ -3675,9 +3675,17 @@ class DownloadService {
                 }.contains(cause.code)) {
           throw const DownloadStopped();
         }
+        // Definitive means the request was rejected, not that retrying is
+        // futile: rate_limited is definitive too. Stop only known conditions
+        // which require changed content, credentials, permission or consent.
         if (attempt >= limit ||
             cause is XmlyException &&
                 const {
+                  'content_removed',
+                  'login_required',
+                  'login_expired',
+                  'permission_denied',
+                  'insufficient_quota',
                   'confirmation_changed',
                   'confirmation_required',
                   'usage_uncertain',
@@ -3833,6 +3841,7 @@ class DownloadService {
           'usage_uncertain',
           'receipt_required',
           'insufficient_quota',
+          'content_removed',
           'login_required',
           'login_expired',
           'original_account_required',
@@ -3909,6 +3918,8 @@ class DownloadService {
           return '听时暂时无法确认，正在自动核对，请稍后再试';
         case 'insufficient_quota':
           return '听时不足，请在官方 App 获取听时';
+        case 'content_removed':
+          return '该内容已下架，无法下载';
         case 'rate_limited':
           return '请求过于频繁，已达到重试上限';
         case 'login_expired':

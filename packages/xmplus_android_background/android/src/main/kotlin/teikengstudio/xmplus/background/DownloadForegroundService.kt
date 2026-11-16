@@ -1,4 +1,4 @@
-package teikengstudio.xmplus
+package teikengstudio.xmplus.background
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -95,7 +95,8 @@ class DownloadForegroundService : Service() {
     private fun notification(intent: Intent): Notification {
         val openApp = PendingIntent.getActivity(
             this, 0,
-            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            requireNotNull(packageManager.getLaunchIntentForPackage(packageName))
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val total = intent.getLongExtra("totalBytes", 0)

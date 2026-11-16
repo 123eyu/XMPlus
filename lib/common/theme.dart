@@ -518,6 +518,8 @@ class _PredictiveBackFadeTransition extends StatefulWidget {
 class _PredictiveBackFadeTransitionState
     extends State<_PredictiveBackFadeTransition>
     with WidgetsBindingObserver {
+  Animation<double>? _committedOpacity;
+
   @override
   void initState() {
     AppLog.instance.trace(
@@ -539,6 +541,7 @@ class _PredictiveBackFadeTransitionState
         !widget.route.popGestureEnabled) {
       return false;
     }
+    _committedOpacity = null;
     widget.route.handleStartBackGesture(progress: 1 - backEvent.progress);
     return true;
   }
@@ -566,7 +569,20 @@ class _PredictiveBackFadeTransitionState
     AppLog.instance.trace(
       "lib/common/theme.dart::_PredictiveBackFadeTransitionState.handleCommitBackGesture",
     );
+    final opacity = (_committedOpacity ?? widget.animation).value;
     widget.route.handleCommitBackGesture();
+    final start = widget.animation.value;
+    if (!mounted || start == 0 || start == opacity) return;
+    setState(() {
+      AppLog.instance.trace(
+        'lib/common/theme.dart::_PredictiveBackFadeTransitionState.handleCommitBackGesture.closure#1',
+      );
+      // Keep the visible opacity when Flutter rebases its commit animation.
+      _committedOpacity = Tween<double>(
+        begin: 0,
+        end: opacity / start,
+      ).animate(widget.animation);
+    });
   }
 
   @override
@@ -585,6 +601,9 @@ class _PredictiveBackFadeTransitionState
       "lib/common/theme.dart::_PredictiveBackFadeTransitionState.build",
     );
     if (MediaQuery.disableAnimationsOf(context)) return widget.child;
-    return FadeTransition(opacity: widget.animation, child: widget.child);
+    return FadeTransition(
+      opacity: _committedOpacity ?? widget.animation,
+      child: widget.child,
+    );
   }
 }

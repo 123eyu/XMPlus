@@ -84,6 +84,253 @@ String playbackTime(double seconds) {
       : '$minutes:$rest';
 }
 
+/// The compact player lives outside Navigator, so its measured box is the
+/// shared-element destination rather than a Hero in the previous route.
+class PlayerPanelRoute extends MaterialPageRoute<void> {
+  PlayerPanelRoute({required AppRuntime runtime, required this.returnTarget})
+    : super(
+        settings: const RouteSettings(name: PlayerPanel.routeName),
+        allowSnapshotting: false,
+        builder: (_) {
+          AppLog.instance.trace(
+            'lib/pages/player_panel.dart::PlayerPanelRoute.new.closure#1',
+          );
+          return PlayerPanel(runtime: runtime, expanded: true);
+        },
+      ) {
+    AppLog.instance.trace('lib/pages/player_panel.dart::PlayerPanelRoute.new');
+  }
+
+  final GlobalKey returnTarget;
+  double? _commitValue, _commitStart;
+
+  double get expansion {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::PlayerPanelRoute.expansion.get',
+    );
+    final value = animation?.value ?? 0;
+    final start = _commitStart;
+    return start == null || start == 0
+        ? value
+        : _commitValue! * (value / start).clamp(0.0, 1.0);
+  }
+
+  @override
+  Duration get transitionDuration {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::PlayerPanelRoute.transitionDuration.get',
+    );
+    return const Duration(milliseconds: 300);
+  }
+
+  @override
+  Duration get reverseTransitionDuration {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::PlayerPanelRoute.reverseTransitionDuration.get',
+    );
+    return const Duration(milliseconds: 260);
+  }
+
+  @override
+  bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::PlayerPanelRoute.canTransitionFrom',
+    );
+    return false;
+  }
+
+  @override
+  void handleStartBackGesture({double progress = 0.0}) {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::PlayerPanelRoute.handleStartBackGesture',
+    );
+    _commitValue = _commitStart = null;
+    super.handleStartBackGesture(progress: progress);
+  }
+
+  @override
+  void handleCommitBackGesture() {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::PlayerPanelRoute.handleCommitBackGesture',
+    );
+    _commitValue = expansion;
+    super.handleCommitBackGesture();
+    // Flutter restarts the route controller when committing. Normalize from
+    // its actual new value, preserving the last interactive rectangle/opacity.
+    _commitStart = animation?.value;
+  }
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::PlayerPanelRoute.buildTransitions',
+    );
+    return _PlayerReturnTransition(route: this, child: child);
+  }
+}
+
+class _PlayerReturnTransition extends StatefulWidget {
+  const _PlayerReturnTransition({required this.route, required this.child});
+
+  final PlayerPanelRoute route;
+  final Widget child;
+
+  @override
+  State<_PlayerReturnTransition> createState() {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_PlayerReturnTransition.createState',
+    );
+    return _PlayerReturnTransitionState();
+  }
+}
+
+class _PlayerReturnTransitionState extends State<_PlayerReturnTransition>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_PlayerReturnTransitionState.initState',
+    );
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_PlayerReturnTransitionState.dispose',
+    );
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  bool handleStartBackGesture(PredictiveBackEvent event) {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_PlayerReturnTransitionState.handleStartBackGesture',
+    );
+    if (event.isButtonEvent ||
+        !widget.route.isCurrent ||
+        !widget.route.popGestureEnabled) {
+      return false;
+    }
+    widget.route.handleStartBackGesture(progress: 1 - event.progress);
+    return true;
+  }
+
+  @override
+  void handleUpdateBackGestureProgress(PredictiveBackEvent event) {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_PlayerReturnTransitionState.handleUpdateBackGestureProgress',
+    );
+    widget.route.handleUpdateBackGestureProgress(progress: 1 - event.progress);
+  }
+
+  @override
+  void handleCancelBackGesture() {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_PlayerReturnTransitionState.handleCancelBackGesture',
+    );
+    widget.route.handleCancelBackGesture();
+  }
+
+  @override
+  void handleCommitBackGesture() {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_PlayerReturnTransitionState.handleCommitBackGesture',
+    );
+    widget.route.handleCommitBackGesture();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppLog.instance.trace(
+      'lib/pages/player_panel.dart::_PlayerReturnTransitionState.build',
+    );
+    return AnimatedBuilder(
+      animation: widget.route.animation!,
+      child: widget.child,
+      builder: (context, child) {
+        AppLog.instance.trace(
+          'lib/pages/player_panel.dart::_PlayerReturnTransitionState.build.closure#1',
+        );
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            AppLog.instance.trace(
+              'lib/pages/player_panel.dart::_PlayerReturnTransitionState.build.closure#1.closure#1',
+            );
+            final expansion = widget.route.expansion;
+            final target = widget.route.returnTarget.currentContext
+                ?.findRenderObject();
+            final source = context.findRenderObject();
+            final size = constraints.biggest;
+            Rect? destination;
+            if (target is RenderBox &&
+                target.attached &&
+                target.hasSize &&
+                source is RenderBox &&
+                source.attached &&
+                target.size.isFinite &&
+                !target.size.isEmpty) {
+              final origin = source.globalToLocal(
+                target.localToGlobal(Offset.zero),
+              );
+              final measured = origin & target.size;
+              if ((Offset.zero & size).contains(measured.topLeft) &&
+                  measured.right <= size.width &&
+                  measured.bottom <= size.height) {
+                destination = measured;
+              }
+            }
+            // Never shrink towards an absent/offscreen compact player.
+            if (destination == null || size.isEmpty) {
+              return Opacity(opacity: expansion, child: child);
+            }
+            final rect = Rect.lerp(destination, Offset.zero & size, expansion)!;
+            // Animate the container, not the page's aspect ratio. Keep its
+            // layout/state intact while clipping and fading toward the dock.
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fromRect(
+                  rect: rect,
+                  child: Opacity(
+                    opacity: (expansion / 0.2).clamp(0.0, 1.0),
+                    child: ClipRRect(
+                      key: const ValueKey('playerReturnSurface'),
+                      borderRadius: BorderRadius.circular(16 * (1 - expansion)),
+                      child: ColoredBox(
+                        color: Theme.of(context).colorScheme.surface,
+                        child: OverflowBox(
+                          alignment: Alignment.topCenter,
+                          minWidth: size.width,
+                          maxWidth: size.width,
+                          minHeight: size.height,
+                          maxHeight: size.height,
+                          child: Transform.scale(
+                            scale: rect.width / size.width,
+                            alignment: Alignment.topCenter,
+                            child: Opacity(opacity: expansion, child: child),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
 class PlayerPanel extends StatefulWidget {
   const PlayerPanel({
     required this.runtime,
@@ -1704,7 +1951,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
           );
           // A track change can remount this slider while a popup excludes the
           // dock's semantics. Keep its value-indicator portal in that subtree.
-          return Overlay.wrap(
+          final slider = Overlay.wrap(
             alwaysSizeToContent: true,
             clipBehavior: Clip.none,
             child: SliderTheme(
@@ -1782,6 +2029,11 @@ class _PlayerPanelState extends State<PlayerPanel> {
               ),
             ),
           );
+          // A bounded-height Row makes Slider consume all remaining height.
+          // Constrain only the dock control, not its text or the full player.
+          return dock
+              ? SizedBox(height: kMinInteractiveDimension, child: slider)
+              : slider;
         }
 
         if (!widget.expanded) {

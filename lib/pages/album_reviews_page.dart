@@ -133,6 +133,7 @@ class _AlbumReviewsPageState extends State<AlbumReviewsPage> {
     _cancelled?.complete();
     final cancelled = _cancelled = Completer<void>();
     final client = _client, albumId = widget.albumId;
+    final newest = _newest;
     setState(() {
       AppLog.instance.trace(
         'lib/pages/album_reviews_page.dart::_AlbumReviewsPageState._load.closure#1',
@@ -143,12 +144,32 @@ class _AlbumReviewsPageState extends State<AlbumReviewsPage> {
     });
     try {
       final result = await client.withReadPolicy(
-        () {
+        () async {
           AppLog.instance.trace(
             'lib/pages/album_reviews_page.dart::_AlbumReviewsPageState._load.closure#2',
           );
-          return XmlyComments(client)
-              .loadAlbumReviews(albumId, page: page, newest: _newest);
+          final comments = XmlyComments(client);
+          var result = await comments.loadAlbumReviews(
+            albumId,
+            page: page,
+            newest: newest,
+          );
+          if (result.comments.isEmpty &&
+              result.maxPageId > 0 &&
+              result.page > result.maxPageId) {
+            result = await comments.loadAlbumReviews(
+              albumId,
+              page: result.maxPageId,
+              newest: newest,
+            );
+            if (result.maxPageId > 0 && result.page > result.maxPageId) {
+              throw const XmlyException(
+                'review_page_changed',
+                '评论页数已变化，请刷新后重试',
+              );
+            }
+          }
+          return result;
         },
         rateLimitRetries: 4,
         cancelled: cancelled.future,
@@ -730,12 +751,32 @@ class _ReviewRepliesState extends State<_ReviewReplies> {
     });
     try {
       final result = await client.withReadPolicy(
-        () {
+        () async {
           AppLog.instance.trace(
             'lib/pages/album_reviews_page.dart::_ReviewRepliesState._load.closure#2',
           );
-          return XmlyComments(client)
-              .loadAlbumReviewReplies(albumId, rootId, page: page);
+          final comments = XmlyComments(client);
+          var result = await comments.loadAlbumReviewReplies(
+            albumId,
+            rootId,
+            page: page,
+          );
+          if (result.replies.isEmpty &&
+              result.maxPageId > 0 &&
+              result.page > result.maxPageId) {
+            result = await comments.loadAlbumReviewReplies(
+              albumId,
+              rootId,
+              page: result.maxPageId,
+            );
+            if (result.maxPageId > 0 && result.page > result.maxPageId) {
+              throw const XmlyException(
+                'review_page_changed',
+                '回复页数已变化，请刷新后重试',
+              );
+            }
+          }
+          return result;
         },
         rateLimitRetries: 4,
         cancelled: cancelled.future,

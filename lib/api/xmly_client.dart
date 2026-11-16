@@ -880,6 +880,12 @@ class XmlyClient {
               definitive: true,
             );
           }
+          if (origin == mobile && code == '924')
+            throw const XmlyException(
+              'content_removed',
+              '该内容已下架',
+              definitive: true,
+            );
           if (['5', '403', '726'].contains(code))
             throw const XmlyException(
               'permission_denied',
@@ -920,6 +926,7 @@ class XmlyClient {
                     'login_required',
                     'login_expired',
                     'permission_denied',
+                    'content_removed',
                     'rate_limited',
                   }.contains(error.code)),
         );
