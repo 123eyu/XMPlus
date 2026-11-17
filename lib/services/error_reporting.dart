@@ -445,6 +445,25 @@ SentryEvent? _beforeSend(SentryEvent event, Hint hint) {
       if (AppLog.instance.sessionId != null)
         'sessionId': AppLog.instance.sessionId!,
     };
+    // The SDK has extracted exceptions by now, including Flutter/zone errors.
+    // Scrub their text, not the throwable, so types and original stacks survive.
+    for (final exception in event.exceptions ?? const <SentryException>[]) {
+      final value = exception.value;
+      if (value != null) exception.value = _cleanEventText(value);
+    }
+    final message = event.message;
+    if (message != null) {
+      message.formatted = _cleanEventText(message.formatted);
+      final template = message.template;
+      if (template != null) message.template = _cleanEventText(template);
+      final params = message.params;
+      if (params != null) {
+        message.params = [
+          for (final param in params)
+            if (param is String) _cleanEventText(param) else param,
+        ];
+      }
+    }
     final json = _eventJson(event);
     final clean = SentryEvent.fromJson(json);
     // SDK10's thread parser reads frames from the thread rather than its
@@ -466,6 +485,16 @@ SentryEvent? _beforeSend(SentryEvent event, Hint hint) {
     return null;
   }
 }
+
+// Signed media URLs can occur inside otherwise useful exception descriptions.
+// Drop their query/fragment without broadening AppLog's cookie-only policy.
+final _eventUrlQuery = RegExp(
+  r'''(https?://[^\s"'<>?#]+)[?#][^\s"'<>]*''',
+  caseSensitive: false,
+);
+
+String _cleanEventText(String text) =>
+    text.replaceAllMapped(_eventUrlQuery, (match) => match.group(1)!);
 
 SentryTransaction? _beforeSendTransaction(SentryTransaction event, Hint hint) {
   try {
