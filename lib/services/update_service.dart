@@ -519,9 +519,24 @@ class UpdateService extends ChangeNotifier {
     final assets = <_UpdateAsset>[...release._assets];
     Uri? sums;
     if (release._xinVersionId != null) {
+      // Names already follow the device's supported ABI preference order.
+      final channel = names.isEmpty
+          ? null
+          : switch (names.first) {
+              final name when name.endsWith('-android-arm64-v8a.apk') =>
+                'default',
+              final name when name.endsWith('-android-armeabi-v7a.apk') =>
+                'android-armv7',
+              final name when name.endsWith('-android-x86_64.apk') =>
+                'android-x86_64',
+              final name when name.endsWith('-windows-x64-setup.exe') =>
+                'windows',
+              _ => null,
+            };
+      if (channel == null) throw const FormatException('当前设备不支持此渠道');
       final response = await _xinRequest('download', {
         'version_id': release._xinVersionId,
-        'channel': Platform.isAndroid ? 'default' : 'windows',
+        'channel': channel,
       }, token);
       final data = response['data'];
       if (data is! Map || data['identifier'] != 'teikengstudio.xmplus') {

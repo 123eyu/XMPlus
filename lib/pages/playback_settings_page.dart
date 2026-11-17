@@ -11,6 +11,10 @@ import '../storage/app_storage.dart';
 import '../services/playback_policy.dart';
 import 'playback_volume_control.dart';
 
+// Track only this setting's writes, including same-value/ABA updates, so a late
+// declined dialog cannot undo a newer choice for the global or album scope.
+final _listenAndDownloadWrites = Expando<Map<String?, int>>();
+
 /// Commit first: a failed disk write must not change the live playback policy.
 Future<void> persistPlaybackSetting(
   AppRuntime runtime,
@@ -21,6 +25,13 @@ Future<void> persistPlaybackSetting(
   AppLog.instance.trace(
     "lib/pages/playback_settings_page.dart::persistPlaybackSetting",
   );
+  final revisions = key == 'listenAndDownload'
+      ? (_listenAndDownloadWrites[runtime] ??= <String?, int>{})
+      : null;
+  final revision = revisions == null ? null : (revisions[albumId] ?? 0) + 1;
+  if (revision != null) revisions![albumId] = revision;
+  Object? previousValue;
+  var previouslyPresent = false;
 
   await runtime.storage.transaction((state) {
     AppLog.instance.trace(
@@ -49,6 +60,8 @@ Future<void> persistPlaybackSetting(
         return <String, dynamic>{};
       }) as Map;
     }
+    previousValue = target[key];
+    previouslyPresent = target.containsKey(key);
     if (value == null) {
       target.remove(key);
     } else {
@@ -58,7 +71,31 @@ Future<void> persistPlaybackSetting(
     if (key == 'syncHistory' && value is! bool)
       throw const FormatException('同步设置无效');
   });
-  await runtime.player.applySettings(updateSource: key == 'listenAndDownload');
+  final accepted = await runtime.player.applySettings(
+    updateSource: key == 'listenAndDownload',
+  );
+  if (!accepted && revision != null) {
+    await runtime.storage.transaction((state) {
+      AppLog.instance.trace(
+        'lib/pages/playback_settings_page.dart::persistPlaybackSetting.closure#2',
+      );
+      if (revisions![albumId] != revision) return;
+      final settings = state['settings'] as Map;
+      final target = albumId == null
+          ? settings['playback'] as Map?
+          : (settings['albumOverrides'] as Map?)?[albumId] as Map?;
+      if (target == null ||
+          target[key] != value ||
+          target.containsKey(key) != (value != null))
+        return;
+      if (previouslyPresent) {
+        target[key] = previousValue;
+      } else {
+        target.remove(key);
+      }
+    });
+    await runtime.player.applySettings(updateSource: false);
+  }
   runtime.changed();
 }
 
@@ -117,7 +154,7 @@ Future<void> persistAlbumSkipSettings(
     target['skipOutroSeconds'] = skipOutroSeconds;
     PlaybackSettings.resolve(settings['playback'] as Map? ?? const {}, target);
   });
-  await runtime.player.applySettings();
+  await runtime.player.applySettings(updateSource: false);
   runtime.changed();
 }
 
