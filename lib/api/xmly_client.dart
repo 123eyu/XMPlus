@@ -26,6 +26,7 @@ class XmlyClient {
   static const collector = 'https://xdcs-collector.ximalaya.com';
   static const welfare = 'https://m.ximalaya.com';
   static const paidOrigin = 'https://mpaywsa.ximalaya.com';
+  static const _albumTracksPath = '/mobile/v1/album/track/v2';
   static const _maxResponse = 2 * 1024 * 1024;
   static const _qualities = ['m4a_128', 'm4a_64', 'mp3_64', 'mp3_32', 'm4a_24'];
   static const _maxUrlCacheFile = 16 * 1024 * 1024;
@@ -248,13 +249,13 @@ class XmlyClient {
     return method == 'GET' &&
         (const [
               '/mobile/v1/album/info',
+              _albumTracksPath,
               '/mobile-album/album/plant/detail',
               '/lite-mobile/like/v1/user-likes',
             ].contains(path) ||
             _playpageEndpoint(method, origin, path) ||
             _albumOverviewEndpoint(method, origin, path) ||
             RegExp(r'^/mobile/track/[1-9][0-9]{0,18}$').hasMatch(path) ||
-            RegExp(r'^/mobile/v1/album/track/ts-[0-9]+$').hasMatch(path) ||
             RegExp(
               r'^/album-mobile/album/similar/querySimilarAlbumList/ts-[0-9]+$',
             ).hasMatch(path) ||
@@ -938,10 +939,13 @@ class XmlyClient {
   static void _paging(int page, int pageSize, {int maxPageSize = 50}) {
     AppLog.instance.trace("lib/api/xmly_client.dart::XmlyClient._paging");
 
-    if (page < 1 || page > 10000 || pageSize < 1 || pageSize > maxPageSize)
+    if (page < 1 ||
+        page > xmlyMaxPage ||
+        pageSize < 1 ||
+        pageSize > maxPageSize)
       throw XmlyException(
         'invalid_page',
-        '页码范围为 1..10000，每页 1..$maxPageSize',
+        '页码范围为 1..$xmlyMaxPage，每页 1..$maxPageSize',
         definitive: true,
       );
   }
@@ -1206,15 +1210,13 @@ class XmlyClient {
       'isAsc': '${ascending != defaultDescending}',
       'device': 'android',
     };
-    final path =
-        '/mobile/v1/album/track/ts-${DateTime.now().millisecondsSinceEpoch}';
     Map<String, dynamic> response;
     var authenticated = accountAvailable;
     try {
       response = await request(
         'GET',
         mobile,
-        path,
+        _albumTracksPath,
         query: query,
         account: authenticated,
       );
@@ -1225,7 +1227,7 @@ class XmlyClient {
       response = await request(
         'GET',
         mobile,
-        path,
+        _albumTracksPath,
         query: query,
         account: false,
       );
@@ -1328,7 +1330,7 @@ class XmlyClient {
       final response = await request(
         'GET',
         mobile,
-        '/mobile/v1/album/track/ts-${DateTime.now().millisecondsSinceEpoch}',
+        _albumTracksPath,
         query: {...query, 'pageId': childPage, 'pageSize': childSize},
         account: authenticated,
       );

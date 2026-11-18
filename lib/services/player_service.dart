@@ -744,17 +744,14 @@ class PlayerService {
       "lib/services/player_service.dart::PlayerService._albumPage",
     );
 
-    if (page < 1 || page > 5000 ~/ xmlyAlbumPageSize) {
-      throw const XmlyException('catalogue_limit', '专辑播放队列最多 5000 集');
-    }
     final result = await client.album(
       album,
       page: page,
       pageSize: xmlyAlbumPageSize,
       ascending: true,
     );
-    if (result.total < 0 || result.total > 5000) {
-      throw const XmlyException('catalogue_limit', '专辑播放队列最多 5000 集');
+    if (result.total < 0) {
+      throw const XmlyException('invalid_album', '专辑分页无效，请刷新重试');
     }
     final tracks = result.tracks, offset = (page - 1) * xmlyAlbumPageSize;
     final end = (offset + xmlyAlbumPageSize).clamp(0, result.total);
@@ -886,12 +883,6 @@ class PlayerService {
       }
       final album = xmlyIdentifier(albumId),
           id = 'xmly:${xmlyIdentifier(trackId)}';
-      if (page != null && (page < 1 || page > 5000 ~/ xmlyAlbumPageSize)) {
-        throw XmlyException(
-          'invalid_page',
-          '播放页码范围为 1 到 ${5000 ~/ xmlyAlbumPageSize}',
-        );
-      }
       final intent = ++generation, request = _newRequest();
       final client = _clientForIdentity(accountIdentity);
       int? ordinalFor(Track? hint) {
@@ -1199,7 +1190,7 @@ class PlayerService {
         return;
       }
       final candidate = first.officialPosition ?? xmlyPositive(first.orderNo);
-      if (candidate == null || candidate > 5000) {
+      if (candidate == null) {
         throw const XmlyException('invalid_album', '队列缺少专辑页码，请从专辑页重新选择声音');
       }
       final request = _newRequest(), intent = _advanceIntent;
@@ -1312,19 +1303,23 @@ class PlayerService {
         })) {
           throw const XmlyException('duplicate_page', '专辑分页重复，请刷新后重试');
         }
-        if (_queue.length + added.length > 5000) {
-          throw const XmlyException('catalogue_limit', '专辑播放队列最多 5000 集');
-        }
-        // Keep any tail appended while loading, and keep its last-page metadata.
-        final next = [...added, ..._queue];
+        // If the queue is full, keep the anchor page instead of rejecting a
+        // valid earlier page. Its discarded successors can be paged in again.
+        final trimmed = _queue.length + added.length > xmlyMaxQueueTracks;
+        final next = [
+          ...added,
+          ...trimmed ? _queue.take(overlap.length) : _queue,
+        ];
         ++generation;
         await _saveQueue(
           next,
           added.length,
           album,
-          page: albumPage,
-          total: albumTotal,
-          pageSize: albumPageSize ?? xmlyAlbumPageSize,
+          page: trimmed ? page : albumPage,
+          total: trimmed ? anchorPage.total : albumTotal,
+          pageSize: trimmed
+              ? xmlyAlbumPageSize
+              : albumPageSize ?? xmlyAlbumPageSize,
         );
         _queue = next;
         cursor = added.length;
@@ -1406,6 +1401,7 @@ class PlayerService {
     final total = albumTotal, page = albumPage, size = albumPageSize;
     if (_queue.isEmpty ||
         total == null ||
+        total > xmlyMaxQueueTracks ||
         page == null ||
         size == null ||
         page * size < total ||
@@ -1497,6 +1493,12 @@ class PlayerService {
                   "lib/services/player_service.dart::PlayerService._advanceOrder.closure#1.closure#1.closure#1",
                 );
                 final first = await _albumPage(client, album, 1);
+                if (first.total > xmlyMaxQueueTracks) {
+                  throw const XmlyException(
+                    'catalogue_limit',
+                    '此模式一次最多加载 $xmlyMaxQueueTracks 集，请使用顺序播放',
+                  );
+                }
                 final values = <Track>[...first.tracks];
                 final ids = {for (final track in values) track.id};
                 total = first.total;
@@ -3139,7 +3141,7 @@ class PlayerService {
         final last = snapshot.last;
         final officialPosition = last.officialPosition;
         final candidate = officialPosition ?? xmlyPositive(last.orderNo);
-        if (candidate == null || candidate > 5000) {
+        if (candidate == null) {
           throw const XmlyException('invalid_album', '队列缺少专辑页码，请从专辑页重新选择声音');
         }
         void validateBoundary(int position) {
@@ -3232,9 +3234,6 @@ class PlayerService {
           }
           loadedPage = result.page;
           total = result.total;
-          if (snapshot.length + added.length > 5000) {
-            throw const XmlyException('catalogue_limit', '专辑播放队列最多 5000 集');
-          }
         }
 
         // A queue may start mid-album; its length is not a catalogue position.
@@ -3242,7 +3241,8 @@ class PlayerService {
         final samePage =
             officialPosition == null ||
             withinPage < xmlyAlbumPageSize ||
-            loadedPage == 5000 ~/ xmlyAlbumPageSize;
+            candidate >= total ||
+            loadedPage == xmlyMaxPage;
         final page = samePage ? loadedPage : loadedPage + 1;
         final result = await _admission(request, () {
           AppLog.instance.trace(
@@ -3273,20 +3273,28 @@ class PlayerService {
           );
 
           if (!active()) return;
-          final next = added.isEmpty ? snapshot : [...snapshot, ...added];
+          final drop = (snapshot.length + added.length - xmlyMaxQueueTracks)
+              .clamp(0, snapshot.length);
+          if (drop > cursor) {
+            throw const XmlyException('queue_full', '队列已满，请播放到列表末尾后再加载');
+          }
+          final next = added.isEmpty
+              ? snapshot
+              : [...snapshot.skip(drop), ...added];
           if (added.isNotEmpty ||
               savedPage != loadedPage ||
               savedTotal != total ||
               savedSize != xmlyAlbumPageSize) {
             await _saveQueue(
               next,
-              cursor,
+              cursor - drop,
               album,
               page: loadedPage,
               total: total,
             );
           }
           _queue = next;
+          cursor -= drop;
           committed = true;
           if (!speculative) error = null;
           status = added.isEmpty ? '已听到最新一集' : '已更新 ${added.length} 集';
@@ -3682,8 +3690,8 @@ class PlayerService {
           );
           return item.id == track.id;
         });
-        if (existing < 0 && next.length >= 5000) {
-          throw const XmlyException('queue_full', '队列最多 5000 集');
+        if (existing < 0 && next.length >= xmlyMaxQueueTracks) {
+          throw const XmlyException('queue_full', '队列最多 $xmlyMaxQueueTracks 集');
         }
         final target = existing < 0 ? track : next.removeAt(existing);
         final index = next.indexWhere((item) {
@@ -3740,8 +3748,8 @@ class PlayerService {
           return item.id == track.id;
         }))
           return;
-        if (_queue.length >= 5000)
-          throw const XmlyException('queue_full', '队列最多 5000 集');
+        if (_queue.length >= xmlyMaxQueueTracks)
+          throw const XmlyException('queue_full', '队列最多 $xmlyMaxQueueTracks 集');
         final next = [..._queue, track], index = cursor < 0 ? 0 : cursor;
         await _saveQueue(
           next,

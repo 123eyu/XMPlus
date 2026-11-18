@@ -6,6 +6,9 @@ import 'package:crypto/crypto.dart';
 import "../services/app_log.dart";
 
 const int xmlyAlbumPageSize = 200;
+const int xmlyMaxPage = 10000;
+// Whole-queue operations materialize every track. Paged playback does not.
+const int xmlyMaxQueueTracks = 10000;
 
 class XmlyException implements Exception {
   final String code, message;
@@ -524,7 +527,7 @@ class PlaybackQueue {
        needsRepair = false {
     AppLog.instance.trace("lib/models/xmly_models.dart::PlaybackQueue.new");
 
-    if (tracks.length > 5000 ||
+    if (tracks.length > xmlyMaxQueueTracks ||
         cursor < -1 ||
         cursor >= tracks.length ||
         (tracks.isNotEmpty && cursor < 0)) {
@@ -546,9 +549,8 @@ class PlaybackQueue {
                 (this.albumPageSize != 50 &&
                     this.albumPageSize != xmlyAlbumPageSize) ||
                 albumPage! < 1 ||
-                albumPage! > 5000 ~/ this.albumPageSize! ||
-                albumTotal! < 0 ||
-                albumTotal! > 5000))) {
+                albumPage! > xmlyMaxPage ||
+                albumTotal! < 0))) {
       throw const FormatException('播放队列分页损坏');
     }
     final ids = <String>{};
@@ -605,7 +607,7 @@ class PlaybackQueue {
     final tracks = value['tracks'], cursor = value['cursor'];
     final album = value['sourceAlbumId'], source = value['source'];
     if (tracks is! List ||
-        tracks.length > 5000 ||
+        tracks.length > xmlyMaxQueueTracks ||
         cursor is! int ||
         album is! String) {
       throw const FormatException('播放队列损坏');

@@ -200,7 +200,7 @@ Future<AlbumPage> locateCatalogueTarget({
     if (track.id != target.id ||
         track.albumId != albumId ||
         ordinal == null ||
-        ordinal > 5000)
+        ordinal > xmlyMaxPage * xmlyAlbumPageSize)
       return null;
     var result = await read((ordinal - 1) ~/ xmlyAlbumPageSize + 1);
     if (ordinal > result.total) return null;
