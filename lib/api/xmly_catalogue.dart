@@ -77,10 +77,10 @@ class XmlyCatalogue {
       }
       result += section + digit;
     }
-    if (result < 1 || result > 5000)
+    if (result < 1)
       throw const XmlyException(
         'invalid_episode',
-        '集数范围为 1 到 5000',
+        '请输入正整数集数',
         definitive: true,
       );
     return result;
@@ -183,10 +183,10 @@ class XmlyCatalogue {
         pageSize: pageSize,
         ascending: true,
       );
-      if (result.total > 5000)
+      if (result.total > xmlyMaxQueueTracks)
         throw const XmlyException(
           'catalogue_limit',
-          '专辑超过 5000 首队列上限',
+          '一次最多加载 $xmlyMaxQueueTracks 集，请按页浏览',
           definitive: true,
         );
       if (result.total < 0 ||
@@ -267,7 +267,7 @@ class XmlyCatalogue {
       "lib/api/xmly_catalogue.dart::XmlyCatalogue.selectRange",
     );
 
-    if (items.length > 5000 || expression.isEmpty || expression.length > 40000)
+    if (expression.isEmpty || expression.length > 40000)
       throw const XmlyException('invalid_range', '选择范围无效', definitive: true);
     final wanted = <int>{};
     for (final part in expression.split(RegExp('[,，]'))) {
@@ -281,14 +281,16 @@ class XmlyCatalogue {
         );
       final start = int.tryParse(match[1]!) ?? 0,
           end = int.tryParse(match[2] ?? match[1]!) ?? 0;
-      if (start < 1 || end < start || end > 5000)
+      if (start < 1 || end < start || end - start >= 5000)
         throw const XmlyException(
           'invalid_range',
-          '选择范围必须在 1 到 5000 之间',
+          '请填写有效的声音序号，每批最多选择 5000 集',
           definitive: true,
         );
-      for (var value = start; value <= end; value++) {
-        wanted.add(value);
+      for (var offset = 0; offset <= end - start; offset++) {
+        wanted.add(start + offset);
+        if (wanted.length > 5000)
+          throw const XmlyException('invalid_range', '每批最多选择 5000 集');
       }
     }
     final selected = <int, Track>{};
