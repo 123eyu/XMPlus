@@ -8,7 +8,7 @@ import "../services/app_log.dart";
 const int xmlyAlbumPageSize = 200;
 const int xmlyMaxPage = 10000;
 // Whole-queue operations materialize every track. Paged playback does not.
-const int xmlyMaxQueueTracks = 10000;
+const int xmlyMaxQueueTracks = 15000;
 
 class XmlyException implements Exception {
   final String code, message;
