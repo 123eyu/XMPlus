@@ -464,13 +464,12 @@ class AutoDownloadService {
     );
 
     final ids = <String>{};
-    if (tracks.length > 5000 ||
-        tracks.any((track) {
-          AppLog.instance.trace(
-            "lib/services/auto_download_service.dart::AutoDownloadService._catalogue.closure#1",
-          );
-          return track.albumId != albumId || !ids.add(track.id);
-        })) {
+    if (tracks.any((track) {
+      AppLog.instance.trace(
+        "lib/services/auto_download_service.dart::AutoDownloadService._catalogue.closure#1",
+      );
+      return track.albumId != albumId || !ids.add(track.id);
+    })) {
       throw _invalidCatalogue;
     }
     return tracks;

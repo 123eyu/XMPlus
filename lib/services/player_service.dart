@@ -3938,7 +3938,8 @@ class PlayerService {
             AppLog.instance.trace(
               "lib/services/player_service.dart::PlayerService.reverseQueue.closure#1.closure#1",
             );
-            return XmlyCatalogue(client).album(album);
+            return XmlyCatalogue(client)
+                .album(album, maxTracks: xmlyMaxQueueTracks);
           },
           rateLimitRetries: 0,
           cancelled: _requestChanged.future,

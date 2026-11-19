@@ -599,9 +599,8 @@ class ConfigArchive {
             xmlyIdentifier(job.albumId) != job.albumId ||
             !p.isAbsolute(job.rootDirectory) ||
             job.total < 0 ||
-            job.total > 5000 ||
             job.page < 1 ||
-            job.page > 5000 ~/ xmlyAlbumPageSize ||
+            job.page > xmlyMaxPage ||
             job.seen.length !=
                 (job.page * xmlyAlbumPageSize).clamp(0, job.total) ||
             job.seen.toSet().length != job.seen.length ||

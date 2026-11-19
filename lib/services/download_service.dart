@@ -522,9 +522,6 @@ class DownloadService {
         return track.id;
       }).toSet(),
     );
-    if (tracks.length > 5000) {
-      throw const XmlyException('batch_too_large', '每批最多选择 5000 集');
-    }
     await _checkRoot(rootDirectory, settings, cancelled, checkpoint);
     // Reuse the durable model's immutable, secret-free settings boundary.
     final snapshot = DownloadTask(
@@ -709,9 +706,6 @@ class DownloadService {
                     checkpoint: checkpoint,
                   );
             final offset = (page - 1) * xmlyAlbumPageSize;
-            if (result.total > 5000) {
-              throw const XmlyException('catalogue_limit', '专辑超过 5000 集下载上限');
-            }
             if (total != null && result.total != total) {
               throw const XmlyException('catalogue_changed', '专辑总集数已变化');
             }
@@ -3861,7 +3855,6 @@ class DownloadService {
           'media_tags',
           'task_busy',
           'batch_invalid',
-          'batch_too_large',
         }.contains(error.code);
   }
 
@@ -3909,8 +3902,6 @@ class DownloadService {
           return '听时或余额持续变化，本次下载已停止；任务和扣时记录保留，请稍后重试';
         case 'catalogue_changed':
           return '专辑在刷新期间再次变化，已停止；已下载内容和扣时记录保留，请稍后继续';
-        case 'catalogue_limit':
-          return '专辑超过 5000 集下载上限，已停止；已下载内容和扣时记录保留';
         case 'invalid_catalogue':
           return '专辑分页、顺序或声音 ID 无效，已停止；已下载内容和扣时记录保留';
         case 'usage_uncertain':

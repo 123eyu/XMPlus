@@ -120,7 +120,6 @@ class _ShellPageState extends State<ShellPage> {
                   'receipt_required',
                   'task_busy',
                   'batch_invalid',
-                  'batch_too_large',
                   'catalogue_limit',
                   'invalid_settings',
                   'invalid_duration',

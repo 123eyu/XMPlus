@@ -77,7 +77,6 @@ void _recordCatalogueError(
         'offline_playback',
         'catalogue_changed',
         'track_position_missing',
-        'batch_too_large',
         'task_busy',
         'original_account_required',
       }.contains(error.code);

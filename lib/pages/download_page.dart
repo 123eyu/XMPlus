@@ -68,7 +68,6 @@ void _recordDownloadPageError(Object error, StackTrace stack) {
             'task_busy',
             'task_missing',
             'batch_invalid',
-            'batch_too_large',
             'catalogue_limit',
             'download_changed',
             'shared_audio',

@@ -811,7 +811,7 @@ class _AlbumBulkDownloadPageState extends State<AlbumBulkDownloadPage> {
                         last > _total) {
                       return '结束集须不小于起始集且不超过$_total';
                     }
-                    return last - first + 1 > 5000 ? '每批最多下载5000集' : null;
+                    return null;
                   },
                 ),
               ],

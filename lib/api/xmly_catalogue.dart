@@ -164,6 +164,7 @@ class XmlyCatalogue {
   Future<List<Track>> album(
     String albumId, {
     int pageSize = xmlyAlbumPageSize,
+    int? maxTracks,
   }) async {
     AppLog.instance.trace("lib/api/xmly_catalogue.dart::XmlyCatalogue.album");
 
@@ -183,10 +184,10 @@ class XmlyCatalogue {
         pageSize: pageSize,
         ascending: true,
       );
-      if (result.total > xmlyMaxQueueTracks)
-        throw const XmlyException(
+      if (maxTracks != null && result.total > maxTracks)
+        throw XmlyException(
           'catalogue_limit',
-          '一次最多加载 $xmlyMaxQueueTracks 集，请按页浏览',
+          '一次最多加载 $maxTracks 集，请按页浏览',
           definitive: true,
         );
       if (result.total < 0 ||
@@ -269,6 +270,11 @@ class XmlyCatalogue {
 
     if (expression.isEmpty || expression.length > 40000)
       throw const XmlyException('invalid_range', '选择范围无效', definitive: true);
+    const missing = XmlyException(
+      'range_not_found',
+      '部分序号不存在，请检查专辑范围',
+      definitive: true,
+    );
     final wanted = <int>{};
     for (final part in expression.split(RegExp('[,，]'))) {
       final match = RegExp(r'^\s*([0-9]+)\s*(?:-\s*([0-9]+)\s*)?$')
@@ -281,16 +287,16 @@ class XmlyCatalogue {
         );
       final start = int.tryParse(match[1]!) ?? 0,
           end = int.tryParse(match[2] ?? match[1]!) ?? 0;
-      if (start < 1 || end < start || end - start >= 5000)
+      if (start < 1 || end < start)
         throw const XmlyException(
           'invalid_range',
-          '请填写有效的声音序号，每批最多选择 5000 集',
+          '请填写有效的声音序号',
           definitive: true,
         );
+      if (end - start >= items.length) throw missing;
       for (var offset = 0; offset <= end - start; offset++) {
         wanted.add(start + offset);
-        if (wanted.length > 5000)
-          throw const XmlyException('invalid_range', '每批最多选择 5000 集');
+        if (wanted.length > items.length) throw missing;
       }
     }
     final selected = <int, Track>{};
@@ -305,12 +311,7 @@ class XmlyCatalogue {
         );
       selected[number] = item;
     }
-    if (selected.length != wanted.length)
-      throw const XmlyException(
-        'range_not_found',
-        '部分序号不存在，请检查专辑范围',
-        definitive: true,
-      );
+    if (selected.length != wanted.length) throw missing;
     final numbers = selected.keys.toList()..sort();
     return List.unmodifiable(
       numbers.map((number) {
